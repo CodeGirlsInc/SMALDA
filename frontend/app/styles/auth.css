@@ -1,0 +1,79 @@
+.auth-container {
+    max-width: 400px;
+    margin: 80px auto;
+    padding: 30px;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    font-family: system-ui, sans-serif;
+}
+
+.auth-container h2 {
+    text-align: center;
+    margin-bottom: 24px;
+}
+
+.auth-container input {
+    width: 100%;
+    padding: 12px 40px 12px 12px;
+    margin-bottom: 10px;
+    font-size: 14px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    box-sizing: border-box;
+    transition: border 0.3s;
+}
+
+.auth-container input:focus {
+    border-color: #0070f3;
+    outline: none;
+}
+
+.auth-container .input-wrapper {
+    position: relative;
+    margin-bottom: 10px;
+}
+
+.auth-container .password-toggle {
+    position: absolute;
+    top: 40%;
+    right: 12px;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 20px;
+    color: #555;
+    padding: 0;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+}
+
+.auth-container button[type="submit"] {
+    width: 100%;
+    padding: 12px;
+    background-color: #0070f3;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: bold;
+    font-size: 16px;
+    margin-top: 10px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.auth-container button[type="submit"]:hover {
+    background-color: #005ac2;
+}
+
+.auth-container p {
+    margin: 6px 0;
+    color: red;
+    font-size: 13px;
+    text-align: left;
+}
