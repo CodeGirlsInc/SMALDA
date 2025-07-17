@@ -1,0 +1,8 @@
+// UPDATE USER PROFILE
+PATCH http://localhost:4000/api/v1/users/me/update
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2ZjA3ZWExNC0zMDFkLTRmZDYtOWFjOS1kNzViYmY4YTYyYTQiLCJyb2xlIjoidXNlciIsImVtYWlsIjoidGVzdHVzZXJAZ21haWwuY29tIiwiaWF0IjoxNzUyMzI2Nzg2LCJleHAiOjE3NTIzMzAzODYsImF1ZCI6Imh0dHA6Ly9sb2NhbGhvc3Q6NDAwMCIsImlzcyI6Imh0dHA6Ly9sb2NhbGhvc3Q6NDAwMCJ9.OJF0JdvbQNVU0xu_kiLlPRccgNbl3e7dh4megRXbec8
+
+{
+    "userName": "my flowers"
+}
