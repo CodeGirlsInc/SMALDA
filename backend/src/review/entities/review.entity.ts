@@ -11,8 +11,8 @@ import {
 } from "typeorm"
 import { ReviewStatus, ReviewDecision, RiskLevel } from "../enums/review.enums"
 import { ReviewComment } from "./review-comment.entity"
-import { User } from "../../user/entities/user.entity"
-import { Document } from "../../document/entities/document.entity"
+import { User } from '../../users/entities/user.entity';
+import { Document } from '../../documents/entities/document.entity';
 
 @Entity("reviews")
 @Index(["documentId", "status"])

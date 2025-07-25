@@ -1,9 +1,12 @@
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { TimelineGeneratorModule } from './timeline/timeline.module';
 
 @Module({
-  imports: [],
+  imports: [
+    TimelineGeneratorModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })

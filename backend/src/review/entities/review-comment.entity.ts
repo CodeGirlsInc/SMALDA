@@ -8,7 +8,7 @@ import {
   JoinColumn,
 } from "typeorm"
 import { Review } from "./review.entity"
-import { User } from "../../user/entities/user.entity"
+import { User } from '../../users/entities/user.entity';
 import { CommentType } from "../enums/review.enums"
 
 @Entity("review_comments")
