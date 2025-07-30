@@ -1,5 +1,4 @@
-{
-  ;`import {
+import {
   Entity,
   PrimaryGeneratedColumn,
   Column,
@@ -66,5 +65,4 @@ export class DocumentVersion {
   @ApiProperty({ description: 'Timestamp when this version was soft-deleted (if parent document is deleted)', nullable: true })
   @DeleteDateColumn({ type: 'timestamp with time zone', nullable: true })
   deletedAt?: Date;
-}`
 }
