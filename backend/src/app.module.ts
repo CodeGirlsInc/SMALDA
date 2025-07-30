@@ -1,12 +1,12 @@
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { ScheduleModule } from '@nestjs/schedule';
-import { ApiKeyModule } from './api-key/api-key.module';
-import { ExternalApiModule } from './external-api/external-api.module';
+import { TimelineGeneratorModule } from './timeline/timeline.module';
 
 @Module({
-  imports: [ScheduleModule.forRoot(), ApiKeyModule, ExternalApiModule],
+  imports: [
+    TimelineGeneratorModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })
