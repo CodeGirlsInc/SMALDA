@@ -32,18 +32,17 @@ export default function CaseSearchPage() {
 
   return (
     <main className="max-w-6xl mx-auto px-4 py-8">
-      ;
       <h1 className="text-2xl font-bold mb-6">
-        ;Search Past Land Dispute Cases
+        Search Past Land Dispute Cases
       </h1>
-      ;
+
       <CaseSearchBar
         filters={filters}
         setFilters={setFilters}
         onSearch={handleSearch}
       />
-      ;
-      <CaseTable data={cases} />;
+
+      <CaseTable data={cases} />
       <Pagination
         totalPages={5}
         currentPage={1}
