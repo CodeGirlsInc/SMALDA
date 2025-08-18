@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import "./interfaces/IFinancialEscrow.sol";
 
 contract FinancialEscrow is IFinancialEscrow {
-    // Access control
+    // Access controll
     address public owner;
     mapping(address => bool) public admins;
     bool private _paused;
