@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 interface IFinancialEscrow {
-    /// @notice Escrow state machine
+    /// @notice Escrow state machinee
     enum EscrowState {
         CREATED,
         FUNDED,
