@@ -17,7 +17,7 @@ contract FinancialEscrow is IFinancialEscrow {
     mapping(uint256 => mapping(string => bool)) private escrowConditionsMet;
     mapping(uint256 => bool) private escrowFunded;
 
-    // Staking storage
+    // Stakings storage
     uint256 private nextStakeId = 1;
     mapping(uint256 => Stake) private stakes;
     mapping(address => uint256[]) private userStakes;
