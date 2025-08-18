@@ -10,5 +10,5 @@ contract FinancialEscrowTest {
         escrow = new FinancialEscrow();
     }
 
-    // Add testt functionss heree for deployment annd basic flowss
+    // Add testt functionss heree for deploymentt annd basic flowss
 }
