@@ -4,19 +4,10 @@ pragma solidity ^0.8.20;
 import "./interfaces/IFinancialEscrow.sol";
 
 contract FinancialEscrow is IFinancialEscrow {
-    // Custom errors
-    error NotAuthorized();
-    error InvalidState();
-    error InvalidAmount();
-    error ConditionNotMet();
-    error AlreadyClaimed();
-    error InsuranceInactive();
-    error EscrowNotFunded();
-    error StakeLocked();
-
     // Access control
     address public owner;
     mapping(address => bool) public admins;
+    bool private _paused;
 
     // Escrow storage
     uint256 private nextEscrowId = 1;
@@ -56,6 +47,14 @@ contract FinancialEscrow is IFinancialEscrow {
         if (msg.sender != escrows[escrowId].seller) revert NotAuthorized();
         _;
     }
+    modifier whenNotPaused() {
+        if (_paused) revert Paused();
+        _;
+    }
+    modifier whenPaused() {
+        if (!_paused) revert InvalidState();
+        _;
+    }
 
     constructor() {
         owner = msg.sender;
@@ -67,11 +66,24 @@ contract FinancialEscrow is IFinancialEscrow {
         admins[admin] = isAdmin;
     }
 
+    // Pausable
+    function pause() external override onlyOwner {
+        _paused = true;
+        emit Paused(msg.sender);
+    }
+    function unpause() external override onlyOwner {
+        _paused = false;
+        emit Unpaused(msg.sender);
+    }
+    function paused() external view override returns (bool) {
+        return _paused;
+    }
+
     // Escrow
-    function createEscrow(address seller, uint256 propertyId, uint256 purchasePrice, uint256 releaseDate, string calldata conditions) external override returns (uint256) {
-        require(seller != address(0), "Invalid seller");
-        require(purchasePrice > 0, "Price must be positive");
-        require(releaseDate > block.timestamp, "Release date in past");
+    function createEscrow(address seller, uint256 propertyId, uint256 purchasePrice, uint256 releaseDate, string calldata conditions) external override whenNotPaused returns (uint256) {
+        if (seller == address(0)) revert InvalidAmount();
+        if (purchasePrice == 0) revert InvalidAmount();
+        if (releaseDate <= block.timestamp) revert InvalidAmount();
         uint256 escrowId = nextEscrowId++;
         escrows[escrowId] = Escrow({
             id: escrowId,
@@ -89,43 +101,57 @@ contract FinancialEscrow is IFinancialEscrow {
         return escrowId;
     }
 
-    function fundEscrow(uint256 escrowId) external payable override onlyBuyer(escrowId) {
+    function fundEscrow(uint256 escrowId) external payable override onlyBuyer(escrowId) whenNotPaused {
         Escrow storage e = escrows[escrowId];
-        require(e.state == EscrowState.CREATED, "Escrow not in CREATED");
-        require(msg.value == e.purchasePrice, "Incorrect amount");
+        if (e.state != EscrowState.CREATED) revert InvalidState();
+        if (msg.value != e.purchasePrice) revert InvalidAmount();
         e.state = EscrowState.FUNDED;
         escrowFunded[escrowId] = true;
         emit EscrowFunded(escrowId, msg.sender, msg.value);
     }
 
-    function markConditionMet(uint256 escrowId, string calldata condition) external override onlyBuyer(escrowId) {
+    function markConditionMet(uint256 escrowId, string calldata condition) external override onlyBuyer(escrowId) whenNotPaused {
         Escrow storage e = escrows[escrowId];
-        require(e.state == EscrowState.FUNDED || e.state == EscrowState.DOCUMENTS_VERIFIED, "Invalid state");
+        if (e.state != EscrowState.FUNDED && e.state != EscrowState.DOCUMENTS_VERIFIED) revert InvalidState();
         escrowConditionsMet[escrowId][condition] = true;
         e.state = EscrowState.CONDITIONS_MET;
         emit ConditionMet(escrowId, condition);
     }
 
-    function releaseFunds(uint256 escrowId) external override onlySeller(escrowId) {
+    function updateEscrowConditions(uint256 escrowId, string calldata newConditions) external override onlyBuyer(escrowId) whenNotPaused {
         Escrow storage e = escrows[escrowId];
-        require(e.state == EscrowState.CONDITIONS_MET, "Conditions not met");
-        require(block.timestamp >= e.releaseDate, "Release date not reached");
-        require(escrowFunded[escrowId], "Not funded");
+        e.conditions = newConditions;
+        emit EscrowConditionsUpdated(escrowId, newConditions);
+    }
+
+    function releaseFunds(uint256 escrowId) external override onlySeller(escrowId) whenNotPaused {
+        Escrow storage e = escrows[escrowId];
+        if (e.state != EscrowState.CONDITIONS_MET) revert ConditionNotMet();
+        if (block.timestamp < e.releaseDate) revert InvalidState();
+        if (!escrowFunded[escrowId]) revert EscrowNotFunded();
         e.state = EscrowState.RELEASED;
         escrowFunded[escrowId] = false;
         (bool sent, ) = e.seller.call{value: e.purchasePrice}("");
-        require(sent, "Transfer failed");
+        if (!sent) revert InvalidState();
         emit FundsReleased(escrowId, e.seller, e.purchasePrice);
     }
 
-    function refundFunds(uint256 escrowId) external override onlyBuyer(escrowId) {
+    function refundFunds(uint256 escrowId) external override onlyBuyer(escrowId) whenNotPaused {
         Escrow storage e = escrows[escrowId];
-        require(e.state == EscrowState.FUNDED, "Not funded");
+        if (e.state != EscrowState.FUNDED) revert InvalidState();
         e.state = EscrowState.REFUNDED;
         escrowFunded[escrowId] = false;
         (bool sent, ) = e.buyer.call{value: e.purchasePrice}("");
-        require(sent, "Refund failed");
+        if (!sent) revert InvalidState();
         emit FundsRefunded(escrowId, e.buyer, e.purchasePrice);
+    }
+
+    function slashEscrow(uint256 escrowId, string calldata reason) external override onlyAdmin whenNotPaused {
+        Escrow storage e = escrows[escrowId];
+        if (e.state != EscrowState.FUNDED && e.state != EscrowState.CONDITIONS_MET) revert InvalidState();
+        e.state = EscrowState.SLASHED;
+        escrowFunded[escrowId] = false;
+        emit EscrowSlashed(escrowId, reason);
     }
 
     function getEscrow(uint256 escrowId) external view override returns (Escrow memory) {
@@ -137,14 +163,20 @@ contract FinancialEscrow is IFinancialEscrow {
     }
 
     // Milestones
-    function addMilestone(uint256 escrowId, uint256 amount, uint256 dueDate, string calldata description) external override onlyBuyer(escrowId) {
-        require(amount > 0, "Amount must be positive");
+    function addMilestone(uint256 escrowId, uint256 amount, uint256 dueDate, string calldata description) external override onlyBuyer(escrowId) whenNotPaused {
+        if (amount == 0) revert InvalidAmount();
         milestones[escrowId].push(Milestone({amount: amount, dueDate: dueDate, description: description, completed: false}));
         emit MilestoneAdded(escrowId, amount, dueDate, description);
     }
 
-    function markMilestoneComplete(uint256 escrowId, uint256 milestoneIndex) external override onlyBuyer(escrowId) {
-        require(milestoneIndex < milestones[escrowId].length, "Invalid index");
+    function updateMilestone(uint256 escrowId, uint256 milestoneIndex, uint256 amount, uint256 dueDate, string calldata description) external override onlyBuyer(escrowId) whenNotPaused {
+        if (milestoneIndex >= milestones[escrowId].length) revert InvalidMilestone();
+        milestones[escrowId][milestoneIndex] = Milestone({amount: amount, dueDate: dueDate, description: description, completed: false});
+        emit MilestoneUpdated(escrowId, milestoneIndex, amount, dueDate, description);
+    }
+
+    function markMilestoneComplete(uint256 escrowId, uint256 milestoneIndex) external override onlyBuyer(escrowId) whenNotPaused {
+        if (milestoneIndex >= milestones[escrowId].length) revert InvalidMilestone();
         milestones[escrowId][milestoneIndex].completed = true;
         emit MilestoneCompleted(escrowId, milestoneIndex);
     }
@@ -154,31 +186,39 @@ contract FinancialEscrow is IFinancialEscrow {
     }
 
     // Staking
-    function createStake(uint256 amount, uint256 lockPeriod, string calldata stakeType) external override returns (uint256) {
-        require(amount > 0, "Amount must be positive");
-        require(lockPeriod > 0, "Lock period required");
+    function createStake(uint256 amount, uint256 lockPeriod, string calldata stakeType) external override whenNotPaused returns (uint256) {
+        if (amount == 0) revert InvalidAmount();
+        if (lockPeriod == 0) revert InvalidAmount();
         uint256 stakeId = nextStakeId++;
-        stakes[stakeId] = Stake({id: stakeId, staker: msg.sender, amount: amount, lockUntil: block.timestamp + lockPeriod, stakeType: stakeType, claimed: false});
+        stakes[stakeId] = Stake({id: stakeId, staker: msg.sender, amount: amount, lockUntil: block.timestamp + lockPeriod, stakeType: stakeType, claimed: false, slashed: false});
         userStakes[msg.sender].push(stakeId);
         emit StakeCreated(stakeId, msg.sender, amount, stakeType);
         return stakeId;
     }
 
-    function claimStake(uint256 stakeId) external override {
+    function claimStake(uint256 stakeId) external override whenNotPaused {
         Stake storage s = stakes[stakeId];
         if (msg.sender != s.staker) revert NotAuthorized();
         if (block.timestamp < s.lockUntil) revert StakeLocked();
         if (s.claimed) revert AlreadyClaimed();
+        if (s.slashed) revert InvalidState();
         uint256 reward = calculateStakingReward(stakeId);
         s.claimed = true;
         (bool sent, ) = s.staker.call{value: s.amount + reward}("");
-        require(sent, "Claim failed");
+        if (!sent) revert InvalidState();
         emit StakeClaimed(stakeId, s.staker, reward);
+    }
+
+    function slashStake(uint256 stakeId, string calldata reason) external override onlyAdmin whenNotPaused {
+        Stake storage s = stakes[stakeId];
+        if (s.slashed) revert InvalidState();
+        s.slashed = true;
+        emit StakeSlashed(stakeId, reason);
     }
 
     function calculateStakingReward(uint256 stakeId) public view override returns (uint256) {
         Stake storage s = stakes[stakeId];
-        if (block.timestamp < s.lockUntil) return 0;
+        if (block.timestamp < s.lockUntil || s.slashed) return 0;
         uint256 duration = s.lockUntil - (s.lockUntil - SECONDS_IN_YEAR);
         return (s.amount * STAKING_REWARD_RATE * duration) / (100 * SECONDS_IN_YEAR);
     }
@@ -188,14 +228,26 @@ contract FinancialEscrow is IFinancialEscrow {
     }
 
     // Insurance
-    function purchaseInsurance(uint256 propertyId, uint256 premium, uint256 coverageAmount) external payable override returns (uint256) {
-        require(msg.value == premium, "Incorrect premium");
-        require(coverageAmount > 0, "Coverage required");
+    function purchaseInsurance(uint256 propertyId, uint256 premium, uint256 coverageAmount) external payable override whenNotPaused returns (uint256) {
+        if (msg.value != premium) revert InvalidAmount();
+        if (coverageAmount == 0) revert InvalidAmount();
         uint256 insuranceId = nextInsuranceId++;
-        insurances[insuranceId] = Insurance({id: insuranceId, insured: msg.sender, propertyId: propertyId, premium: premium, coverageAmount: coverageAmount, active: true});
+        insurances[insuranceId] = Insurance({id: insuranceId, insured: msg.sender, propertyId: propertyId, premium: premium, coverageAmount: coverageAmount, active: true, claimed: false});
         userInsurances[msg.sender].push(insuranceId);
         emit InsurancePurchased(insuranceId, msg.sender, propertyId);
         return insuranceId;
+    }
+
+    function claimInsurance(uint256 insuranceId, uint256 claimAmount) external override whenNotPaused {
+        Insurance storage ins = insurances[insuranceId];
+        if (msg.sender != ins.insured) revert NotAuthorized();
+        if (!ins.active || ins.claimed) revert InsuranceInactive();
+        if (claimAmount > ins.coverageAmount) revert InvalidAmount();
+        ins.claimed = true;
+        ins.active = false;
+        (bool sent, ) = ins.insured.call{value: claimAmount}("");
+        if (!sent) revert InvalidState();
+        emit InsuranceClaimed(insuranceId, ins.insured, claimAmount);
     }
 
     function getInsurance(uint256 insuranceId) external view override returns (Insurance memory) {
