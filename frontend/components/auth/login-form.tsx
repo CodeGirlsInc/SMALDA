@@ -25,3 +25,43 @@ export function LoginForm() {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     return emailRegex.test(email)
   }
+
+  const validateForm = (): boolean => {
+    const newErrors: FormErrors = {}
+
+    // Email validation
+    if (!email.trim()) {
+      newErrors.email = "Email is required"
+    } else if (!validateEmail(email)) {
+      newErrors.email = "Please enter a valid email address"
+    }
+
+    // Password validation
+    if (!password.trim()) {
+      newErrors.password = "Password is required"
+    }
+
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (!validateForm()) {
+      return
+    }
+
+    setIsLoading(true)
+
+    // Simulate API call
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+      console.log("Login attempt:", { email, password })
+      // Handle successful login here
+    } catch (error) {
+      console.error("Login error:", error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
