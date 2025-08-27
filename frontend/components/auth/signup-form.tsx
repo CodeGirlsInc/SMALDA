@@ -28,3 +28,31 @@ export function SignupForm() {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     return emailRegex.test(email)
   }
+
+  const validateForm = (): boolean => {
+    const newErrors: FormErrors = {}
+
+    // Email validation
+    if (!email.trim()) {
+      newErrors.email = "Email is required"
+    } else if (!validateEmail(email)) {
+      newErrors.email = "Please enter a valid email address"
+    }
+
+    // Password validation
+    if (!password.trim()) {
+      newErrors.password = "Password is required"
+    } else if (password.length < 6) {
+      newErrors.password = "Password must be at least 6 characters"
+    }
+
+    // Confirm password validation
+    if (!confirmPassword.trim()) {
+      newErrors.confirmPassword = "Please confirm your password"
+    } else if (password !== confirmPassword) {
+      newErrors.confirmPassword = "Passwords do not match"
+    }
+
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }
