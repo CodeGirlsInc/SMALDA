@@ -31,6 +31,24 @@ export default function LandingPage() {
         <nav className="ml-auto hidden md:flex gap-6">
           <Link
             className="text-sm font-medium hover:text-primary transition-colors"
+            href="/case-search"
+          >
+            Case Search
+          </Link>
+          <Link
+            className="text-sm font-medium hover:text-primary transition-colors"
+            href="/legal-chat"
+          >
+            Legal Chat
+          </Link>
+          <Link
+            className="text-sm font-medium hover:text-primary transition-colors"
+            href="/legal-report"
+          >
+            Legal Report
+          </Link>
+          <Link
+            className="text-sm font-medium hover:text-primary transition-colors"
             href="#features"
           >
             Features
@@ -70,10 +88,12 @@ export default function LandingPage() {
                   </p>
                 </div>
                 <div className="flex flex-col gap-2 min-[400px]:flex-row">
-                  <Button size="lg" className="text-lg px-8">
-                    Start Free Analysis
-                    <ArrowRight className="ml-2 h-5 w-5" />
-                  </Button>
+                  <Link href="/legal-report">
+                    <Button size="lg" className="text-lg px-8">
+                      Start Free Analysis
+                      <ArrowRight className="ml-2 h-5 w-5" />
+                    </Button>
+                  </Link>
                   <Button
                     variant="outline"
                     size="lg"
