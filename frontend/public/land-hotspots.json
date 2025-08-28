@@ -1,0 +1,84 @@
+{
+  "landHotspots": [
+    {
+      "id": 1,
+      "title": "Kaduna Land Dispute",
+      "description": "Boundary conflict between two communities",
+      "coordinates": [10.5222, 7.4383],
+      "severity": "high",
+      "status": "active",
+      "reportedDate": "2024-01-15",
+      "affectedArea": "500 hectares"
+    },
+    {
+      "id": 2,
+      "title": "Lagos Waterfront Dispute",
+      "description": "Commercial vs residential zoning conflict",
+      "coordinates": [6.5244, 3.3792],
+      "severity": "medium",
+      "status": "under_review",
+      "reportedDate": "2024-02-03",
+      "affectedArea": "120 hectares"
+    },
+    {
+      "id": 3,
+      "title": "Abuja Development Zone",
+      "description": "Indigenous land rights vs government acquisition",
+      "coordinates": [9.0765, 7.3986],
+      "severity": "high",
+      "status": "active",
+      "reportedDate": "2024-01-28",
+      "affectedArea": "800 hectares"
+    },
+    {
+      "id": 4,
+      "title": "Kano Agricultural Land",
+      "description": "Farmer-herder conflict over grazing rights",
+      "coordinates": [12.0022, 8.5919],
+      "severity": "medium",
+      "status": "resolved",
+      "reportedDate": "2023-11-12",
+      "affectedArea": "300 hectares"
+    },
+    {
+      "id": 5,
+      "title": "Port Harcourt Industrial Zone",
+      "description": "Oil company land acquisition dispute",
+      "coordinates": [4.8156, 7.0498],
+      "severity": "high",
+      "status": "active",
+      "reportedDate": "2024-02-10",
+      "affectedArea": "650 hectares"
+    },
+    {
+      "id": 6,
+      "title": "Ibadan Residential Expansion",
+      "description": "Urban expansion vs traditional land ownership",
+      "coordinates": [7.3775, 3.9470],
+      "severity": "low",
+      "status": "under_review",
+      "reportedDate": "2024-01-20",
+      "affectedArea": "200 hectares"
+    },
+    {
+      "id": 7,
+      "title": "Enugu Mining Rights",
+      "description": "Coal mining rights vs community land",
+      "coordinates": [6.5244, 7.5093],
+      "severity": "medium",
+      "status": "active",
+      "reportedDate": "2024-02-05",
+      "affectedArea": "400 hectares"
+    },
+    {
+      "id": 8,
+      "title": "Calabar Coastal Development",
+      "description": "Tourism development vs fishing community rights",
+      "coordinates": [4.9517, 8.3220],
+      "severity": "low",
+      "status": "resolved",
+      "reportedDate": "2023-12-08",
+      "affectedArea": "150 hectares"
+    }
+  ]
+}

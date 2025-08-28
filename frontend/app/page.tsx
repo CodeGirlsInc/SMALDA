@@ -49,6 +49,12 @@ export default function LandingPage() {
           </Link>
           <Link
             className="text-sm font-medium hover:text-primary transition-colors"
+            href="/land-map"
+          >
+            Land Map
+          </Link>
+          <Link
+            className="text-sm font-medium hover:text-primary transition-colors"
             href="#features"
           >
             Features
