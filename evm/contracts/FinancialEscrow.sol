@@ -97,3 +97,101 @@ contract FinancialEscrow is AccessControl, Pausable, ReentrancyGuard {
         uint256 rewards;
         bool slashed;
     }
+
+    struct Insurance {
+        uint256 id;
+        uint256 escrowId;
+        uint256 propertyId;
+        uint256 coverageAmount;
+        uint256 premium;
+        address beneficiary;
+        bool active;
+        uint256 purchasedAt;
+        uint256 expiresAt;
+    }
+
+    struct FeeStructure {
+        uint256 platformFeePercent; // Basis points (100 = 1%)
+        uint256 escrowFeePercent;
+        uint256 insurancePremiumPercent;
+        uint256 disputeResolutionFee;
+        uint256 minimumFee;
+    }
+
+    // State variables
+    mapping(uint256 => Escrow) public escrows;
+    mapping(uint256 => Stake) public stakes;
+    mapping(uint256 => Insurance) public insurancePolicies;
+    
+    FeeStructure public feeStructure;
+    uint256 public treasuryBalance;
+    uint256 public insurancePool;
+    
+    // Staking rewards and slashing
+    mapping(StakeType => uint256) public stakeRewardRates; // Basis points per year
+    mapping(StakeType => uint256) public minimumStakeAmounts;
+    mapping(address => uint256[]) public userStakes;
+
+    // Events
+    event EscrowCreated(uint256 indexed escrowId, address indexed buyer, address indexed seller, uint256 propertyId, uint256 amount);
+    event EscrowFunded(uint256 indexed escrowId, uint256 amount);
+    event EscrowReleased(uint256 indexed escrowId, uint256 amount, address recipient);
+    event EscrowRefunded(uint256 indexed escrowId, uint256 amount, address recipient);
+    event MilestoneCompleted(uint256 indexed escrowId, uint256 indexed milestoneId, uint256 amount);
+    event ConditionMet(uint256 indexed escrowId, uint256 indexed conditionId, address verifier);
+    
+    event StakeCreated(uint256 indexed stakeId, address indexed staker, StakeType stakeType, uint256 amount);
+    event StakeReleased(uint256 indexed stakeId, address indexed staker, uint256 amount, uint256 rewards);
+    event StakeSlashed(uint256 indexed stakeId, address indexed staker, uint256 slashedAmount, string reason);
+    
+    event InsurancePurchased(uint256 indexed insuranceId, uint256 indexed escrowId, uint256 coverageAmount, uint256 premium);
+    event InsuranceClaimed(uint256 indexed insuranceId, address indexed beneficiary, uint256 payoutAmount);
+    
+    event FeeCollected(uint256 amount, string feeType);
+    event TreasuryWithdrawal(address indexed recipient, uint256 amount);
+
+    constructor(
+        address _landRegistry,
+        address _documentVerification,
+        FeeStructure memory _feeStructure
+    ) {
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(ESCROW_AGENT_ROLE, msg.sender);
+        _grantRole(FINANCIAL_ADMIN_ROLE, msg.sender);
+        _grantRole(FEE_COLLECTOR_ROLE, msg.sender);
+
+        landRegistry = ILandRegistry(_landRegistry);
+        documentVerification = IDocumentVerification(_documentVerification);
+        feeStructure = _feeStructure;
+
+        // Initialize default stake parameters
+        stakeRewardRates[StakeType.VERIFIER_STAKE] = 500; // 5% APY
+        stakeRewardRates[StakeType.VALIDATOR_STAKE] = 800; // 8% APY
+        stakeRewardRates[StakeType.INSURANCE_STAKE] = 300; // 3% APY
+        stakeRewardRates[StakeType.PERFORMANCE_BOND] = 200; // 2% APY
+
+        minimumStakeAmounts[StakeType.VERIFIER_STAKE] = 1 ether;
+        minimumStakeAmounts[StakeType.VALIDATOR_STAKE] = 5 ether;
+        minimumStakeAmounts[StakeType.INSURANCE_STAKE] = 10 ether;
+        minimumStakeAmounts[StakeType.PERFORMANCE_BOND] = 2 ether;
+    }
+
+    // Escrow Functions
+    function createEscrow(
+        address _seller,
+        uint256 _propertyId,
+        uint256 _totalAmount,
+        uint256 _deadline,
+        bool _requiresInsurance,
+        string[] memory _milestoneDescriptions,
+        uint256[] memory _milestoneAmounts
+    ) external whenNotPaused returns (uint256) {
+        require(_seller != address(0), "Invalid seller address");
+        require(landRegistry.isValidProperty(_propertyId), "Invalid property");
+        require(landRegistry.getOwner(_propertyId) == _seller, "Seller not property owner");
+        require(_totalAmount > 0, "Amount must be greater than 0");
+        require(_deadline > block.timestamp, "Invalid deadline");
+        require(_milestoneDescriptions.length == _milestoneAmounts.length, "Milestone arrays length mismatch");
+
+        uint256 escrowId = _escrowIdCounter.current();
+        _escrowIdCounter.increment();
