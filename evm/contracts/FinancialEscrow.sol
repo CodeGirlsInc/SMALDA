@@ -297,3 +297,103 @@ contract FinancialEscrow is AccessControl, Pausable, ReentrancyGuard {
                 break;
             }
         }
+
+        if (allCompleted) {
+            escrow.status = EscrowStatus.RELEASED;
+            // Transfer property ownership
+            landRegistry.transferOwnership(escrow.propertyId, escrow.seller, escrow.buyer);
+            emit EscrowReleased(_escrowId, escrow.totalAmount, escrow.seller);
+        }
+    }
+
+    function refundEscrow(uint256 _escrowId, string memory _reason) 
+        external 
+        onlyRole(ESCROW_AGENT_ROLE) 
+        whenNotPaused 
+        nonReentrant 
+    {
+        Escrow storage escrow = escrows[_escrowId];
+        require(escrow.status == EscrowStatus.FUNDED, "Escrow not funded");
+        require(block.timestamp > escrow.deadline || bytes(_reason).length > 0, "Refund conditions not met");
+
+        escrow.status = EscrowStatus.REFUNDED;
+        uint256 refundAmount = escrow.totalAmount - escrow.releasedAmount;
+        
+        if (refundAmount > 0) {
+            payable(escrow.buyer).transfer(refundAmount);
+            emit EscrowRefunded(_escrowId, refundAmount, escrow.buyer);
+        }
+    }
+
+    // Condition Management
+    function addCondition(
+        uint256 _escrowId,
+        ConditionType _conditionType,
+        string memory _description,
+        bytes32 _documentHash
+    ) external onlyRole(ESCROW_AGENT_ROLE) {
+        Escrow storage escrow = escrows[_escrowId];
+        require(escrow.status == EscrowStatus.CREATED || escrow.status == EscrowStatus.FUNDED, "Invalid escrow status");
+
+        uint256 conditionId = escrow.conditionCount;
+        escrow.conditions[conditionId] = Condition({
+            id: conditionId,
+            conditionType: _conditionType,
+            description: _description,
+            met: false,
+            verifier: address(0),
+            metAt: 0,
+            documentHash: _documentHash
+        });
+        escrow.conditionCount++;
+    }
+
+    function markConditionMet(uint256 _escrowId, uint256 _conditionId) 
+        external 
+        onlyRole(ESCROW_AGENT_ROLE) 
+    {
+        Escrow storage escrow = escrows[_escrowId];
+        require(_conditionId < escrow.conditionCount, "Invalid condition ID");
+        
+        Condition storage condition = escrow.conditions[_conditionId];
+        require(!condition.met, "Condition already met");
+
+        // Verify document if required
+        if (condition.conditionType == ConditionType.DOCUMENT_VERIFICATION && condition.documentHash != bytes32(0)) {
+            require(documentVerification.verifyDocument(condition.documentHash), "Document verification failed");
+        }
+
+        condition.met = true;
+        condition.verifier = msg.sender;
+        condition.metAt = block.timestamp;
+
+        emit ConditionMet(_escrowId, _conditionId, msg.sender);
+    }
+
+    // Staking Functions
+    function createStake(StakeType _stakeType, uint256 _lockPeriod) 
+        external 
+        payable 
+        whenNotPaused 
+        returns (uint256) 
+    {
+        require(msg.value >= minimumStakeAmounts[_stakeType], "Insufficient stake amount");
+        require(_lockPeriod >= 30 days, "Lock period too short");
+
+        uint256 stakeId = _stakeIdCounter.current();
+        _stakeIdCounter.increment();
+
+        stakes[stakeId] = Stake({
+            id: stakeId,
+            staker: msg.sender,
+            stakeType: _stakeType,
+            amount: msg.value,
+            lockPeriod: _lockPeriod,
+            stakedAt: block.timestamp,
+            unlocksAt: block.timestamp + _lockPeriod,
+            active: true,
+            rewards: 0,
+            slashed: false
+        });
+
+        userStakes[msg.sender].push(stakeId);
