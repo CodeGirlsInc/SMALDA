@@ -397,3 +397,105 @@ contract FinancialEscrow is AccessControl, Pausable, ReentrancyGuard {
         });
 
         userStakes[msg.sender].push(stakeId);
+
+        emit StakeCreated(stakeId, msg.sender, _stakeType, msg.value);
+        return stakeId;
+    }
+
+    function releaseStake(uint256 _stakeId) external whenNotPaused nonReentrant {
+        Stake storage stake = stakes[_stakeId];
+        require(stake.staker == msg.sender, "Not stake owner");
+        require(stake.active, "Stake not active");
+        require(block.timestamp >= stake.unlocksAt, "Stake still locked");
+        require(!stake.slashed, "Stake has been slashed");
+
+        stake.active = false;
+
+        // Calculate rewards
+        uint256 stakingDuration = block.timestamp - stake.stakedAt;
+        uint256 annualReward = (stake.amount * stakeRewardRates[stake.stakeType]) / 10000;
+        uint256 rewards = (annualReward * stakingDuration) / 365 days;
+        stake.rewards = rewards;
+
+        uint256 totalPayout = stake.amount + rewards;
+        payable(msg.sender).transfer(totalPayout);
+
+        emit StakeReleased(_stakeId, msg.sender, stake.amount, rewards);
+    }
+
+    function slashStake(uint256 _stakeId, uint256 _slashAmount, string memory _reason) 
+        external 
+        onlyRole(FINANCIAL_ADMIN_ROLE) 
+    {
+        Stake storage stake = stakes[_stakeId];
+        require(stake.active, "Stake not active");
+        require(_slashAmount <= stake.amount, "Slash amount exceeds stake");
+
+        stake.amount -= _slashAmount;
+        stake.slashed = true;
+        treasuryBalance += _slashAmount;
+
+        emit StakeSlashed(_stakeId, stake.staker, _slashAmount, _reason);
+    }
+
+    // Insurance Functions
+    function purchaseInsurance(
+        uint256 _escrowId,
+        uint256 _coverageAmount,
+        uint256 _duration
+    ) external payable whenNotPaused returns (uint256) {
+        Escrow storage escrow = escrows[_escrowId];
+        require(escrow.buyer == msg.sender, "Only buyer can purchase insurance");
+        require(escrow.requiresInsurance, "Insurance not required for this escrow");
+
+        uint256 premium = (_coverageAmount * feeStructure.insurancePremiumPercent) / 10000;
+        require(msg.value >= premium, "Insufficient premium payment");
+
+        uint256 insuranceId = _insuranceIdCounter.current();
+        _insuranceIdCounter.increment();
+
+        insurancePolicies[insuranceId] = Insurance({
+            id: insuranceId,
+            escrowId: _escrowId,
+            propertyId: escrow.propertyId,
+            coverageAmount: _coverageAmount,
+            premium: premium,
+            beneficiary: msg.sender,
+            active: true,
+            purchasedAt: block.timestamp,
+            expiresAt: block.timestamp + _duration
+        });
+
+        escrow.insuranceId = insuranceId;
+        insurancePool += premium;
+
+        emit InsurancePurchased(insuranceId, _escrowId, _coverageAmount, premium);
+        return insuranceId;
+    }
+
+    function claimInsurance(uint256 _insuranceId, uint256 _claimAmount, string memory _reason) 
+        external 
+        onlyRole(FINANCIAL_ADMIN_ROLE) 
+        nonReentrant 
+    {
+        Insurance storage insurance = insurancePolicies[_insuranceId];
+        require(insurance.active, "Insurance not active");
+        require(block.timestamp <= insurance.expiresAt, "Insurance expired");
+        require(_claimAmount <= insurance.coverageAmount, "Claim exceeds coverage");
+        require(insurancePool >= _claimAmount, "Insufficient insurance pool");
+
+        insurance.active = false;
+        insurancePool -= _claimAmount;
+
+        payable(insurance.beneficiary).transfer(_claimAmount);
+
+        emit InsuranceClaimed(_insuranceId, insurance.beneficiary, _claimAmount);
+    }
+
+    // Treasury and Fee Management
+    function updateFeeStructure(FeeStructure memory _newFeeStructure) 
+        external 
+        onlyRole(FINANCIAL_ADMIN_ROLE) 
+    {
+        feeStructure = _newFeeStructure;
+    }
