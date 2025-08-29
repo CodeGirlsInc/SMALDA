@@ -499,3 +499,142 @@ contract FinancialEscrow is AccessControl, Pausable, ReentrancyGuard {
     {
         feeStructure = _newFeeStructure;
     }
+
+    function withdrawFromTreasury(address _recipient, uint256 _amount) 
+        external 
+        onlyRole(FEE_COLLECTOR_ROLE) 
+        nonReentrant 
+    {
+        require(_amount <= treasuryBalance, "Insufficient treasury balance");
+        require(_recipient != address(0), "Invalid recipient");
+
+        treasuryBalance -= _amount;
+        payable(_recipient).transfer(_amount);
+
+        emit TreasuryWithdrawal(_recipient, _amount);
+    }
+
+    // Admin Functions
+    function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _pause();
+    }
+
+    function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _unpause();
+    }
+
+    function updateStakeParameters(
+        StakeType _stakeType,
+        uint256 _rewardRate,
+        uint256 _minimumAmount
+    ) external onlyRole(FINANCIAL_ADMIN_ROLE) {
+        stakeRewardRates[_stakeType] = _rewardRate;
+        minimumStakeAmounts[_stakeType] = _minimumAmount;
+    }
+
+    // View Functions
+    function getEscrowDetails(uint256 _escrowId) external view returns (
+        address buyer,
+        address seller,
+        uint256 propertyId,
+        uint256 totalAmount,
+        uint256 releasedAmount,
+        EscrowStatus status,
+        uint256 createdAt,
+        uint256 deadline
+    ) {
+        Escrow storage escrow = escrows[_escrowId];
+        return (
+            escrow.buyer,
+            escrow.seller,
+            escrow.propertyId,
+            escrow.totalAmount,
+            escrow.releasedAmount,
+            escrow.status,
+            escrow.createdAt,
+            escrow.deadline
+        );
+    }
+
+    function getMilestone(uint256 _escrowId, uint256 _milestoneId) external view returns (
+        string memory description,
+        uint256 amount,
+        bool completed,
+        uint256 completedAt
+    ) {
+        Milestone storage milestone = escrows[_escrowId].milestones[_milestoneId];
+        return (milestone.description, milestone.amount, milestone.completed, milestone.completedAt);
+    }
+
+    function getCondition(uint256 _escrowId, uint256 _conditionId) external view returns (
+        ConditionType conditionType,
+        string memory description,
+        bool met,
+        address verifier,
+        uint256 metAt
+    ) {
+        Condition storage condition = escrows[_escrowId].conditions[_conditionId];
+        return (condition.conditionType, condition.description, condition.met, condition.verifier, condition.metAt);
+    }
+
+    function getUserStakes(address _user) external view returns (uint256[] memory) {
+        return userStakes[_user];
+    }
+
+    function getStakeDetails(uint256 _stakeId) external view returns (
+        address staker,
+        StakeType stakeType,
+        uint256 amount,
+        uint256 lockPeriod,
+        uint256 stakedAt,
+        uint256 unlocksAt,
+        bool active,
+        uint256 rewards,
+        bool slashed
+    ) {
+        Stake storage stake = stakes[_stakeId];
+        return (
+            stake.staker,
+            stake.stakeType,
+            stake.amount,
+            stake.lockPeriod,
+            stake.stakedAt,
+            stake.unlocksAt,
+            stake.active,
+            stake.rewards,
+            stake.slashed
+        );
+    }
+
+    function getInsuranceDetails(uint256 _insuranceId) external view returns (
+        uint256 escrowId,
+        uint256 propertyId,
+        uint256 coverageAmount,
+        uint256 premium,
+        address beneficiary,
+        bool active,
+        uint256 purchasedAt,
+        uint256 expiresAt
+    ) {
+        Insurance storage insurance = insurancePolicies[_insuranceId];
+        return (
+            insurance.escrowId,
+            insurance.propertyId,
+            insurance.coverageAmount,
+            insurance.premium,
+            insurance.beneficiary,
+            insurance.active,
+            insurance.purchasedAt,
+            insurance.expiresAt
+        );
+    }
+
+    // Emergency functions
+    receive() external payable {
+        treasuryBalance += msg.value;
+    }
+
+    function emergencyWithdraw() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        payable(msg.sender).transfer(address(this).balance);
+    }
+}
