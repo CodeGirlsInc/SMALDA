@@ -195,3 +195,105 @@ contract FinancialEscrow is AccessControl, Pausable, ReentrancyGuard {
 
         uint256 escrowId = _escrowIdCounter.current();
         _escrowIdCounter.increment();
+
+        Escrow storage newEscrow = escrows[escrowId];
+        newEscrow.id = escrowId;
+        newEscrow.buyer = msg.sender;
+        newEscrow.seller = _seller;
+        newEscrow.propertyId = _propertyId;
+        newEscrow.totalAmount = _totalAmount;
+        newEscrow.status = EscrowStatus.CREATED;
+        newEscrow.createdAt = block.timestamp;
+        newEscrow.deadline = _deadline;
+        newEscrow.requiresInsurance = _requiresInsurance;
+
+        // Create milestones
+        uint256 totalMilestoneAmount = 0;
+        for (uint256 i = 0; i < _milestoneDescriptions.length; i++) {
+            newEscrow.milestones[i] = Milestone({
+                id: i,
+                description: _milestoneDescriptions[i],
+                amount: _milestoneAmounts[i],
+                completed: false,
+                completedAt: 0,
+                requiredConditions: new bytes32[](0)
+            });
+            totalMilestoneAmount += _milestoneAmounts[i];
+        }
+        newEscrow.milestoneCount = _milestoneDescriptions.length;
+
+        require(totalMilestoneAmount == _totalAmount, "Milestone amounts don't match total");
+
+        emit EscrowCreated(escrowId, msg.sender, _seller, _propertyId, _totalAmount);
+        return escrowId;
+    }
+
+    function fundEscrow(uint256 _escrowId) external payable whenNotPaused nonReentrant {
+        Escrow storage escrow = escrows[_escrowId];
+        require(escrow.buyer == msg.sender, "Only buyer can fund escrow");
+        require(escrow.status == EscrowStatus.CREATED, "Escrow not in created status");
+        require(msg.value == escrow.totalAmount, "Incorrect funding amount");
+
+        escrow.status = EscrowStatus.FUNDED;
+
+        // Collect platform fee
+        uint256 platformFee = (msg.value * feeStructure.platformFeePercent) / 10000;
+        if (platformFee < feeStructure.minimumFee) {
+            platformFee = feeStructure.minimumFee;
+        }
+        treasuryBalance += platformFee;
+
+        emit EscrowFunded(_escrowId, msg.value);
+        emit FeeCollected(platformFee, "platform");
+    }
+
+    function completeMilestone(uint256 _escrowId, uint256 _milestoneId) 
+        external 
+        onlyRole(ESCROW_AGENT_ROLE) 
+        whenNotPaused 
+        nonReentrant 
+    {
+        Escrow storage escrow = escrows[_escrowId];
+        require(escrow.status == EscrowStatus.FUNDED, "Escrow not funded");
+        require(_milestoneId < escrow.milestoneCount, "Invalid milestone ID");
+        
+        Milestone storage milestone = escrow.milestones[_milestoneId];
+        require(!milestone.completed, "Milestone already completed");
+
+        // Check if all required conditions are met
+        for (uint256 i = 0; i < milestone.requiredConditions.length; i++) {
+            bytes32 conditionHash = milestone.requiredConditions[i];
+            bool conditionMet = false;
+            
+            for (uint256 j = 0; j < escrow.conditionCount; j++) {
+                if (keccak256(abi.encodePacked(escrow.conditions[j].description)) == conditionHash && 
+                    escrow.conditions[j].met) {
+                    conditionMet = true;
+                    break;
+                }
+            }
+            require(conditionMet, "Required condition not met");
+        }
+
+        milestone.completed = true;
+        milestone.completedAt = block.timestamp;
+        escrow.releasedAmount += milestone.amount;
+
+        // Transfer funds to seller
+        uint256 escrowFee = (milestone.amount * feeStructure.escrowFeePercent) / 10000;
+        uint256 transferAmount = milestone.amount - escrowFee;
+        
+        treasuryBalance += escrowFee;
+        payable(escrow.seller).transfer(transferAmount);
+
+        emit MilestoneCompleted(_escrowId, _milestoneId, transferAmount);
+        emit FeeCollected(escrowFee, "escrow");
+
+        // Check if all milestones completed
+        bool allCompleted = true;
+        for (uint256 i = 0; i < escrow.milestoneCount; i++) {
+            if (!escrow.milestones[i].completed) {
+                allCompleted = false;
+                break;
+            }
+        }
