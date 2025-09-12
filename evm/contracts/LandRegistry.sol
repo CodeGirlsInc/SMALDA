@@ -252,3 +252,54 @@ contract LandRegistry is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuar
         request.status = TransferStatus.CANCELLED;
     }
 
+
+    function raiseDispute(uint256 tokenId, string memory reason) external {
+        require(_exists(tokenId), "Property does not exist");
+        require(properties[tokenId].disputeStatus == DisputeStatus.NONE, "Dispute already exists");
+        require(bytes(reason).length > 0, "Dispute reason required");
+
+        properties[tokenId].disputeStatus = DisputeStatus.PENDING;
+        properties[tokenId].disputeReason = reason;
+
+        emit DisputeRaised(tokenId, msg.sender, reason);
+    }
+
+    function resolveDispute(uint256 tokenId, bool upheld) external onlyRole(VERIFIER_ROLE) {
+        require(_exists(tokenId), "Property does not exist");
+        require(properties[tokenId].disputeStatus == DisputeStatus.PENDING, "No pending dispute");
+
+        properties[tokenId].disputeStatus = upheld ? 
+            DisputeStatus.RESOLVED_UPHELD : 
+            DisputeStatus.RESOLVED_DISMISSED;
+
+        emit DisputeResolved(tokenId, msg.sender, upheld);
+    }
+
+    function updatePropertyValue(uint256 tokenId, uint256 newValue) external onlyRole(VERIFIER_ROLE) {
+        require(_exists(tokenId), "Property does not exist");
+        require(newValue > 0, "Value must be greater than 0");
+
+        uint256 oldValue = properties[tokenId].currentValue;
+        properties[tokenId].currentValue = newValue;
+
+        emit PropertyValueUpdated(tokenId, oldValue, newValue);
+    }
+
+    function addDocumentHash(uint256 tokenId, string memory documentHash) external {
+        require(_exists(tokenId), "Property does not exist");
+        require(ownerOf(tokenId) == msg.sender || hasRole(REGISTRAR_ROLE, msg.sender), "Not authorized");
+        require(bytes(documentHash).length > 0, "Document hash required");
+
+        properties[tokenId].documentHashes.push(documentHash);
+        emit DocumentAdded(tokenId, documentHash);
+    }
+
+    // View Functions
+    function getProperty(uint256 tokenId) external view returns (LandProperty memory) {
+        require(_exists(tokenId), "Property does not exist");
+        return properties[tokenId];
+    }
+
+    function getPropertiesByOwner(address owner) external view returns (uint256[] memory) {
+        return ownerProperties[owner];
+    }
