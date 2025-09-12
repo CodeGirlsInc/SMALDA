@@ -150,3 +150,55 @@ contract LandRegistry is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuar
         property.currentValue = initialValue;
         property.isVerified = false;
         property.disputeStatus = DisputeStatus.NONE;
+
+
+        // Update mappings
+        ownerProperties[owner].push(tokenId);
+        coordinatesToTokenId[coordinates] = tokenId;
+
+        emit PropertyRegistered(tokenId, owner, coordinates, area, propertyType);
+        return tokenId;
+    }
+
+    function verifyProperty(uint256 tokenId) external onlyRole(VERIFIER_ROLE) {
+        require(_exists(tokenId), "Property does not exist");
+        require(!properties[tokenId].isVerified, "Property already verified");
+
+        properties[tokenId].isVerified = true;
+        emit PropertyVerified(tokenId, msg.sender);
+    }
+
+    function requestTransfer(
+        uint256 tokenId,
+        address to,
+        uint256 price,
+        uint256 expiryDays,
+        string memory transferReason
+    ) external returns (uint256) {
+        require(_exists(tokenId), "Property does not exist");
+        require(ownerOf(tokenId) == msg.sender, "Not property owner");
+        require(to != address(0), "Invalid recipient address");
+        require(to != msg.sender, "Cannot transfer to self");
+        require(properties[tokenId].disputeStatus == DisputeStatus.NONE, "Property under dispute");
+
+        uint256 requestId = ++_requestIdCounter;
+        uint256 expiryDate = block.timestamp + (expiryDays * 1 days);
+
+        TransferRequest storage request = transferRequests[requestId];
+        request.requestId = requestId;
+        request.tokenId = tokenId;
+        request.from = msg.sender;
+        request.to = to;
+        request.price = price;
+        request.requestDate = block.timestamp;
+        request.expiryDate = expiryDate;
+        request.status = TransferStatus.PENDING;
+        request.escrowHeld = false;
+        request.transferReason = transferReason;
+
+        transferRequestCounter[tokenId]++;
+
+        emit TransferRequested(requestId, tokenId, msg.sender, to, price);
+        return requestId;
+    }
+
