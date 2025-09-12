@@ -65,3 +65,66 @@ describe("LandRegistry", () => {
       await landRegistry
         .connect(registrar)
         .registerProperty(user1.address, coordinates, 1000, 0, "Property 1", [], ethers.utils.parseEther("500"), "uri1")
+
+        await expect(
+        landRegistry
+          .connect(registrar)
+          .registerProperty(
+            user2.address,
+            coordinates,
+            2000,
+            0,
+            "Property 2",
+            [],
+            ethers.utils.parseEther("600"),
+            "uri2",
+          ),
+      ).to.be.revertedWith("Property already registered at these coordinates")
+    })
+  })
+
+  describe("Property Verification", () => {
+    beforeEach(async () => {
+      await landRegistry
+        .connect(registrar)
+        .registerProperty(
+          user1.address,
+          "40.7128,-74.0060",
+          1000,
+          0,
+          "Test Property",
+          [],
+          ethers.utils.parseEther("500"),
+          "uri1",
+        )
+    })
+
+    it("Should verify a property", async () => {
+      await expect(landRegistry.connect(verifier).verifyProperty(1))
+        .to.emit(landRegistry, "PropertyVerified")
+        .withArgs(1, verifier.address)
+
+      const property = await landRegistry.getProperty(1)
+      expect(property.isVerified).to.be.true
+    })
+
+    it("Should not allow non-verifiers to verify", async () => {
+      await expect(landRegistry.connect(user1).verifyProperty(1)).to.be.reverted
+    })
+  })
+
+  describe("Property Transfers", () => {
+    beforeEach(async () => {
+      await landRegistry
+        .connect(registrar)
+        .registerProperty(
+          user1.address,
+          "40.7128,-74.0060",
+          1000,
+          0,
+          "Test Property",
+          [],
+          ethers.utils.parseEther("500"),
+          "uri1",
+        )
+    })
