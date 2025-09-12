@@ -202,3 +202,53 @@ contract LandRegistry is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuar
         return requestId;
     }
 
+
+    function executeTransfer(uint256 requestId) external payable nonReentrant {
+        TransferRequest storage request = transferRequests[requestId];
+        require(request.status == TransferStatus.PENDING, "Invalid transfer request");
+        require(block.timestamp <= request.expiryDate, "Transfer request expired");
+        require(msg.sender == request.to, "Not authorized recipient");
+        require(msg.value >= request.price, "Insufficient payment");
+
+        uint256 tokenId = request.tokenId;
+        address from = request.from;
+        address to = request.to;
+
+        // Update request status
+        request.status = TransferStatus.COMPLETED;
+        request.escrowHeld = true;
+        _escrowBalances[requestId] = msg.value;
+
+        // Transfer NFT
+        _transfer(from, to, tokenId);
+
+        // Update property record
+        LandProperty storage property = properties[tokenId];
+        property.owner = to;
+        property.lastTransferDate = block.timestamp;
+
+        // Update owner mappings
+        _removeFromOwnerProperties(from, tokenId);
+        ownerProperties[to].push(tokenId);
+
+        // Transfer payment to seller
+        (bool success, ) = payable(from).call{value: request.price}("");
+        require(success, "Payment transfer failed");
+
+        // Refund excess payment
+        if (msg.value > request.price) {
+            (bool refundSuccess, ) = payable(to).call{value: msg.value - request.price}("");
+            require(refundSuccess, "Refund failed");
+        }
+
+        emit TransferExecuted(requestId, tokenId, from, to, request.price);
+    }
+
+    function cancelTransferRequest(uint256 requestId) external {
+        TransferRequest storage request = transferRequests[requestId];
+        require(request.status == TransferStatus.PENDING, "Cannot cancel this request");
+        require(msg.sender == request.from || msg.sender == request.to, "Not authorized");
+
+        request.status = TransferStatus.CANCELLED;
+    }
+
