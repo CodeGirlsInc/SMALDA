@@ -128,3 +128,70 @@ describe("LandRegistry", () => {
           "uri1",
         )
     })
+
+    
+    it("Should create a transfer request", async () => {
+      const price = ethers.utils.parseEther("600")
+
+      await expect(landRegistry.connect(user1).requestTransfer(1, user2.address, price, 30, "Property sale"))
+        .to.emit(landRegistry, "TransferRequested")
+        .withArgs(1, 1, user1.address, user2.address, price)
+
+      const request = await landRegistry.getTransferRequest(1)
+      expect(request.tokenId).to.equal(1)
+      expect(request.from).to.equal(user1.address)
+      expect(request.to).to.equal(user2.address)
+      expect(request.price).to.equal(price)
+    })
+
+    it("Should execute a transfer with payment", async () => {
+      const price = ethers.utils.parseEther("600")
+
+      await landRegistry.connect(user1).requestTransfer(1, user2.address, price, 30, "Property sale")
+
+      const initialBalance = await user1.getBalance()
+
+      await expect(landRegistry.connect(user2).executeTransfer(1, { value: price }))
+        .to.emit(landRegistry, "TransferExecuted")
+        .withArgs(1, 1, user1.address, user2.address, price)
+
+      // Check ownership transfer
+      expect(await landRegistry.ownerOf(1)).to.equal(user2.address)
+
+      // Check property record update
+      const property = await landRegistry.getProperty(1)
+      expect(property.owner).to.equal(user2.address)
+
+      // Check payment transfer
+      const finalBalance = await user1.getBalance()
+      expect(finalBalance.sub(initialBalance)).to.equal(price)
+    })
+  })
+
+  describe("Disputes", () => {
+    beforeEach(async () => {
+      await landRegistry
+        .connect(registrar)
+        .registerProperty(
+          user1.address,
+          "40.7128,-74.0060",
+          1000,
+          0,
+          "Test Property",
+          [],
+          ethers.utils.parseEther("500"),
+          "uri1",
+        )
+    })
+
+    it("Should raise a dispute", async () => {
+      const reason = "Boundary dispute"
+
+      await expect(landRegistry.connect(user2).raiseDispute(1, reason))
+        .to.emit(landRegistry, "DisputeRaised")
+        .withArgs(1, user2.address, reason)
+
+      const property = await landRegistry.getProperty(1)
+      expect(property.disputeStatus).to.equal(1) // PENDING
+      expect(property.disputeReason).to.equal(reason)
+    })
