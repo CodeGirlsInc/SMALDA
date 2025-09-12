@@ -99,3 +99,54 @@ contract LandRegistry is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuar
         bool upheld
     );
     
+
+    event PropertyValueUpdated(
+        uint256 indexed tokenId,
+        uint256 oldValue,
+        uint256 newValue
+    );
+    
+    event DocumentAdded(uint256 indexed tokenId, string documentHash);
+
+    constructor() ERC721("LandRegistry", "LAND") {
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(REGISTRAR_ROLE, msg.sender);
+        _grantRole(VERIFIER_ROLE, msg.sender);
+    }
+
+    // Core Functions
+    function registerProperty(
+        address owner,
+        string memory coordinates,
+        uint256 area,
+        PropertyType propertyType,
+        string memory legalDescription,
+        string[] memory documentHashes,
+        uint256 initialValue,
+        string memory tokenURI
+    ) external onlyRole(REGISTRAR_ROLE) returns (uint256) {
+        require(owner != address(0), "Invalid owner address");
+        require(bytes(coordinates).length > 0, "Coordinates required");
+        require(area > 0, "Area must be greater than 0");
+        require(coordinatesToTokenId[coordinates] == 0, "Property already registered at these coordinates");
+
+        uint256 tokenId = ++_tokenIdCounter;
+        
+        // Mint NFT
+        _safeMint(owner, tokenId);
+        _setTokenURI(tokenId, tokenURI);
+
+        // Create property record
+        LandProperty storage property = properties[tokenId];
+        property.tokenId = tokenId;
+        property.owner = owner;
+        property.coordinates = coordinates;
+        property.area = area;
+        property.propertyType = propertyType;
+        property.legalDescription = legalDescription;
+        property.documentHashes = documentHashes;
+        property.registrationDate = block.timestamp;
+        property.lastTransferDate = block.timestamp;
+        property.currentValue = initialValue;
+        property.isVerified = false;
+        property.disputeStatus = DisputeStatus.NONE;
