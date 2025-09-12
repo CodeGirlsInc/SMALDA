@@ -47,3 +47,55 @@ contract LandRegistry is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuar
         string transferReason;
     }
 
+
+    // State Variables
+    uint256 private _tokenIdCounter;
+    uint256 private _requestIdCounter;
+
+    // Mappings
+    mapping(uint256 => LandProperty) public properties;
+    mapping(uint256 => TransferRequest) public transferRequests;
+    mapping(address => uint256[]) public ownerProperties;
+    mapping(string => uint256) public coordinatesToTokenId;
+    mapping(uint256 => uint256) public transferRequestCounter;
+    mapping(uint256 => uint256) private _escrowBalances;
+
+    // Events
+    event PropertyRegistered(
+        uint256 indexed tokenId,
+        address indexed owner,
+        string coordinates,
+        uint256 area,
+        PropertyType propertyType
+    );
+    
+    event PropertyVerified(uint256 indexed tokenId, address indexed verifier);
+    
+    event TransferRequested(
+        uint256 indexed requestId,
+        uint256 indexed tokenId,
+        address indexed from,
+        address to,
+        uint256 price
+    );
+    
+    event TransferExecuted(
+        uint256 indexed requestId,
+        uint256 indexed tokenId,
+        address indexed from,
+        address to,
+        uint256 price
+    );
+    
+    event DisputeRaised(
+        uint256 indexed tokenId,
+        address indexed disputant,
+        string reason
+    );
+    
+    event DisputeResolved(
+        uint256 indexed tokenId,
+        address indexed resolver,
+        bool upheld
+    );
+    
