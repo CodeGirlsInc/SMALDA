@@ -303,3 +303,52 @@ contract LandRegistry is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuar
     function getPropertiesByOwner(address owner) external view returns (uint256[] memory) {
         return ownerProperties[owner];
     }
+
+
+    function getPropertyByCoordinates(string memory coordinates) external view returns (uint256) {
+        return coordinatesToTokenId[coordinates];
+    }
+
+    function getTransferRequest(uint256 requestId) external view returns (TransferRequest memory) {
+        return transferRequests[requestId];
+    }
+
+    // Internal Functions
+    function _removeFromOwnerProperties(address owner, uint256 tokenId) internal {
+        uint256[] storage properties = ownerProperties[owner];
+        for (uint256 i = 0; i < properties.length; i++) {
+            if (properties[i] == tokenId) {
+                properties[i] = properties[properties.length - 1];
+                properties.pop();
+                break;
+            }
+        }
+    }
+
+    // Override Functions
+    function _beforeTokenTransfer(
+        address from,
+        address to,
+        uint256 tokenId,
+        uint256 batchSize
+    ) internal override {
+        super._beforeTokenTransfer(from, to, tokenId, batchSize);
+        
+        // Prevent transfers if property is under dispute
+        if (from != address(0) && to != address(0)) {
+            require(properties[tokenId].disputeStatus == DisputeStatus.NONE, "Property under dispute");
+        }
+    }
+
+    function _burn(uint256 tokenId) internal override(ERC721, ERC721URIStorage) {
+        super._burn(tokenId);
+    }
+
+    function tokenURI(uint256 tokenId) public view override(ERC721, ERC721URIStorage) returns (string memory) {
+        return super.tokenURI(tokenId);
+    }
+
+    function supportsInterface(bytes4 interfaceId) public view override(ERC721, ERC721URIStorage, AccessControl) returns (bool) {
+        return super.supportsInterface(interfaceId);
+    }
+}
