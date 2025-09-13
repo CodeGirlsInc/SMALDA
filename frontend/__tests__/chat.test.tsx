@@ -1,7 +1,7 @@
-import { render, screen, waitFor } from "@testing-library/react"
-import userEvent from "@testing-library/user-event"
-import { Chat, type ChatMessage } from "@/components/chat"
-import jest from "jest" // Import jest to fix the undeclared variable error
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { Chat, type ChatMessage } from "@/components/chat";
+import jest from "jest"; // Import jest to fix the undeclared variable error
 
 // Mock data
 const mockMessages: ChatMessage[] = [
@@ -19,73 +19,77 @@ const mockMessages: ChatMessage[] = [
     timestamp: new Date("2024-01-01T10:01:00Z"),
     status: "sent",
   },
-]
+];
 
 describe("Chat Component", () => {
-  const user = userEvent.setup()
+  const user = userEvent.setup();
 
   beforeEach(() => {
-    jest.clearAllMocks()
-  })
+    jest.clearAllMocks();
+  });
 
   describe("Rendering", () => {
     it("renders chat interface with correct elements", () => {
-      render(<Chat />)
+      render(<Chat />);
 
-      expect(screen.getByText("Chat")).toBeInTheDocument()
-      expect(screen.getByTestId("chat-input")).toBeInTheDocument()
-      expect(screen.getByTestId("send-button")).toBeInTheDocument()
-      expect(screen.getByTestId("chat-messages")).toBeInTheDocument()
-    })
+      expect(screen.getByText("Chat")).toBeInTheDocument();
+      expect(screen.getByTestId("chat-input")).toBeInTheDocument();
+      expect(screen.getByTestId("send-button")).toBeInTheDocument();
+      expect(screen.getByTestId("chat-messages")).toBeInTheDocument();
+    });
 
     it("shows empty state when no messages", () => {
-      render(<Chat />)
+      render(<Chat />);
 
-      expect(screen.getByText("Start a conversation!")).toBeInTheDocument()
-    })
+      expect(screen.getByText("Start a conversation!")).toBeInTheDocument();
+    });
 
     it("renders existing messages", () => {
-      render(<Chat messages={mockMessages} />)
+      render(<Chat messages={mockMessages} />);
 
-      expect(screen.getByText("Hello, how can I help you?")).toBeInTheDocument()
-      expect(screen.getByText("I need help with my account")).toBeInTheDocument()
-    })
+      expect(
+        screen.getByText("Hello, how can I help you?")
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("I need help with my account")
+      ).toBeInTheDocument();
+    });
 
     it("applies disabled state correctly", () => {
-      render(<Chat disabled />)
+      render(<Chat disabled />);
 
-      expect(screen.getByTestId("chat-input")).toBeDisabled()
-      expect(screen.getByTestId("send-button")).toBeDisabled()
-    })
+      expect(screen.getByTestId("chat-input")).toBeDisabled();
+      expect(screen.getByTestId("send-button")).toBeDisabled();
+    });
 
     it("shows loading state", () => {
-      render(<Chat isLoading />)
+      render(<Chat isLoading />);
 
-      expect(screen.getByTestId("chat-input")).toBeDisabled()
-      expect(screen.getByTestId("send-button")).toBeDisabled()
-    })
-  })
+      expect(screen.getByTestId("chat-input")).toBeDisabled();
+      expect(screen.getByTestId("send-button")).toBeDisabled();
+    });
+  });
 
   describe("Message Display", () => {
     it("displays messages with correct styling for different roles", () => {
-      render(<Chat messages={mockMessages} />)
+      render(<Chat messages={mockMessages} />);
 
-      const assistantMessage = screen.getByTestId("message-assistant")
-      const userMessage = screen.getByTestId("message-user")
+      const assistantMessage = screen.getByTestId("message-assistant");
+      const userMessage = screen.getByTestId("message-user");
 
-      expect(assistantMessage).toBeInTheDocument()
-      expect(userMessage).toBeInTheDocument()
+      expect(assistantMessage).toBeInTheDocument();
+      expect(userMessage).toBeInTheDocument();
 
       // User messages should have different alignment
-      expect(userMessage).toHaveClass("flex-row-reverse")
-    })
+      expect(userMessage).toHaveClass("flex-row-reverse");
+    });
 
     it("shows timestamps when enabled", () => {
-      render(<Chat messages={mockMessages} showTimestamps />)
+      render(<Chat messages={mockMessages} showTimestamps />);
 
-      expect(screen.getByText("10:00")).toBeInTheDocument()
-      expect(screen.getByText("10:01")).toBeInTheDocument()
-    })
+      expect(screen.getByText("10:00")).toBeInTheDocument();
+      expect(screen.getByText("10:01")).toBeInTheDocument();
+    });
 
     it("displays message status indicators", () => {
       const messagesWithStatus: ChatMessage[] = [
@@ -96,205 +100,267 @@ describe("Chat Component", () => {
           timestamp: new Date(),
           status: "sending",
         },
-{
+        {
           id: "2",
           content: "Failed message",
           role: "user",
           timestamp: new Date(),
           status: "error",
         },
-      ]
+      ];
 
-      render(<Chat messages={messagesWithStatus} />)
+      render(<Chat messages={messagesWithStatus} />);
 
-      expect(screen.getByText("Failed to send")).toBeInTheDocument()
-    })
-  })
+      expect(screen.getByText("Failed to send")).toBeInTheDocument();
+    });
+  });
 
   describe("Input Handling", () => {
     it("updates input value when typing", async () => {
-      render(<Chat />)
+      render(<Chat />);
 
-      const input = screen.getByTestId("chat-input")
+      const input = screen.getByTestId("chat-input");
 
-      await user.type(input, "Hello world")
+      await user.type(input, "Hello world");
 
-      expect(input).toHaveValue("Hello world")
-    })
+      expect(input).toHaveValue("Hello world");
+    });
 
     it("respects maxLength limit", async () => {
-      render(<Chat maxLength={10} />)
+      render(<Chat maxLength={10} />);
 
-      const input = screen.getByTestId("chat-input")
+      const input = screen.getByTestId("chat-input");
 
-      await user.type(input, "This is a very long message that exceeds the limit")
+      await user.type(
+        input,
+        "This is a very long message that exceeds the limit"
+      );
 
-      expect(input).toHaveValue("This is a ")
-      expect(screen.getByText("10/10")).toBeInTheDocument()
-    })
+      expect(input).toHaveValue("This is a ");
+      expect(screen.getByText("10/10")).toBeInTheDocument();
+    });
 
     it("shows character count", async () => {
-      render(<Chat maxLength={100} />)
+      render(<Chat maxLength={100} />);
 
-      const input = screen.getByTestId("chat-input")
+      const input = screen.getByTestId("chat-input");
 
-      await user.type(input, "Hello")
+      await user.type(input, "Hello");
 
-      expect(screen.getByText("5/100")).toBeInTheDocument()
-    })
+      expect(screen.getByText("5/100")).toBeInTheDocument();
+    });
 
     it("clears input after sending message", async () => {
-      const onSendMessage = jest.fn().mockResolvedValue(undefined)
-      render(<Chat onSendMessage={onSendMessage} />)
+      const onSendMessage = jest.fn().mockResolvedValue(undefined);
+      render(<Chat onSendMessage={onSendMessage} />);
 
-      const input = screen.getByTestId("chat-input")
-      const sendButton = screen.getByTestId("send-button")
+      const input = screen.getByTestId("chat-input");
+      const sendButton = screen.getByTestId("send-button");
 
-      await user.type(input, "Test message")
-      await user.click(sendButton)
+      await user.type(input, "Test message");
+      await user.click(sendButton);
 
-      expect(input).toHaveValue("")
-    })
-  })
+      expect(input).toHaveValue("");
+    });
+  });
 
   describe("Button Interactions", () => {
     it("sends message when send button is clicked", async () => {
-      const onSendMessage = jest.fn().mockResolvedValue(undefined)
-      render(<Chat onSendMessage={onSendMessage} />)
+      const onSendMessage = jest.fn().mockResolvedValue(undefined);
+      render(<Chat onSendMessage={onSendMessage} />);
 
-      const input = screen.getByTestId("chat-input")
-      const sendButton = screen.getByTestId("send-button")
+      const input = screen.getByTestId("chat-input");
+      const sendButton = screen.getByTestId("send-button");
 
-      await user.type(input, "Test message")
-      await user.click(sendButton)
+      await user.type(input, "Test message");
+      await user.click(sendButton);
 
-      expect(onSendMessage).toHaveBeenCalledWith("Test message")
-    })
+      expect(onSendMessage).toHaveBeenCalledWith("Test message");
+    });
 
     it("sends message when Enter key is pressed", async () => {
-      const onSendMessage = jest.fn().mockResolvedValue(undefined)
-      render(<Chat onSendMessage={onSendMessage} />)
+      const onSendMessage = jest.fn().mockResolvedValue(undefined);
+      render(<Chat onSendMessage={onSendMessage} />);
 
-      const input = screen.getByTestId("chat-input")
+      const input = screen.getByTestId("chat-input");
 
-      await user.type(input, "Test message")
-      await user.keyboard("{Enter}")
+      await user.type(input, "Test message");
+      await user.keyboard("{Enter}");
 
-      expect(onSendMessage).toHaveBeenCalledWith("Test message")
-    })
+      expect(onSendMessage).toHaveBeenCalledWith("Test message");
+    });
 
     it("does not send message when Shift+Enter is pressed", async () => {
-      const onSendMessage = jest.fn().mockResolvedValue(undefined)
-      render(<Chat onSendMessage={onSendMessage} />)
+      const onSendMessage = jest.fn().mockResolvedValue(undefined);
+      render(<Chat onSendMessage={onSendMessage} />);
 
-      const input = screen.getByTestId("chat-input")
+      const input = screen.getByTestId("chat-input");
 
-      await user.type(input, "Test message")
-      await user.keyboard("{Shift>}{Enter}{/Shift}")
+      await user.type(input, "Test message");
+      await user.keyboard("{Shift>}{Enter}{/Shift}");
 
-      expect(onSendMessage).not.toHaveBeenCalled()
-    })
+      expect(onSendMessage).not.toHaveBeenCalled();
+    });
 
     it("disables send button when input is empty", () => {
-      render(<Chat />)
+      render(<Chat />);
 
-      const sendButton = screen.getByTestId("send-button")
+      const sendButton = screen.getByTestId("send-button");
 
-      expect(sendButton).toBeDisabled()
-    })
+      expect(sendButton).toBeDisabled();
+    });
 
     it("enables send button when input has content", async () => {
-      render(<Chat />)
+      render(<Chat />);
 
-      const input = screen.getByTestId("chat-input")
-      const sendButton = screen.getByTestId("send-button")
+      const input = screen.getByTestId("chat-input");
+      const sendButton = screen.getByTestId("send-button");
 
-      await user.type(input, "Test")
+      await user.type(input, "Test");
 
-      expect(sendButton).not.toBeDisabled()
-    })
+      expect(sendButton).not.toBeDisabled();
+    });
 
     it("does not send empty or whitespace-only messages", async () => {
-      const onSendMessage = jest.fn().mockResolvedValue(undefined)
-      render(<Chat onSendMessage={onSendMessage} />)
+      const onSendMessage = jest.fn().mockResolvedValue(undefined);
+      render(<Chat onSendMessage={onSendMessage} />);
 
-      const input = screen.getByTestId("chat-input")
-      const sendButton = screen.getByTestId("send-button")
+      const input = screen.getByTestId("chat-input");
+      const sendButton = screen.getByTestId("send-button");
 
-      await user.type(input, "   ")
-      await user.click(sendButton)
+      await user.type(input, "   ");
+      await user.click(sendButton);
 
-      expect(onSendMessage).not.toHaveBeenCalled()
-    })
-  })
+      expect(onSendMessage).not.toHaveBeenCalled();
+    });
+  });
 
   describe("Message Sending Flow", () => {
     it("adds user message immediately when sent", async () => {
-      const onSendMessage = jest.fn().mockResolvedValue(undefined)
-      const onMessageChange = jest.fn()
-      render(<Chat onSendMessage={onSendMessage} onMessageChange={onMessageChange} />)
+      const onSendMessage = jest.fn().mockResolvedValue(undefined);
+      const onMessageChange = jest.fn();
+      render(
+        <Chat onSendMessage={onSendMessage} onMessageChange={onMessageChange} />
+      );
 
-      const input = screen.getByTestId("chat-input")
-      const sendButton = screen.getByTestId("send-button")
+      const input = screen.getByTestId("chat-input");
+      const sendButton = screen.getByTestId("send-button");
 
-      await user.type(input, "Test message")
-      await user.click(sendButton)
+      await user.type(input, "Test message");
+      await user.click(sendButton);
 
       await waitFor(() => {
-        expect(screen.getByText("Test message")).toBeInTheDocument()
-      })
+        expect(screen.getByText("Test message")).toBeInTheDocument();
+      });
 
-      expect(onMessageChange).toHaveBeenCalled()
-    })
-
+      expect(onMessageChange).toHaveBeenCalled();
+    });
 
     it("shows typing indicator when processing", async () => {
-      const onSendMessage = jest.fn().mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 100)))
-      render(<Chat onSendMessage={onSendMessage} />)
+      const onSendMessage = jest
+        .fn()
+        .mockImplementation(
+          () => new Promise((resolve) => setTimeout(resolve, 100))
+        );
+      render(<Chat onSendMessage={onSendMessage} />);
 
-      const input = screen.getByTestId("chat-input")
-      const sendButton = screen.getByTestId("send-button")
+      const input = screen.getByTestId("chat-input");
+      const sendButton = screen.getByTestId("send-button");
 
-      await user.type(input, "Test message")
-      await user.click(sendButton)
+      await user.type(input, "Test message");
+      await user.click(sendButton);
 
-      expect(screen.getByTestId("typing-indicator")).toBeInTheDocument()
+      expect(screen.getByTestId("typing-indicator")).toBeInTheDocument();
 
       await waitFor(() => {
-        expect(screen.queryByTestId("typing-indicator")).not.toBeInTheDocument()
-      })
-    })
+        expect(
+          screen.queryByTestId("typing-indicator")
+        ).not.toBeInTheDocument();
+      });
+    });
 
     it("handles message sending errors", async () => {
-      const onSendMessage = jest.fn().mockRejectedValue(new Error("Send failed"))
-      render(<Chat onSendMessage={onSendMessage} />)
+      const onSendMessage = jest
+        .fn()
+        .mockRejectedValue(new Error("Send failed"));
+      render(<Chat onSendMessage={onSendMessage} />);
 
-      const input = screen.getByTestId("chat-input")
-      const sendButton = screen.getByTestId("send-button")
+      const input = screen.getByTestId("chat-input");
+      const sendButton = screen.getByTestId("send-button");
 
-      await user.type(input, "Test message")
-      await user.click(sendButton)
+      await user.type(input, "Test message");
+      await user.click(sendButton);
 
       await waitFor(() => {
-        expect(screen.getByText("Failed to send")).toBeInTheDocument()
-      })
-    })
+        expect(screen.getByText("Failed to send")).toBeInTheDocument();
+      });
+    });
 
     it("provides default bot response when no handler is provided", async () => {
-      render(<Chat />)
+      render(<Chat />);
 
-      const input = screen.getByTestId("chat-input")
-      const sendButton = screen.getByTestId("send-button")
+      const input = screen.getByTestId("chat-input");
+      const sendButton = screen.getByTestId("send-button");
 
-      await user.type(input, "Test message")
-      await user.click(sendButton)
+      await user.type(input, "Test message");
+      await user.click(sendButton);
 
       await waitFor(
         () => {
-          expect(screen.getByText('I received your message: "Test message"')).toBeInTheDocument()
+          expect(
+            screen.getByText('I received your message: "Test message"')
+          ).toBeInTheDocument();
         },
-        { timeout: 2000 },
-      )
-    })
-  })
+        { timeout: 2000 }
+      );
+    });
+  });
 
+  describe("Accessibility", () => {
+    it("focuses input on mount", () => {
+      render(<Chat />);
+
+      const input = screen.getByTestId("chat-input");
+      expect(document.activeElement).toBe(input);
+    });
+
+    it("has proper ARIA labels and roles", () => {
+      render(<Chat />);
+
+      const input = screen.getByTestId("chat-input");
+      const sendButton = screen.getByTestId("send-button");
+
+      expect(input).toHaveAttribute("type", "text");
+      expect(sendButton).toHaveAttribute("type", "button");
+    });
+
+    it("maintains proper focus management", async () => {
+      render(<Chat />);
+
+      const input = screen.getByTestId("chat-input");
+      const sendButton = screen.getByTestId("send-button");
+
+      await user.type(input, "Test");
+      await user.click(sendButton);
+
+      // Input should maintain focus after sending
+      expect(document.activeElement).toBe(input);
+    });
+  });
+
+  describe("Custom Props", () => {
+    it("uses custom placeholder", () => {
+      render(<Chat placeholder="Ask me anything..." />);
+
+      const input = screen.getByTestId("chat-input");
+      expect(input).toHaveAttribute("placeholder", "Ask me anything...");
+    });
+
+    it("applies custom className", () => {
+      render(<Chat className="custom-chat" />);
+
+      const chatContainer = screen.getByText("Chat").closest(".custom-chat");
+      expect(chatContainer).toBeInTheDocument();
+    });
+  });
+});
