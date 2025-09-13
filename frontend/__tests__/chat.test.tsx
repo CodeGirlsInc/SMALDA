@@ -247,3 +247,54 @@ describe("Chat Component", () => {
       expect(onMessageChange).toHaveBeenCalled()
     })
 
+
+    it("shows typing indicator when processing", async () => {
+      const onSendMessage = jest.fn().mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 100)))
+      render(<Chat onSendMessage={onSendMessage} />)
+
+      const input = screen.getByTestId("chat-input")
+      const sendButton = screen.getByTestId("send-button")
+
+      await user.type(input, "Test message")
+      await user.click(sendButton)
+
+      expect(screen.getByTestId("typing-indicator")).toBeInTheDocument()
+
+      await waitFor(() => {
+        expect(screen.queryByTestId("typing-indicator")).not.toBeInTheDocument()
+      })
+    })
+
+    it("handles message sending errors", async () => {
+      const onSendMessage = jest.fn().mockRejectedValue(new Error("Send failed"))
+      render(<Chat onSendMessage={onSendMessage} />)
+
+      const input = screen.getByTestId("chat-input")
+      const sendButton = screen.getByTestId("send-button")
+
+      await user.type(input, "Test message")
+      await user.click(sendButton)
+
+      await waitFor(() => {
+        expect(screen.getByText("Failed to send")).toBeInTheDocument()
+      })
+    })
+
+    it("provides default bot response when no handler is provided", async () => {
+      render(<Chat />)
+
+      const input = screen.getByTestId("chat-input")
+      const sendButton = screen.getByTestId("send-button")
+
+      await user.type(input, "Test message")
+      await user.click(sendButton)
+
+      await waitFor(
+        () => {
+          expect(screen.getByText('I received your message: "Test message"')).toBeInTheDocument()
+        },
+        { timeout: 2000 },
+      )
+    })
+  })
+
