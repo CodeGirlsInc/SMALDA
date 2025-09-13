@@ -49,3 +49,52 @@ describe("Upload Component", () => {
       expect(screen.getByTestId("file-input")).toBeDisabled()
     })
   })
+
+  describe("File Selection", () => {
+    it("handles file selection via input", async () => {
+      const onFilesChange = jest.fn()
+      render(<Upload onFilesChange={onFilesChange} />)
+
+      const fileInput = screen.getByTestId("file-input")
+
+      await user.upload(fileInput, mockFiles[0])
+
+      await waitFor(() => {
+        expect(onFilesChange).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            expect.objectContaining({
+              file: mockFiles[0],
+              status: "pending",
+              progress: 0,
+            }),
+          ]),
+        )
+      })
+    })
+
+    it("handles multiple file selection", async () => {
+      const onFilesChange = jest.fn()
+      render(<Upload onFilesChange={onFilesChange} multiple />)
+
+      const fileInput = screen.getByTestId("file-input")
+
+      await user.upload(fileInput, [mockFiles[0], mockFiles[1]])
+
+      await waitFor(() => {
+        expect(onFilesChange).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            expect.objectContaining({ file: mockFiles[0] }),
+            expect.objectContaining({ file: mockFiles[1] }),
+          ]),
+        )
+      })
+    })
+
+    it("respects maxFiles limit", async () => {
+      const onFilesChange = jest.fn()
+      render(<Upload onFilesChange={onFilesChange} maxFiles={1} />)
+
+      const fileInput = screen.getByTestId("file-input")
+
+      await user.upload(fileInput, [mockFiles[0], mockFiles[1]])
+
