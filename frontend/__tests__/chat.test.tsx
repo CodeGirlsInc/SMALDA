@@ -197,3 +197,53 @@ describe("Chat Component", () => {
 
     it("disables send button when input is empty", () => {
       render(<Chat />)
+
+      const sendButton = screen.getByTestId("send-button")
+
+      expect(sendButton).toBeDisabled()
+    })
+
+    it("enables send button when input has content", async () => {
+      render(<Chat />)
+
+      const input = screen.getByTestId("chat-input")
+      const sendButton = screen.getByTestId("send-button")
+
+      await user.type(input, "Test")
+
+      expect(sendButton).not.toBeDisabled()
+    })
+
+    it("does not send empty or whitespace-only messages", async () => {
+      const onSendMessage = jest.fn().mockResolvedValue(undefined)
+      render(<Chat onSendMessage={onSendMessage} />)
+
+      const input = screen.getByTestId("chat-input")
+      const sendButton = screen.getByTestId("send-button")
+
+      await user.type(input, "   ")
+      await user.click(sendButton)
+
+      expect(onSendMessage).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("Message Sending Flow", () => {
+    it("adds user message immediately when sent", async () => {
+      const onSendMessage = jest.fn().mockResolvedValue(undefined)
+      const onMessageChange = jest.fn()
+      render(<Chat onSendMessage={onSendMessage} onMessageChange={onMessageChange} />)
+
+      const input = screen.getByTestId("chat-input")
+      const sendButton = screen.getByTestId("send-button")
+
+      await user.type(input, "Test message")
+      await user.click(sendButton)
+
+      await waitFor(() => {
+        expect(screen.getByText("Test message")).toBeInTheDocument()
+      })
+
+      expect(onMessageChange).toHaveBeenCalled()
+    })
+
