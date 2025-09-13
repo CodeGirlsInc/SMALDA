@@ -146,3 +146,54 @@ describe("Chat Component", () => {
     it("clears input after sending message", async () => {
       const onSendMessage = jest.fn().mockResolvedValue(undefined)
       render(<Chat onSendMessage={onSendMessage} />)
+
+      const input = screen.getByTestId("chat-input")
+      const sendButton = screen.getByTestId("send-button")
+
+      await user.type(input, "Test message")
+      await user.click(sendButton)
+
+      expect(input).toHaveValue("")
+    })
+  })
+
+  describe("Button Interactions", () => {
+    it("sends message when send button is clicked", async () => {
+      const onSendMessage = jest.fn().mockResolvedValue(undefined)
+      render(<Chat onSendMessage={onSendMessage} />)
+
+      const input = screen.getByTestId("chat-input")
+      const sendButton = screen.getByTestId("send-button")
+
+      await user.type(input, "Test message")
+      await user.click(sendButton)
+
+      expect(onSendMessage).toHaveBeenCalledWith("Test message")
+    })
+
+    it("sends message when Enter key is pressed", async () => {
+      const onSendMessage = jest.fn().mockResolvedValue(undefined)
+      render(<Chat onSendMessage={onSendMessage} />)
+
+      const input = screen.getByTestId("chat-input")
+
+      await user.type(input, "Test message")
+      await user.keyboard("{Enter}")
+
+      expect(onSendMessage).toHaveBeenCalledWith("Test message")
+    })
+
+    it("does not send message when Shift+Enter is pressed", async () => {
+      const onSendMessage = jest.fn().mockResolvedValue(undefined)
+      render(<Chat onSendMessage={onSendMessage} />)
+
+      const input = screen.getByTestId("chat-input")
+
+      await user.type(input, "Test message")
+      await user.keyboard("{Shift>}{Enter}{/Shift}")
+
+      expect(onSendMessage).not.toHaveBeenCalled()
+    })
+
+    it("disables send button when input is empty", () => {
+      render(<Chat />)
