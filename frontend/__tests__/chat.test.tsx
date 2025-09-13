@@ -96,3 +96,53 @@ describe("Chat Component", () => {
           timestamp: new Date(),
           status: "sending",
         },
+{
+          id: "2",
+          content: "Failed message",
+          role: "user",
+          timestamp: new Date(),
+          status: "error",
+        },
+      ]
+
+      render(<Chat messages={messagesWithStatus} />)
+
+      expect(screen.getByText("Failed to send")).toBeInTheDocument()
+    })
+  })
+
+  describe("Input Handling", () => {
+    it("updates input value when typing", async () => {
+      render(<Chat />)
+
+      const input = screen.getByTestId("chat-input")
+
+      await user.type(input, "Hello world")
+
+      expect(input).toHaveValue("Hello world")
+    })
+
+    it("respects maxLength limit", async () => {
+      render(<Chat maxLength={10} />)
+
+      const input = screen.getByTestId("chat-input")
+
+      await user.type(input, "This is a very long message that exceeds the limit")
+
+      expect(input).toHaveValue("This is a ")
+      expect(screen.getByText("10/10")).toBeInTheDocument()
+    })
+
+    it("shows character count", async () => {
+      render(<Chat maxLength={100} />)
+
+      const input = screen.getByTestId("chat-input")
+
+      await user.type(input, "Hello")
+
+      expect(screen.getByText("5/100")).toBeInTheDocument()
+    })
+
+    it("clears input after sending message", async () => {
+      const onSendMessage = jest.fn().mockResolvedValue(undefined)
+      render(<Chat onSendMessage={onSendMessage} />)
