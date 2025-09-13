@@ -197,3 +197,55 @@ describe("Upload Component", () => {
         expect(screen.getByText("pending")).toBeInTheDocument()
       })
     })
+
+    
+    it("removes files when remove button is clicked", async () => {
+      const onFilesChange = jest.fn()
+      render(<Upload onFilesChange={onFilesChange} />)
+
+      const fileInput = screen.getByTestId("file-input")
+      await user.upload(fileInput, mockFiles[0])
+
+      await waitFor(() => {
+        expect(screen.getByText("test1.txt")).toBeInTheDocument()
+      })
+
+      const removeButton = screen.getByTestId(/remove-file-/)
+      await user.click(removeButton)
+
+      expect(onFilesChange).toHaveBeenLastCalledWith([])
+      expect(screen.queryByText("test1.txt")).not.toBeInTheDocument()
+    })
+
+    it("shows upload button when files are pending and onUpload is provided", async () => {
+      const onUpload = jest.fn()
+      render(<Upload onUpload={onUpload} />)
+
+      const fileInput = screen.getByTestId("file-input")
+      await user.upload(fileInput, mockFiles[0])
+
+      await waitFor(() => {
+        expect(screen.getByTestId("upload-button")).toBeInTheDocument()
+        expect(screen.getByText("Upload 1 file")).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe("Button Interactions", () => {
+    it("opens file dialog when browse button is clicked", async () => {
+      render(<Upload />)
+
+      const browseButton = screen.getByTestId("browse-button")
+      const fileInput = screen.getByTestId("file-input")
+
+      const clickSpy = jest.spyOn(fileInput, "click")
+
+      await user.click(browseButton)
+
+      expect(clickSpy).toHaveBeenCalled()
+    })
+
+    it("calls onUpload when upload button is clicked", async () => {
+      const onUpload = jest.fn().mockResolvedValue(undefined)
+      render(<Upload onUpload={onUpload} />)
+
