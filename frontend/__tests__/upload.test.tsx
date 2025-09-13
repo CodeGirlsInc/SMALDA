@@ -249,3 +249,55 @@ describe("Upload Component", () => {
       const onUpload = jest.fn().mockResolvedValue(undefined)
       render(<Upload onUpload={onUpload} />)
 
+
+      const fileInput = screen.getByTestId("file-input")
+      await user.upload(fileInput, mockFiles[0])
+
+      await waitFor(() => {
+        expect(screen.getByTestId("upload-button")).toBeInTheDocument()
+      })
+
+      const uploadButton = screen.getByTestId("upload-button")
+      await user.click(uploadButton)
+
+      expect(onUpload).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ file: mockFiles[0] })]))
+    })
+
+    it("handles upload success", async () => {
+      const onUpload = jest.fn().mockResolvedValue(undefined)
+      render(<Upload onUpload={onUpload} />)
+
+      const fileInput = screen.getByTestId("file-input")
+      await user.upload(fileInput, mockFiles[0])
+
+      const uploadButton = screen.getByTestId("upload-button")
+      await user.click(uploadButton)
+
+      await waitFor(() => {
+        expect(screen.getByText("success")).toBeInTheDocument()
+      })
+    })
+
+    it("handles upload error", async () => {
+      const onUpload = jest.fn().mockRejectedValue(new Error("Upload failed"))
+      render(<Upload onUpload={onUpload} />)
+
+      const fileInput = screen.getByTestId("file-input")
+      await user.upload(fileInput, mockFiles[0])
+
+      const uploadButton = screen.getByTestId("upload-button")
+      await user.click(uploadButton)
+
+      await waitFor(() => {
+        expect(screen.getByText("error")).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe("Input Handling", () => {
+    it("accepts specified file types", () => {
+      render(<Upload accept="image/*" />)
+
+      const fileInput = screen.getByTestId("file-input")
+      expect(fileInput).toHaveAttribute("accept", "image/*")
+    })
