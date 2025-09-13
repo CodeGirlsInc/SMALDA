@@ -1,63 +1,69 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react"
-import userEvent from "@testing-library/user-event"
-import { Upload } from "@/components/upload"
-import jest from "jest" // Import jest to declare the variable
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { Upload } from "@/components/upload";
+import jest from "jest"; // Import jest to declare the variable
 
 // Mock data
-const createMockFile = (name: string, size: number, type = "text/plain"): File => {
-  const file = new File(["test content"], name, { type })
-  Object.defineProperty(file, "size", { value: size })
-  return file
-}
+const createMockFile = (
+  name: string,
+  size: number,
+  type = "text/plain"
+): File => {
+  const file = new File(["test content"], name, { type });
+  Object.defineProperty(file, "size", { value: size });
+  return file;
+};
 
 const mockFiles = [
   createMockFile("test1.txt", 1024, "text/plain"),
   createMockFile("test2.jpg", 2048, "image/jpeg"),
   createMockFile("large.pdf", 15 * 1024 * 1024, "application/pdf"), // 15MB - exceeds default limit
-]
+];
 
 describe("Upload Component", () => {
-  const user = userEvent.setup()
+  const user = userEvent.setup();
 
   beforeEach(() => {
-    jest.clearAllMocks()
-  })
+    jest.clearAllMocks();
+  });
 
   describe("Rendering", () => {
     it("renders upload area with correct elements", () => {
-      render(<Upload />)
+      render(<Upload />);
 
-      expect(screen.getByText("Drag and drop files here")).toBeInTheDocument()
-      expect(screen.getByText("or click to browse files")).toBeInTheDocument()
-      expect(screen.getByTestId("browse-button")).toBeInTheDocument()
-      expect(screen.getByTestId("file-input")).toBeInTheDocument()
-    })
+      expect(screen.getByText("Drag and drop files here")).toBeInTheDocument();
+      expect(screen.getByText("or click to browse files")).toBeInTheDocument();
+      expect(screen.getByTestId("browse-button")).toBeInTheDocument();
+      expect(screen.getByTestId("file-input")).toBeInTheDocument();
+    });
 
     it("renders with custom placeholder text when dragging", () => {
-      render(<Upload />)
+      render(<Upload />);
 
-      const uploadArea = screen.getByText("Drag and drop files here").closest(".border-dashed")
+      const uploadArea = screen
+        .getByText("Drag and drop files here")
+        .closest(".border-dashed");
 
-      fireEvent.dragOver(uploadArea!)
-      expect(screen.getByText("Drop files here")).toBeInTheDocument()
-    })
+      fireEvent.dragOver(uploadArea!);
+      expect(screen.getByText("Drop files here")).toBeInTheDocument();
+    });
 
     it("applies disabled state correctly", () => {
-      render(<Upload disabled />)
+      render(<Upload disabled />);
 
-      expect(screen.getByTestId("browse-button")).toBeDisabled()
-      expect(screen.getByTestId("file-input")).toBeDisabled()
-    })
-  })
+      expect(screen.getByTestId("browse-button")).toBeDisabled();
+      expect(screen.getByTestId("file-input")).toBeDisabled();
+    });
+  });
 
   describe("File Selection", () => {
     it("handles file selection via input", async () => {
-      const onFilesChange = jest.fn()
-      render(<Upload onFilesChange={onFilesChange} />)
+      const onFilesChange = jest.fn();
+      render(<Upload onFilesChange={onFilesChange} />);
 
-      const fileInput = screen.getByTestId("file-input")
+      const fileInput = screen.getByTestId("file-input");
 
-      await user.upload(fileInput, mockFiles[0])
+      await user.upload(fileInput, mockFiles[0]);
 
       await waitFor(() => {
         expect(onFilesChange).toHaveBeenCalledWith(
@@ -67,55 +73,58 @@ describe("Upload Component", () => {
               status: "pending",
               progress: 0,
             }),
-          ]),
-        )
-      })
-    })
+          ])
+        );
+      });
+    });
 
     it("handles multiple file selection", async () => {
-      const onFilesChange = jest.fn()
-      render(<Upload onFilesChange={onFilesChange} multiple />)
+      const onFilesChange = jest.fn();
+      render(<Upload onFilesChange={onFilesChange} multiple />);
 
-      const fileInput = screen.getByTestId("file-input")
+      const fileInput = screen.getByTestId("file-input");
 
-      await user.upload(fileInput, [mockFiles[0], mockFiles[1]])
+      await user.upload(fileInput, [mockFiles[0], mockFiles[1]]);
 
       await waitFor(() => {
         expect(onFilesChange).toHaveBeenCalledWith(
           expect.arrayContaining([
             expect.objectContaining({ file: mockFiles[0] }),
             expect.objectContaining({ file: mockFiles[1] }),
-          ]),
-        )
-      })
-    })
+          ])
+        );
+      });
+    });
 
     it("respects maxFiles limit", async () => {
-      const onFilesChange = jest.fn()
-      render(<Upload onFilesChange={onFilesChange} maxFiles={1} />)
+      const onFilesChange = jest.fn();
+      render(<Upload onFilesChange={onFilesChange} maxFiles={1} />);
 
-      const fileInput = screen.getByTestId("file-input")
+      const fileInput = screen.getByTestId("file-input");
 
-      await user.upload(fileInput, [mockFiles[0], mockFiles[1]])
-
+      await user.upload(fileInput, [mockFiles[0], mockFiles[1]]);
 
       await waitFor(() => {
         expect(onFilesChange).toHaveBeenCalledWith(
-          expect.arrayContaining([expect.objectContaining({ file: mockFiles[0] })]),
-        )
+          expect.arrayContaining([
+            expect.objectContaining({ file: mockFiles[0] }),
+          ])
+        );
         expect(onFilesChange).toHaveBeenCalledWith(
-          expect.not.arrayContaining([expect.objectContaining({ file: mockFiles[1] })]),
-        )
-      })
-    })
+          expect.not.arrayContaining([
+            expect.objectContaining({ file: mockFiles[1] }),
+          ])
+        );
+      });
+    });
 
     it("validates file size and shows error", async () => {
-      const onFilesChange = jest.fn()
-      render(<Upload onFilesChange={onFilesChange} maxSize={1024} />)
+      const onFilesChange = jest.fn();
+      render(<Upload onFilesChange={onFilesChange} maxSize={1024} />);
 
-      const fileInput = screen.getByTestId("file-input")
+      const fileInput = screen.getByTestId("file-input");
 
-      await user.upload(fileInput, mockFiles[1]) // 2048 bytes, exceeds 1024 limit
+      await user.upload(fileInput, mockFiles[1]); // 2048 bytes, exceeds 1024 limit
 
       await waitFor(() => {
         expect(onFilesChange).toHaveBeenCalledWith(
@@ -125,179 +134,230 @@ describe("Upload Component", () => {
               status: "error",
               error: expect.stringContaining("File size exceeds"),
             }),
-          ]),
-        )
-      })
-    })
-  })
+          ])
+        );
+      });
+    });
+  });
 
   describe("Drag and Drop", () => {
     it("handles drag over events", () => {
-      render(<Upload />)
+      render(<Upload />);
 
-      const uploadArea = screen.getByText("Drag and drop files here").closest(".border-dashed")
+      const uploadArea = screen
+        .getByText("Drag and drop files here")
+        .closest(".border-dashed");
 
       fireEvent.dragOver(uploadArea!, {
         dataTransfer: { files: mockFiles },
-      })
+      });
 
-      expect(uploadArea).toHaveClass("border-primary")
-    })
+      expect(uploadArea).toHaveClass("border-primary");
+    });
 
     it("handles drag leave events", () => {
-      render(<Upload />)
+      render(<Upload />);
 
-      const uploadArea = screen.getByText("Drag and drop files here").closest(".border-dashed")
+      const uploadArea = screen
+        .getByText("Drag and drop files here")
+        .closest(".border-dashed");
 
-      fireEvent.dragOver(uploadArea!)
-      fireEvent.dragLeave(uploadArea!)
+      fireEvent.dragOver(uploadArea!);
+      fireEvent.dragLeave(uploadArea!);
 
-      expect(uploadArea).not.toHaveClass("border-primary")
-    })
+      expect(uploadArea).not.toHaveClass("border-primary");
+    });
 
     it("handles file drop", async () => {
-      const onFilesChange = jest.fn()
-      render(<Upload onFilesChange={onFilesChange} />)
+      const onFilesChange = jest.fn();
+      render(<Upload onFilesChange={onFilesChange} />);
 
-      const uploadArea = screen.getByText("Drag and drop files here").closest(".border-dashed")
+      const uploadArea = screen
+        .getByText("Drag and drop files here")
+        .closest(".border-dashed");
 
       fireEvent.drop(uploadArea!, {
         dataTransfer: { files: [mockFiles[0]] },
-      })
+      });
 
       await waitFor(() => {
         expect(onFilesChange).toHaveBeenCalledWith(
-          expect.arrayContaining([expect.objectContaining({ file: mockFiles[0] })]),
-        )
-      })
-    })
+          expect.arrayContaining([
+            expect.objectContaining({ file: mockFiles[0] }),
+          ])
+        );
+      });
+    });
 
     it("ignores drag events when disabled", () => {
-      render(<Upload disabled />)
+      render(<Upload disabled />);
 
-      const uploadArea = screen.getByText("Drag and drop files here").closest(".border-dashed")
+      const uploadArea = screen
+        .getByText("Drag and drop files here")
+        .closest(".border-dashed");
 
-      fireEvent.dragOver(uploadArea!)
+      fireEvent.dragOver(uploadArea!);
 
-      expect(uploadArea).not.toHaveClass("border-primary")
-    })
-  })
+      expect(uploadArea).not.toHaveClass("border-primary");
+    });
+  });
 
   describe("File Management", () => {
     it("displays selected files with correct information", async () => {
-      render(<Upload />)
+      render(<Upload />);
 
-      const fileInput = screen.getByTestId("file-input")
-      await user.upload(fileInput, mockFiles[0])
+      const fileInput = screen.getByTestId("file-input");
+      await user.upload(fileInput, mockFiles[0]);
 
       await waitFor(() => {
-        expect(screen.getByText("Selected Files")).toBeInTheDocument()
-        expect(screen.getByText("test1.txt")).toBeInTheDocument()
-        expect(screen.getByText("1.0 KB")).toBeInTheDocument()
-        expect(screen.getByText("pending")).toBeInTheDocument()
-      })
-    })
+        expect(screen.getByText("Selected Files")).toBeInTheDocument();
+        expect(screen.getByText("test1.txt")).toBeInTheDocument();
+        expect(screen.getByText("1.0 KB")).toBeInTheDocument();
+        expect(screen.getByText("pending")).toBeInTheDocument();
+      });
+    });
 
-    
     it("removes files when remove button is clicked", async () => {
-      const onFilesChange = jest.fn()
-      render(<Upload onFilesChange={onFilesChange} />)
+      const onFilesChange = jest.fn();
+      render(<Upload onFilesChange={onFilesChange} />);
 
-      const fileInput = screen.getByTestId("file-input")
-      await user.upload(fileInput, mockFiles[0])
+      const fileInput = screen.getByTestId("file-input");
+      await user.upload(fileInput, mockFiles[0]);
 
       await waitFor(() => {
-        expect(screen.getByText("test1.txt")).toBeInTheDocument()
-      })
+        expect(screen.getByText("test1.txt")).toBeInTheDocument();
+      });
 
-      const removeButton = screen.getByTestId(/remove-file-/)
-      await user.click(removeButton)
+      const removeButton = screen.getByTestId(/remove-file-/);
+      await user.click(removeButton);
 
-      expect(onFilesChange).toHaveBeenLastCalledWith([])
-      expect(screen.queryByText("test1.txt")).not.toBeInTheDocument()
-    })
+      expect(onFilesChange).toHaveBeenLastCalledWith([]);
+      expect(screen.queryByText("test1.txt")).not.toBeInTheDocument();
+    });
 
     it("shows upload button when files are pending and onUpload is provided", async () => {
-      const onUpload = jest.fn()
-      render(<Upload onUpload={onUpload} />)
+      const onUpload = jest.fn();
+      render(<Upload onUpload={onUpload} />);
 
-      const fileInput = screen.getByTestId("file-input")
-      await user.upload(fileInput, mockFiles[0])
+      const fileInput = screen.getByTestId("file-input");
+      await user.upload(fileInput, mockFiles[0]);
 
       await waitFor(() => {
-        expect(screen.getByTestId("upload-button")).toBeInTheDocument()
-        expect(screen.getByText("Upload 1 file")).toBeInTheDocument()
-      })
-    })
-  })
+        expect(screen.getByTestId("upload-button")).toBeInTheDocument();
+        expect(screen.getByText("Upload 1 file")).toBeInTheDocument();
+      });
+    });
+  });
 
   describe("Button Interactions", () => {
     it("opens file dialog when browse button is clicked", async () => {
-      render(<Upload />)
+      render(<Upload />);
 
-      const browseButton = screen.getByTestId("browse-button")
-      const fileInput = screen.getByTestId("file-input")
+      const browseButton = screen.getByTestId("browse-button");
+      const fileInput = screen.getByTestId("file-input");
 
-      const clickSpy = jest.spyOn(fileInput, "click")
+      const clickSpy = jest.spyOn(fileInput, "click");
 
-      await user.click(browseButton)
+      await user.click(browseButton);
 
-      expect(clickSpy).toHaveBeenCalled()
-    })
+      expect(clickSpy).toHaveBeenCalled();
+    });
 
     it("calls onUpload when upload button is clicked", async () => {
-      const onUpload = jest.fn().mockResolvedValue(undefined)
-      render(<Upload onUpload={onUpload} />)
+      const onUpload = jest.fn().mockResolvedValue(undefined);
+      render(<Upload onUpload={onUpload} />);
 
-
-      const fileInput = screen.getByTestId("file-input")
-      await user.upload(fileInput, mockFiles[0])
+      const fileInput = screen.getByTestId("file-input");
+      await user.upload(fileInput, mockFiles[0]);
 
       await waitFor(() => {
-        expect(screen.getByTestId("upload-button")).toBeInTheDocument()
-      })
+        expect(screen.getByTestId("upload-button")).toBeInTheDocument();
+      });
 
-      const uploadButton = screen.getByTestId("upload-button")
-      await user.click(uploadButton)
+      const uploadButton = screen.getByTestId("upload-button");
+      await user.click(uploadButton);
 
-      expect(onUpload).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ file: mockFiles[0] })]))
-    })
+      expect(onUpload).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ file: mockFiles[0] }),
+        ])
+      );
+    });
 
     it("handles upload success", async () => {
-      const onUpload = jest.fn().mockResolvedValue(undefined)
-      render(<Upload onUpload={onUpload} />)
+      const onUpload = jest.fn().mockResolvedValue(undefined);
+      render(<Upload onUpload={onUpload} />);
 
-      const fileInput = screen.getByTestId("file-input")
-      await user.upload(fileInput, mockFiles[0])
+      const fileInput = screen.getByTestId("file-input");
+      await user.upload(fileInput, mockFiles[0]);
 
-      const uploadButton = screen.getByTestId("upload-button")
-      await user.click(uploadButton)
+      const uploadButton = screen.getByTestId("upload-button");
+      await user.click(uploadButton);
 
       await waitFor(() => {
-        expect(screen.getByText("success")).toBeInTheDocument()
-      })
-    })
+        expect(screen.getByText("success")).toBeInTheDocument();
+      });
+    });
 
     it("handles upload error", async () => {
-      const onUpload = jest.fn().mockRejectedValue(new Error("Upload failed"))
-      render(<Upload onUpload={onUpload} />)
+      const onUpload = jest.fn().mockRejectedValue(new Error("Upload failed"));
+      render(<Upload onUpload={onUpload} />);
 
-      const fileInput = screen.getByTestId("file-input")
-      await user.upload(fileInput, mockFiles[0])
+      const fileInput = screen.getByTestId("file-input");
+      await user.upload(fileInput, mockFiles[0]);
 
-      const uploadButton = screen.getByTestId("upload-button")
-      await user.click(uploadButton)
+      const uploadButton = screen.getByTestId("upload-button");
+      await user.click(uploadButton);
 
       await waitFor(() => {
-        expect(screen.getByText("error")).toBeInTheDocument()
-      })
-    })
-  })
+        expect(screen.getByText("error")).toBeInTheDocument();
+      });
+    });
+  });
 
   describe("Input Handling", () => {
     it("accepts specified file types", () => {
-      render(<Upload accept="image/*" />)
+      render(<Upload accept="image/*" />);
 
-      const fileInput = screen.getByTestId("file-input")
-      expect(fileInput).toHaveAttribute("accept", "image/*")
-    })
+      const fileInput = screen.getByTestId("file-input");
+      expect(fileInput).toHaveAttribute("accept", "image/*");
+    });
+
+    it("handles single file mode", () => {
+      render(<Upload multiple={false} />);
+
+      const fileInput = screen.getByTestId("file-input");
+      expect(fileInput).not.toHaveAttribute("multiple");
+    });
+
+    it("handles multiple file mode", () => {
+      render(<Upload multiple />);
+
+      const fileInput = screen.getByTestId("file-input");
+      expect(fileInput).toHaveAttribute("multiple");
+    });
+  });
+
+  describe("Accessibility", () => {
+    it("has proper ARIA labels and roles", () => {
+      render(<Upload />);
+
+      const browseButton = screen.getByTestId("browse-button");
+      const fileInput = screen.getByTestId("file-input");
+
+      expect(browseButton).toHaveAttribute("type", "button");
+      expect(fileInput).toHaveAttribute("type", "file");
+    });
+
+    it("maintains focus management", async () => {
+      render(<Upload />);
+
+      const browseButton = screen.getByTestId("browse-button");
+
+      await user.click(browseButton);
+
+      // File input should be focused after clicking browse
+      expect(document.activeElement).toBe(screen.getByTestId("file-input"));
+    });
+  });
+});
