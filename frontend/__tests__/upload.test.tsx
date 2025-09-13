@@ -98,3 +98,102 @@ describe("Upload Component", () => {
 
       await user.upload(fileInput, [mockFiles[0], mockFiles[1]])
 
+
+      await waitFor(() => {
+        expect(onFilesChange).toHaveBeenCalledWith(
+          expect.arrayContaining([expect.objectContaining({ file: mockFiles[0] })]),
+        )
+        expect(onFilesChange).toHaveBeenCalledWith(
+          expect.not.arrayContaining([expect.objectContaining({ file: mockFiles[1] })]),
+        )
+      })
+    })
+
+    it("validates file size and shows error", async () => {
+      const onFilesChange = jest.fn()
+      render(<Upload onFilesChange={onFilesChange} maxSize={1024} />)
+
+      const fileInput = screen.getByTestId("file-input")
+
+      await user.upload(fileInput, mockFiles[1]) // 2048 bytes, exceeds 1024 limit
+
+      await waitFor(() => {
+        expect(onFilesChange).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            expect.objectContaining({
+              file: mockFiles[1],
+              status: "error",
+              error: expect.stringContaining("File size exceeds"),
+            }),
+          ]),
+        )
+      })
+    })
+  })
+
+  describe("Drag and Drop", () => {
+    it("handles drag over events", () => {
+      render(<Upload />)
+
+      const uploadArea = screen.getByText("Drag and drop files here").closest(".border-dashed")
+
+      fireEvent.dragOver(uploadArea!, {
+        dataTransfer: { files: mockFiles },
+      })
+
+      expect(uploadArea).toHaveClass("border-primary")
+    })
+
+    it("handles drag leave events", () => {
+      render(<Upload />)
+
+      const uploadArea = screen.getByText("Drag and drop files here").closest(".border-dashed")
+
+      fireEvent.dragOver(uploadArea!)
+      fireEvent.dragLeave(uploadArea!)
+
+      expect(uploadArea).not.toHaveClass("border-primary")
+    })
+
+    it("handles file drop", async () => {
+      const onFilesChange = jest.fn()
+      render(<Upload onFilesChange={onFilesChange} />)
+
+      const uploadArea = screen.getByText("Drag and drop files here").closest(".border-dashed")
+
+      fireEvent.drop(uploadArea!, {
+        dataTransfer: { files: [mockFiles[0]] },
+      })
+
+      await waitFor(() => {
+        expect(onFilesChange).toHaveBeenCalledWith(
+          expect.arrayContaining([expect.objectContaining({ file: mockFiles[0] })]),
+        )
+      })
+    })
+
+    it("ignores drag events when disabled", () => {
+      render(<Upload disabled />)
+
+      const uploadArea = screen.getByText("Drag and drop files here").closest(".border-dashed")
+
+      fireEvent.dragOver(uploadArea!)
+
+      expect(uploadArea).not.toHaveClass("border-primary")
+    })
+  })
+
+  describe("File Management", () => {
+    it("displays selected files with correct information", async () => {
+      render(<Upload />)
+
+      const fileInput = screen.getByTestId("file-input")
+      await user.upload(fileInput, mockFiles[0])
+
+      await waitFor(() => {
+        expect(screen.getByText("Selected Files")).toBeInTheDocument()
+        expect(screen.getByText("test1.txt")).toBeInTheDocument()
+        expect(screen.getByText("1.0 KB")).toBeInTheDocument()
+        expect(screen.getByText("pending")).toBeInTheDocument()
+      })
+    })
