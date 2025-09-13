@@ -46,3 +46,53 @@ describe("Chat Component", () => {
 
     it("renders existing messages", () => {
       render(<Chat messages={mockMessages} />)
+
+      expect(screen.getByText("Hello, how can I help you?")).toBeInTheDocument()
+      expect(screen.getByText("I need help with my account")).toBeInTheDocument()
+    })
+
+    it("applies disabled state correctly", () => {
+      render(<Chat disabled />)
+
+      expect(screen.getByTestId("chat-input")).toBeDisabled()
+      expect(screen.getByTestId("send-button")).toBeDisabled()
+    })
+
+    it("shows loading state", () => {
+      render(<Chat isLoading />)
+
+      expect(screen.getByTestId("chat-input")).toBeDisabled()
+      expect(screen.getByTestId("send-button")).toBeDisabled()
+    })
+  })
+
+  describe("Message Display", () => {
+    it("displays messages with correct styling for different roles", () => {
+      render(<Chat messages={mockMessages} />)
+
+      const assistantMessage = screen.getByTestId("message-assistant")
+      const userMessage = screen.getByTestId("message-user")
+
+      expect(assistantMessage).toBeInTheDocument()
+      expect(userMessage).toBeInTheDocument()
+
+      // User messages should have different alignment
+      expect(userMessage).toHaveClass("flex-row-reverse")
+    })
+
+    it("shows timestamps when enabled", () => {
+      render(<Chat messages={mockMessages} showTimestamps />)
+
+      expect(screen.getByText("10:00")).toBeInTheDocument()
+      expect(screen.getByText("10:01")).toBeInTheDocument()
+    })
+
+    it("displays message status indicators", () => {
+      const messagesWithStatus: ChatMessage[] = [
+        {
+          id: "1",
+          content: "Sending message...",
+          role: "user",
+          timestamp: new Date(),
+          status: "sending",
+        },
