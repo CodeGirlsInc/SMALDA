@@ -401,3 +401,102 @@ contract DocumentVerification is AccessControl, ReentrancyGuard, Pausable {
         return statusDocuments[status];
     }
 
+
+    function getPendingVerificationRequests() 
+        external 
+        view 
+        returns (uint256[] memory) 
+    {
+        return pendingVerificationRequests;
+    }
+
+    function getAIRiskAssessment(uint256 documentId) 
+        external 
+        view 
+        documentExists(documentId) 
+        hasDocumentAccess(documentId) 
+        returns (AIRiskAssessment memory) 
+    {
+        require(documents[documentId].aiProcessed, "Document not processed by AI");
+        return aiAssessments[documentId];
+    }
+
+    function getVerificationRequest(uint256 requestId) 
+        external 
+        view 
+        returns (VerificationRequest memory) 
+    {
+        require(verificationRequests[requestId].id != 0, "Request does not exist");
+        return verificationRequests[requestId];
+    }
+
+    // Internal Functions
+    function _hasDocumentAccess(address user, uint256 documentId) internal view returns (bool) {
+        Document storage doc = documents[documentId];
+        
+        // Public documents are accessible to everyone
+        if (doc.isPublic) {
+            return true;
+        }
+        
+        // Check explicit access
+        if (documentAccess[documentId][user]) {
+            return true;
+        }
+        
+        // Admin roles have access
+        if (hasRole(DOCUMENT_ADMIN_ROLE, user) || hasRole(DEFAULT_ADMIN_ROLE, user)) {
+            return true;
+        }
+        
+        return false;
+    }
+
+    function _removeFromStatusArray(VerificationStatus status, uint256 documentId) internal {
+        uint256[] storage statusArray = statusDocuments[status];
+        for (uint256 i = 0; i < statusArray.length; i++) {
+            if (statusArray[i] == documentId) {
+                statusArray[i] = statusArray[statusArray.length - 1];
+                statusArray.pop();
+                break;
+            }
+        }
+    }
+
+    function _removePendingRequest(uint256 requestId) internal {
+        for (uint256 i = 0; i < pendingVerificationRequests.length; i++) {
+            if (pendingVerificationRequests[i] == requestId) {
+                pendingVerificationRequests[i] = pendingVerificationRequests[pendingVerificationRequests.length - 1];
+                pendingVerificationRequests.pop();
+                break;
+            }
+        }
+    }
+
+    // Admin Functions
+    function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _pause();
+    }
+
+    function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _unpause();
+    }
+
+    function updateLandRegistry(address _landRegistry) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_landRegistry != address(0), "Invalid address");
+        landRegistry = ILandRegistry(_landRegistry);
+    }
+
+    // View Functions
+    function getTotalDocuments() external view returns (uint256) {
+        return _documentIdCounter - 1;
+    }
+
+    function getTotalVerificationRequests() external view returns (uint256) {
+        return _verificationRequestIdCounter - 1;
+    }
+
+    function hasDocumentAccess(address user, uint256 documentId) external view returns (bool) {
+        return _hasDocumentAccess(user, documentId);
+    }
+}
