@@ -95,3 +95,111 @@ contract DocumentVerification is AccessControl, ReentrancyGuard, Pausable {
     
     // Access control mappings
     mapping(uint256 => mapping(address => bool)) public documentAccess;
+
+    
+    // Indexing mappings
+    mapping(uint256 => uint256[]) public propertyDocuments; // propertyTokenId => documentIds
+    mapping(address => uint256[]) public uploaderDocuments; // uploader => documentIds
+    mapping(RiskLevel => uint256[]) public riskLevelDocuments; // riskLevel => documentIds
+    mapping(VerificationStatus => uint256[]) public statusDocuments; // status => documentIds
+    
+    uint256[] public pendingVerificationRequests;
+
+    // Events
+    event DocumentUploaded(
+        uint256 indexed documentId,
+        uint256 indexed propertyTokenId,
+        address indexed uploader,
+        string ipfsHash,
+        DocumentType docType
+    );
+    
+    event VerificationRequested(
+        uint256 indexed requestId,
+        uint256 indexed documentId,
+        address indexed requester,
+        UrgencyLevel urgency
+    );
+    
+    event DocumentVerified(
+        uint256 indexed documentId,
+        address indexed verifier,
+        VerificationStatus status
+    );
+    
+    event AIRiskAssessmentSubmitted(
+        uint256 indexed documentId,
+        RiskLevel riskLevel,
+        uint8 confidenceScore,
+        address indexed oracle
+    );
+    
+    event DocumentAccessGranted(
+        uint256 indexed documentId,
+        address indexed user,
+        address indexed grantor
+    );
+    
+    event DocumentAccessRevoked(
+        uint256 indexed documentId,
+        address indexed user,
+        address indexed revoker
+    );
+
+    // Modifiers
+    modifier documentExists(uint256 documentId) {
+        require(documents[documentId].id != 0, "Document does not exist");
+        _;
+    }
+
+    modifier hasDocumentAccess(uint256 documentId) {
+        require(_hasDocumentAccess(msg.sender, documentId), "Access denied");
+        _;
+    }
+
+    modifier validPropertyToken(uint256 propertyTokenId) {
+        require(landRegistry.exists(propertyTokenId), "Property token does not exist");
+        _;
+    }
+
+    constructor(address _landRegistry) {
+        require(_landRegistry != address(0), "Invalid land registry address");
+        
+        landRegistry = ILandRegistry(_landRegistry);
+        
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(DOCUMENT_ADMIN_ROLE, msg.sender);
+        
+        _documentIdCounter = 1;
+        _verificationRequestIdCounter = 1;
+    }
+
+    // Document Management Functions
+    function uploadDocument(
+        uint256 propertyTokenId,
+        string calldata ipfsHash,
+        string calldata fileName,
+        uint256 fileSize,
+        DocumentType docType,
+        bool isPublic
+    ) external validPropertyToken(propertyTokenId) whenNotPaused returns (uint256) {
+        require(bytes(ipfsHash).length > 0, "IPFS hash cannot be empty");
+        require(bytes(fileName).length > 0, "File name cannot be empty");
+        require(fileSize > 0, "File size must be greater than 0");
+
+        uint256 documentId = _documentIdCounter++;
+        
+        documents[documentId] = Document({
+            id: documentId,
+            propertyTokenId: propertyTokenId,
+            uploader: msg.sender,
+            ipfsHash: ipfsHash,
+            fileName: fileName,
+            fileSize: fileSize,
+            docType: docType,
+            isPublic: isPublic,
+            uploadTimestamp: block.timestamp,
+            status: VerificationStatus.PENDING,
+            aiProcessed: false,
+            aiFlagged: false
+        });
