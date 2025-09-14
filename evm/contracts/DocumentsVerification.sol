@@ -203,3 +203,97 @@ contract DocumentVerification is AccessControl, ReentrancyGuard, Pausable {
             aiProcessed: false,
             aiFlagged: false
         });
+
+
+        // Update indexing
+        propertyDocuments[propertyTokenId].push(documentId);
+        uploaderDocuments[msg.sender].push(documentId);
+        statusDocuments[VerificationStatus.PENDING].push(documentId);
+
+        // Grant access to uploader and property owner
+        documentAccess[documentId][msg.sender] = true;
+        address propertyOwner = landRegistry.ownerOf(propertyTokenId);
+        if (propertyOwner != msg.sender) {
+            documentAccess[documentId][propertyOwner] = true;
+        }
+
+        emit DocumentUploaded(documentId, propertyTokenId, msg.sender, ipfsHash, docType);
+        
+        return documentId;
+    }
+
+    // Verification Functions
+    function requestVerification(
+        uint256 documentId,
+        string calldata reason,
+        UrgencyLevel urgency
+    ) external documentExists(documentId) hasDocumentAccess(documentId) whenNotPaused returns (uint256) {
+        require(bytes(reason).length > 0, "Reason cannot be empty");
+        require(documents[documentId].status == VerificationStatus.PENDING, "Document not in pending status");
+
+        uint256 requestId = _verificationRequestIdCounter++;
+        
+        verificationRequests[requestId] = VerificationRequest({
+            id: requestId,
+            documentId: documentId,
+            requester: msg.sender,
+            reason: reason,
+            urgency: urgency,
+            requestTimestamp: block.timestamp,
+            completed: false,
+            verifier: address(0),
+            completionTimestamp: 0,
+            verifierNotes: ""
+        });
+
+        pendingVerificationRequests.push(requestId);
+
+        emit VerificationRequested(requestId, documentId, msg.sender, urgency);
+        
+        return requestId;
+    }
+
+    function verifyDocument(
+        uint256 requestId,
+        VerificationStatus status,
+        string calldata verifierNotes
+    ) external onlyRole(VERIFIER_ROLE) whenNotPaused {
+        require(verificationRequests[requestId].id != 0, "Verification request does not exist");
+        require(!verificationRequests[requestId].completed, "Request already completed");
+        require(status == VerificationStatus.VERIFIED || status == VerificationStatus.REJECTED, "Invalid status");
+
+        VerificationRequest storage request = verificationRequests[requestId];
+        uint256 documentId = request.documentId;
+        
+        // Update request
+        request.completed = true;
+        request.verifier = msg.sender;
+        request.completionTimestamp = block.timestamp;
+        request.verifierNotes = verifierNotes;
+
+        // Update document status
+        Document storage doc = documents[documentId];
+        VerificationStatus oldStatus = doc.status;
+        doc.status = status;
+
+        // Update status indexing
+        _removeFromStatusArray(oldStatus, documentId);
+        statusDocuments[status].push(documentId);
+
+        // Remove from pending requests
+        _removePendingRequest(requestId);
+
+        emit DocumentVerified(documentId, msg.sender, status);
+    }
+
+    // AI Risk Assessment Functions
+    function submitAIRiskAssessment(
+        uint256 documentId,
+        RiskLevel riskLevel,
+        uint8 confidenceScore,
+        string[] calldata detectedRisks,
+        string calldata recommendations
+    ) external onlyRole(AI_ORACLE_ROLE) documentExists(documentId) whenNotPaused {
+        require(confidenceScore <= 100, "Confidence score must be 0-100");
+        require(!documents[documentId].aiProcessed, "Document already processed by AI");
+
