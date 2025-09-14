@@ -297,3 +297,107 @@ contract DocumentVerification is AccessControl, ReentrancyGuard, Pausable {
         require(confidenceScore <= 100, "Confidence score must be 0-100");
         require(!documents[documentId].aiProcessed, "Document already processed by AI");
 
+
+        aiAssessments[documentId] = AIRiskAssessment({
+            documentId: documentId,
+            riskLevel: riskLevel,
+            confidenceScore: confidenceScore,
+            detectedRisks: detectedRisks,
+            recommendations: recommendations,
+            assessmentTimestamp: block.timestamp,
+            oracle: msg.sender
+        });
+
+        // Update document
+        Document storage doc = documents[documentId];
+        doc.aiProcessed = true;
+        
+        // Auto-flag high-risk documents
+        if (riskLevel == RiskLevel.HIGH || riskLevel == RiskLevel.CRITICAL) {
+            doc.aiFlagged = true;
+        }
+
+        // Update risk level indexing
+        riskLevelDocuments[riskLevel].push(documentId);
+
+        emit AIRiskAssessmentSubmitted(documentId, riskLevel, confidenceScore, msg.sender);
+    }
+
+    // Access Control Functions
+    function grantDocumentAccess(
+        uint256 documentId,
+        address user
+    ) external documentExists(documentId) whenNotPaused {
+        require(user != address(0), "Invalid user address");
+        require(
+            hasRole(DOCUMENT_ADMIN_ROLE, msg.sender) || 
+            documents[documentId].uploader == msg.sender ||
+            landRegistry.ownerOf(documents[documentId].propertyTokenId) == msg.sender,
+            "Not authorized to grant access"
+        );
+
+        documentAccess[documentId][user] = true;
+        
+        emit DocumentAccessGranted(documentId, user, msg.sender);
+    }
+
+    function revokeDocumentAccess(
+        uint256 documentId,
+        address user
+    ) external documentExists(documentId) whenNotPaused {
+        require(user != address(0), "Invalid user address");
+        require(
+            hasRole(DOCUMENT_ADMIN_ROLE, msg.sender) || 
+            documents[documentId].uploader == msg.sender ||
+            landRegistry.ownerOf(documents[documentId].propertyTokenId) == msg.sender,
+            "Not authorized to revoke access"
+        );
+
+        documentAccess[documentId][user] = false;
+        
+        emit DocumentAccessRevoked(documentId, user, msg.sender);
+    }
+
+    // Retrieval Functions
+    function getDocument(uint256 documentId) 
+        external 
+        view 
+        documentExists(documentId) 
+        hasDocumentAccess(documentId) 
+        returns (Document memory) 
+    {
+        return documents[documentId];
+    }
+
+    function getDocumentsByProperty(uint256 propertyTokenId) 
+        external 
+        view 
+        returns (uint256[] memory) 
+    {
+        return propertyDocuments[propertyTokenId];
+    }
+
+    function getDocumentsByUploader(address uploader) 
+        external 
+        view 
+        returns (uint256[] memory) 
+    {
+        return uploaderDocuments[uploader];
+    }
+
+    function getDocumentsByRiskLevel(RiskLevel riskLevel) 
+        external 
+        view 
+        returns (uint256[] memory) 
+    {
+        return riskLevelDocuments[riskLevel];
+    }
+
+    function getDocumentsByStatus(VerificationStatus status) 
+        external 
+        view 
+        returns (uint256[] memory) 
+    {
+        return statusDocuments[status];
+    }
+
