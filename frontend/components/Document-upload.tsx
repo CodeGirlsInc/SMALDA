@@ -45,3 +45,55 @@ export default function DocumentUpload() {
   const processFiles = useCallback((fileList: FileList) => {
     const newFiles: UploadedFile[] = []
     const newErrors: string[] = []
+    
+    Array.from(fileList).forEach((file) => {
+      const error = validateFile(file)
+      if (error) {
+        newErrors.push(error)
+        return
+      }
+
+      const id = Math.random().toString(36).substr(2, 9)
+      const uploadedFile: UploadedFile = {
+        file,
+        id,
+      }
+
+      // Create preview for images
+      if (file.type.startsWith("image/")) {
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          setFiles((prev) => prev.map((f) => (f.id === id ? { ...f, preview: e.target?.result as string } : f)))
+        }
+        reader.readAsDataURL(file)
+      }
+
+      newFiles.push(uploadedFile)
+    })
+
+    setFiles((prev) => [...prev, ...newFiles])
+    setErrors(newErrors)
+  }, [])
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      setIsDragOver(false)
+
+      const droppedFiles = e.dataTransfer.files
+      if (droppedFiles.length > 0) {
+        processFiles(droppedFiles)
+      }
+    },
+    [processFiles],
+  )
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setIsDragOver(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setIsDragOver(false)
+  }, [])
