@@ -97,3 +97,52 @@ export default function DocumentUpload() {
     e.preventDefault()
     setIsDragOver(false)
   }, [])
+
+  const handleFileInput = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const selectedFiles = e.target.files
+      if (selectedFiles && selectedFiles.length > 0) {
+        processFiles(selectedFiles)
+      }
+      // Reset input value to allow selecting the same file again
+      e.target.value = ""
+    },
+    [processFiles],
+  )
+
+  const removeFile = useCallback((id: string) => {
+    setFiles((prev) => prev.filter((file) => file.id !== id))
+  }, [])
+
+  const clearErrors = useCallback(() => {
+    setErrors([])
+  }, [])
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return "0 Bytes"
+    const k = 1024
+    const sizes = ["Bytes", "KB", "MB", "GB"]
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
+  }
+
+  const getFileIcon = (file: File) => {
+    if (file.type === "application/pdf") {
+      return <File className="h-8 w-8 text-red-500" />
+    }
+    return <File className="h-8 w-8 text-blue-500" />
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Upload Area */}
+      <Card className="p-8">
+        <div
+          className={cn(
+            "border-2 border-dashed rounded-lg p-8 text-center transition-colors",
+            isDragOver ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-muted-foreground/50",
+          )}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+        >
