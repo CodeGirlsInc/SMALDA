@@ -146,3 +146,51 @@ export default function DocumentUpload() {
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
         >
+             <div className="flex flex-col items-center space-y-4">
+            <div className="p-4 bg-muted rounded-full">
+              <Upload className="h-8 w-8 text-muted-foreground" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-lg font-semibold">Drag and drop your documents here</h3>
+              <p className="text-sm text-muted-foreground">or click to browse files</p>
+            </div>
+            <div className="flex flex-col items-center space-y-2">
+              <Button variant="outline" onClick={() => document.getElementById("file-input")?.click()}>
+                Choose Files
+              </Button>
+              <p className="text-xs text-muted-foreground">Supports PDF, PNG, JPEG (max 10MB each)</p>
+            </div>
+          </div>
+        </div>
+        <input
+          id="file-input"
+          type="file"
+          multiple
+          accept=".pdf,.png,.jpg,.jpeg"
+          onChange={handleFileInput}
+          className="hidden"
+        />
+      </Card>
+
+      {/* Error Messages */}
+      {errors.length > 0 && (
+        <Card className="p-4 border-destructive/50 bg-destructive/5">
+          <div className="flex items-start space-x-2">
+            <AlertCircle className="h-5 w-5 text-destructive mt-0.5" />
+            <div className="flex-1">
+              <h4 className="font-medium text-destructive mb-2">Upload Errors</h4>
+              <ul className="space-y-1">
+                {errors.map((error, index) => (
+                  <li key={index} className="text-sm text-destructive">
+                    {error}
+                  </li>
+                ))}
+              </ul>
+              <Button variant="outline" size="sm" onClick={clearErrors} className="mt-3 bg-transparent">
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
