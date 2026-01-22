@@ -22,7 +22,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-pdf-parser = { path = "../contract" }
+pdf-parser = { path = "../pdf-parser" }
 ```
 
 Or from crates.io (when published):
