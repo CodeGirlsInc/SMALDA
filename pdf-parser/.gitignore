@@ -1,5 +1,5 @@
 # Rust
-target/
+/target/
 **/*.rs.bk
 *.pdb
 Cargo.lock
@@ -29,6 +29,3 @@ tests/fixtures/*.pdf
 node_modules/
 package-lock.json
 
-# Environment
-.env
-*.log

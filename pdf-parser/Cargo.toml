@@ -1,0 +1,70 @@
+[package]
+name = "pdf-parser"
+version = "0.1.0"
+edition = "2021"
+authors = ["SMALDA Contributors"]
+description = "High-performance PDF text extraction library in Rust"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/your-org/smalda"
+
+[lib]
+name = "pdf_parser"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pdf-parser-cli"
+path = "src/bin/cli.rs"
+
+[dependencies]
+# PDF parsing
+pdf = "0.9"
+lopdf = "0.33"
+pdf-extract = "0.7"
+
+# Image handling
+image = "0.25"
+jpeg-decoder = "0.3"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# Async runtime (for NAPI)
+tokio = { version = "1.0", features = ["full"] }
+
+# Table detection
+regex = "1.10"
+
+# Image decompression
+flate2 = "1.0"
+
+# FFI for Node.js
+napi = { version = "2.16", features = ["napi8", "tokio_rt"] }
+napi-derive = "2.16"
+
+# Benchmarking
+criterion = { version = "0.5", optional = true }
+
+[dev-dependencies]
+tempfile = "3.10"
+
+[features]
+default = []
+napi = []
+benchmarks = ["criterion"]
+
+[[bench]]
+name = "extraction_bench"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
