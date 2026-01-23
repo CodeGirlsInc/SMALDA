@@ -1,0 +1,12 @@
+[package]
+name = "smalda-bindings"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "2.12", features = ["serde-json"] }
+napi-derive = "2.12"
+smalda_core = { path = "../core" }
