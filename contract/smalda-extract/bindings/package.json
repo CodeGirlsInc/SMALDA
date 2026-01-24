@@ -1,0 +1,14 @@
+{
+  "name": "@smalda/extractor",
+  "version": "0.1.0",
+  "main": "index.js",
+  "napi": {
+    "name": "smalda-bindings"
+  },
+  "scripts": {
+    "build": "napi build --platform --release"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^2.0.0"
+  }
+}
