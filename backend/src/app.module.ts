@@ -10,6 +10,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
+import { ReportingModule } from './reporting/reporting.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { getDatabaseConfig } from './config/database.config';
@@ -49,6 +50,7 @@ import { getDatabaseConfig } from './config/database.config';
     ]),
     AuthModule,
     UsersModule,
+    ReportingModule,
   ],
   controllers: [AppController],
   providers: [
