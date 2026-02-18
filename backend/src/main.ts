@@ -1,17 +1,18 @@
- import { NestFactory } from '@nestjs/core';
- import { AppModule } from './app.module';
- import { ValidationPipe } from '@nestjs/common';
- import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
- import { ConfigService } from '@nestjs/config';
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+import { ValidationPipe } from '@nestjs/common';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { ConfigService } from '@nestjs/config';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  
+
   const configService = app.get(ConfigService);
 
   // Enable CORS
   app.enableCors({
-    origin: configService.get<string>('FRONTEND_URL') || 'http://localhost:3001',
+    origin:
+      configService.get<string>('FRONTEND_URL') || 'http://localhost:3001',
     credentials: true,
   });
 
@@ -48,7 +49,10 @@ async function bootstrap() {
       },
       'JWT-auth',
     )
-    .addTag('Authentication', 'Authentication endpoints (login, register, OAuth, etc.)')
+    .addTag(
+      'Authentication',
+      'Authentication endpoints (login, register, OAuth, etc.)',
+    )
     .addTag('Users', 'User management and profile endpoints')
     .build();
 
@@ -61,10 +65,12 @@ async function bootstrap() {
     },
   });
 
-  const port = configService.get<number>('APP_PORT') || 3000;
+  const port = configService.get<number>('APP_PORT') || 6004;
   await app.listen(port);
-  
+
   console.log(`Application is running on: http://localhost:${port}`);
-  console.log(`Swagger documentation available at: http://localhost:${port}/api/docs`);
+  console.log(
+    `Swagger documentation available at: http://localhost:${port}/api/docs`,
+  );
 }
 bootstrap();
