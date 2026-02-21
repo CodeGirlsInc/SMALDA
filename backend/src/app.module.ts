@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { RiskIndicatorModule } from './risk-indicator/risk-indicator.module';
+import { DocumentUploadModule } from './document-upload/document-upload.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { RiskIndicatorModule } from './risk-indicator/risk-indicator.module';
       }),
     }),
     RiskIndicatorModule,
+    DocumentUploadModule,
   ],
   controllers: [AppController],
   providers: [AppService],
