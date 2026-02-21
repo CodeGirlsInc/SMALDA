@@ -5,6 +5,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { RiskIndicatorModule } from './risk-indicator/risk-indicator.module';
 import { DocumentUploadModule } from './document-upload/document-upload.module';
+import { NotificationModule } from './notification/notification.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { DocumentUploadModule } from './document-upload/document-upload.module';
     }),
     RiskIndicatorModule,
     DocumentUploadModule,
+    NotificationModule,
   ],
   controllers: [AppController],
   providers: [AppService],
