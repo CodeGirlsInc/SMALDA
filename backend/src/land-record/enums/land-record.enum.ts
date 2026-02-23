@@ -1,0 +1,6 @@
+export enum LandRecordStatus {
+  ACTIVE = 'ACTIVE',
+  DISPUTED = 'DISPUTED',
+  TRANSFERRED = 'TRANSFERRED',
+  ARCHIVED = 'ARCHIVED',
+}
