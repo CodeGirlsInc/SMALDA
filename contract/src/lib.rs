@@ -1,4 +1,149 @@
+pub mod cache;
+pub mod config;
+pub mod metrics;
+pub mod rate_limit;
+pub mod stellar;
+
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{get, post},
+    Json, Router,
+};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
+use tower_http::trace::TraceLayer;
+use tracing::{info, warn};
+
+use cache::{CacheBackend};
+use config::AppConfig;
+use metrics::MetricsRegistry;
+use stellar::StellarClient;
+
+// Application state
+#[derive(Clone)]
+pub struct AppState {
+    pub stellar: Arc<StellarClient>,
+    pub cache: Arc<CacheBackend>,
+    pub metrics: Arc<MetricsRegistry>,
+}
+
+// Request/Response types
+#[derive(Debug, Deserialize)]
+pub struct VerifyRequest {
+    pub document_hash: String,
+    pub transaction_id: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VerifyResponse {
+    pub verified: bool,
+    pub transaction_id: Option<String>,
+    pub timestamp: Option<i64>,
+    pub cached: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct HealthResponse {
+    pub status: String,
+    pub stellar_connected: bool,
+    pub redis_connected: bool,
+}
+
+pub fn app(state: AppState) -> Router {
+    Router::new()
+        .route("/health", get(health_check))
+        .route("/metrics", get(metrics_handler))
+        .route("/verify", post(verify_document))
+        .route("/verify/:hash", get(verify_document_by_hash))
+        // Stubs for missing endpoints
+        .route("/verify/batch", post(|| async { StatusCode::BAD_REQUEST }))
+        .route("/verify/:hash/history", get(|| async { StatusCode::NOT_FOUND }))
+        .route("/submit", post(|| async { StatusCode::BAD_REQUEST }))
+        .route("/revoke", post(|| async { StatusCode::NOT_FOUND }))
+        .route("/transfer", post(|| async { StatusCode::BAD_REQUEST }))
+        .layer(TraceLayer::new_for_http())
+        .with_state(state)
+}
+
+// Health check endpoint
+pub async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
+    let stellar_ok = state.stellar.check_connection().await;
+    let redis_ok = state.cache.check_connection().await;
+
+    let status = if stellar_ok && redis_ok {
+        "healthy"
+    } else {
+        "degraded"
+    };
+
+    Json(HealthResponse {
+        status: status.to_string(),
+        stellar_connected: stellar_ok,
+        redis_connected: redis_ok,
+    })
+}
+
+// Metrics endpoint
+pub async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
+    state.metrics.render()
+}
+
+// Verify document by POST
+pub async fn verify_document(
+    State(state): State<AppState>,
+    Json(req): Json<VerifyRequest>,
+) -> Result<Json<VerifyResponse>, StatusCode> {
+    info!("Verifying document hash: {}", req.document_hash);
+    state.metrics.increment_request_count();
+
+    // Check cache first
+    if let Ok(Some(cached)) = state.cache.get(&req.document_hash).await {
+        info!("Cache hit for hash: {}", req.document_hash);
+        state.metrics.increment_cache_hits();
+        return Ok(Json(cached));
+    }
+
+    state.metrics.increment_cache_misses();
+
+    // Query Stellar blockchain
+    let result = match state.stellar.verify_hash(&req.document_hash).await {
+        Ok(verification) => verification,
+        Err(e) => {
+            warn!("Stellar query failed: {}", e);
+            state.metrics.increment_error_count();
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    let response = VerifyResponse {
+        verified: result.verified,
+        transaction_id: result.transaction_id,
+        timestamp: result.timestamp,
+        cached: false,
+    };
+
+    // Cache result
+    if let Err(e) = state.cache.set(&req.document_hash, &response, 3600).await {
+        warn!("Failed to cache result: {}", e);
+    }
+
+    Ok(Json(response))
+}
+
+// Verify document by GET with hash in path
+pub async fn verify_document_by_hash(
+    State(state): State<AppState>,
+    Path(hash): Path<String>,
+) -> Result<Json<VerifyResponse>, StatusCode> {
+    let req = VerifyRequest {
+        document_hash: hash,
+        transaction_id: None,
+    };
+    verify_document(State(state), Json(req)).await
+}
 
 /// Calculates Levenshtein distance between two strings
 pub fn levenshtein_distance(s1: &str, s2: &str) -> usize {
@@ -42,8 +187,8 @@ pub fn levenshtein_similarity(s1: &str, s2: &str) -> f64 {
 /// Tokenizes text and calculates term frequencies
 fn tokenize(text: &str) -> HashMap<String, usize> {
     let mut frequencies = HashMap::new();
-    let words: Vec<&str> = text
-        .to_lowercase()
+    let lowercased = text.to_lowercase();
+    let words: Vec<&str> = lowercased
         .split(|c: char| !c.is_alphanumeric())
         .filter(|w| !w.is_empty())
         .collect();

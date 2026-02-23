@@ -5,29 +5,18 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
-
-mod stellar;
-mod cache;
-mod metrics;
-mod rate_limit;
-
-use stellar::StellarClient;
-use cache::CacheClient;
-use metrics::MetricsRegistry;
-
-// Application state
-#[derive(Clone)]
-struct AppState {
-    stellar: Arc<StellarClient>,
-    cache: Arc<CacheClient>,
-    metrics: Arc<MetricsRegistry>,
-}
+use tracing_subscriber::EnvFilter;
+use stellar_doc_verifier::*;
+use stellar_doc_verifier::stellar::StellarClient;
+use stellar_doc_verifier::cache::{CacheBackend, RedisCache};
+use stellar_doc_verifier::metrics::MetricsRegistry;
+use stellar_doc_verifier::config::AppConfig;
+use stellar_doc_verifier::app; // Assuming app function is made public in lib.rs
 
 // Request/Response types
 #[derive(Debug, Deserialize)]
@@ -36,7 +25,7 @@ struct VerifyRequest {
     transaction_id: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct VerifyResponse {
     verified: bool,
     transaction_id: Option<String>,
@@ -53,21 +42,41 @@ struct HealthResponse {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Load configuration
+    let config = AppConfig::from_env()?;
+
     // Initialize tracing
-    tracing_subscriber::fmt()
-        .with_env_filter("stellar_doc_verifier=debug,tower_http=debug")
-        .init();
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        EnvFilter::new(format!(
+            "stellar_doc_verifier={},tower_http={}",
+            config.log_level, config.log_level
+        ))
+    });
+
+    tracing_subscriber::fmt().with_env_filter(env_filter).init();
 
     info!("Starting Stellar Document Verification Service");
 
+    // Startup configuration summary (redacting secrets)
+    info!(
+        "Configuration: port={}, stellar_horizon_url={}, redis_url={}, rate_limit_per_second={}, rate_limit_burst={}, stellar_max_retries={}, log_level={}, webhook_urls={:?}, stellar_secret_key=[REDACTED], webhook_secret=[REDACTED], cache_verification_ttl={}",
+        config.port,
+        config.stellar_horizon_url,
+        config.redis_url,
+        config.rate_limit_per_second,
+        config.rate_limit_burst,
+        config.stellar_max_retries,
+        config.log_level,
+        config.webhook_urls,
+        config.cache_verification_ttl,
+    );
+
     // Initialize components
-    let stellar_url = std::env::var("STELLAR_HORIZON_URL")
-        .unwrap_or_else(|_| "https://horizon-testnet.stellar.org".to_string());
-    let redis_url = std::env::var("REDIS_URL")
-        .unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
+    let stellar_url = config.stellar_horizon_url.clone();
+    let redis_url = config.redis_url.clone();
 
     let stellar = Arc::new(StellarClient::new(&stellar_url));
-    let cache = Arc::new(CacheClient::new(&redis_url).await?);
+    let cache = Arc::new(CacheBackend::Redis(RedisCache::new(&redis_url).await?));
     let metrics = Arc::new(MetricsRegistry::new());
 
     let state = AppState {
@@ -76,19 +85,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         metrics,
     };
 
-    // Build router
-    let app = Router::new()
-        .route("/health", get(health_check))
-        .route("/metrics", get(metrics_handler))
-        .route("/verify", post(verify_document))
-        .route("/verify/:hash", get(verify_document_by_hash))
-        .layer(TraceLayer::new_for_http())
-        .with_state(state);
+    let app = app(state);
 
     // Start server
-    let addr = "0.0.0.0:8080";
+    let addr = format!("0.0.0.0:{}", config.port);
     info!("Listening on {}", addr);
-    let listener = TcpListener::bind(addr).await?;
+    let listener = TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;
 
     Ok(())
