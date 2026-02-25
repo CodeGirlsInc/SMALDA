@@ -3,6 +3,7 @@ pub mod config;
 pub mod metrics;
 pub mod rate_limit;
 pub mod stellar;
+pub mod hash_validator;
 
 use axum::{
     extract::{Path, State},
@@ -17,10 +18,10 @@ use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
-use cache::{CacheBackend};
-use config::AppConfig;
+use cache::CacheBackend;
 use metrics::MetricsRegistry;
 use stellar::StellarClient;
+use hash_validator::{HashValidator, ValidationError as HashValidationError};
 
 // Application state
 #[derive(Clone)]
@@ -52,18 +53,42 @@ pub struct HealthResponse {
     pub redis_connected: bool,
 }
 
+#[derive(Debug, Serialize)]
+pub struct ValidationErrorResponse {
+    pub error: String,
+}
+
+fn map_validation_error(err: HashValidationError) -> (StatusCode, ValidationErrorResponse) {
+    let message = match err {
+        HashValidationError::EmptyHash => "hash must not be empty".to_string(),
+        HashValidationError::WrongLength { expected, actual } => format!(
+            "hash has wrong length: expected {} characters, got {}",
+            expected, actual
+        ),
+        HashValidationError::InvalidCharacter { position, character } => format!(
+            "hash contains invalid character '{}' at position {}",
+            character, position
+        ),
+    };
+
+    (
+        StatusCode::BAD_REQUEST,
+        ValidationErrorResponse { error: message },
+    )
+}
+
 pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health_check))
         .route("/metrics", get(metrics_handler))
         .route("/verify", post(verify_document))
         .route("/verify/:hash", get(verify_document_by_hash))
-        // Stubs for missing endpoints
+        // Stubs for missing endpoints (with hash validation where applicable)
         .route("/verify/batch", post(|| async { StatusCode::BAD_REQUEST }))
         .route("/verify/:hash/history", get(|| async { StatusCode::NOT_FOUND }))
-        .route("/submit", post(|| async { StatusCode::BAD_REQUEST }))
-        .route("/revoke", post(|| async { StatusCode::NOT_FOUND }))
-        .route("/transfer", post(|| async { StatusCode::BAD_REQUEST }))
+        .route("/submit", post(submit_document))
+        .route("/revoke", post(revoke_document))
+        .route("/transfer", post(transfer_document))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -95,13 +120,19 @@ pub async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse
 pub async fn verify_document(
     State(state): State<AppState>,
     Json(req): Json<VerifyRequest>,
-) -> Result<Json<VerifyResponse>, StatusCode> {
-    info!("Verifying document hash: {}", req.document_hash);
+) -> Result<impl IntoResponse, StatusCode> {
+    let normalized_hash = HashValidator::normalize(&req.document_hash);
+    if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
+        let (status, body) = map_validation_error(err);
+        return Ok((status, Json(body)));
+    }
+
+    info!("Verifying document hash: {}", normalized_hash);
     state.metrics.increment_request_count();
 
     // Check cache first
-    if let Ok(Some(cached)) = state.cache.get(&req.document_hash).await {
-        info!("Cache hit for hash: {}", req.document_hash);
+    if let Ok(Some(cached)) = state.cache.get(&normalized_hash).await {
+        info!("Cache hit for hash: {}", normalized_hash);
         state.metrics.increment_cache_hits();
         return Ok(Json(cached));
     }
@@ -109,7 +140,7 @@ pub async fn verify_document(
     state.metrics.increment_cache_misses();
 
     // Query Stellar blockchain
-    let result = match state.stellar.verify_hash(&req.document_hash).await {
+    let result = match state.stellar.verify_hash(&normalized_hash).await {
         Ok(verification) => verification,
         Err(e) => {
             warn!("Stellar query failed: {}", e);
@@ -126,7 +157,7 @@ pub async fn verify_document(
     };
 
     // Cache result
-    if let Err(e) = state.cache.set(&req.document_hash, &response, 3600).await {
+    if let Err(e) = state.cache.set(&normalized_hash, &response, 3600).await {
         warn!("Failed to cache result: {}", e);
     }
 
@@ -137,12 +168,92 @@ pub async fn verify_document(
 pub async fn verify_document_by_hash(
     State(state): State<AppState>,
     Path(hash): Path<String>,
-) -> Result<Json<VerifyResponse>, StatusCode> {
+) -> Result<impl IntoResponse, StatusCode> {
     let req = VerifyRequest {
         document_hash: hash,
         transaction_id: None,
     };
     verify_document(State(state), Json(req)).await
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SubmitRequest {
+    pub document_hash: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RevokeRequest {
+    pub document_hash: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TransferRequest {
+    pub document_hash: String,
+    pub date: String,
+}
+
+pub async fn submit_document(
+    Json(req): Json<SubmitRequest>,
+) -> impl IntoResponse {
+    let normalized_hash = HashValidator::normalize(&req.document_hash);
+    if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
+        let (status, body) = map_validation_error(err);
+        return (status, Json(body));
+    }
+
+    // Endpoint behavior not yet implemented; preserve previous BAD_REQUEST semantics.
+    (
+        StatusCode::BAD_REQUEST,
+        Json(ValidationErrorResponse {
+            error: "submit endpoint not yet implemented".to_string(),
+        }),
+    )
+}
+
+pub async fn revoke_document(
+    Json(req): Json<RevokeRequest>,
+) -> impl IntoResponse {
+    let normalized_hash = HashValidator::normalize(&req.document_hash);
+    if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
+        let (status, body) = map_validation_error(err);
+        return (status, Json(body));
+    }
+
+    // Endpoint behavior not yet implemented; preserve previous NOT_FOUND semantics.
+    (
+        StatusCode::NOT_FOUND,
+        Json(ValidationErrorResponse {
+            error: "revoke endpoint not yet implemented".to_string(),
+        }),
+    )
+}
+
+pub async fn transfer_document(
+    Json(req): Json<TransferRequest>,
+) -> impl IntoResponse {
+    let normalized_hash = HashValidator::normalize(&req.document_hash);
+    if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
+        let (status, body) = map_validation_error(err);
+        return (status, Json(body));
+    }
+
+    // Basic date validation: expect YYYY-MM-DD
+    if chrono::NaiveDate::parse_from_str(&req.date, "%Y-%m-%d").is_err() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ValidationErrorResponse {
+                error: "invalid date format, expected YYYY-MM-DD".to_string(),
+            }),
+        );
+    }
+
+    // Endpoint behavior not yet implemented; for now respond with BAD_REQUEST.
+    (
+        StatusCode::BAD_REQUEST,
+        Json(ValidationErrorResponse {
+            error: "transfer endpoint not yet implemented".to_string(),
+        }),
+    )
 }
 
 /// Calculates Levenshtein distance between two strings
