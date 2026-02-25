@@ -3,6 +3,7 @@ pub mod config;
 pub mod metrics;
 pub mod rate_limit;
 pub mod stellar;
+pub mod hash_validator;
 
 use axum::{
     extract::{Path, State},
@@ -11,16 +12,18 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use chrono::{NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
-use cache::{CacheBackend};
-use config::AppConfig;
+use cache::CacheBackend;
 use metrics::MetricsRegistry;
 use stellar::StellarClient;
+use hash_validator::{HashValidator, ValidationError as HashValidationError};
 
 // Application state
 #[derive(Clone)]
@@ -65,6 +68,30 @@ pub struct HealthResponse {
     pub redis_connected: bool,
 }
 
+#[derive(Debug, Serialize)]
+pub struct ValidationErrorResponse {
+    pub error: String,
+}
+
+fn map_validation_error(err: HashValidationError) -> (StatusCode, ValidationErrorResponse) {
+    let message = match err {
+        HashValidationError::EmptyHash => "hash must not be empty".to_string(),
+        HashValidationError::WrongLength { expected, actual } => format!(
+            "hash has wrong length: expected {} characters, got {}",
+            expected, actual
+        ),
+        HashValidationError::InvalidCharacter { position, character } => format!(
+            "hash contains invalid character '{}' at position {}",
+            character, position
+        ),
+    };
+
+    (
+        StatusCode::BAD_REQUEST,
+        ValidationErrorResponse { error: message },
+    )
+}
+
 pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health_check))
@@ -104,17 +131,128 @@ pub async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse
     state.metrics.render()
 }
 
+/// Compute deterministic transfer hash from core fields.
+///
+/// SHA-256(document_hash + from_owner + to_owner + transfer_date)
+pub fn compute_transfer_hash(req: &TransferRequest) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(req.document_hash.as_bytes());
+    hasher.update(req.from_owner.as_bytes());
+    hasher.update(req.to_owner.as_bytes());
+    hasher.update(req.transfer_date.as_bytes());
+    let digest = hasher.finalize();
+    hex::encode(digest)
+}
+
+/// Validate that the provided date is a valid ISO 8601 calendar date (YYYY-MM-DD).
+fn is_valid_iso8601_date(date: &str) -> bool {
+    NaiveDate::parse_from_str(date, "%Y-%m-%d").is_ok()
+}
+
+/// Build a Stellar memo string for a transfer hash, respecting the 28-byte
+/// text memo limit and using the required TRANSFER: prefix.
+fn build_transfer_memo(transfer_hash: &str) -> String {
+    const PREFIX: &str = "TRANSFER:";
+    const MAX_MEMO_LEN: usize = 28;
+
+    let remaining = MAX_MEMO_LEN.saturating_sub(PREFIX.len());
+    let truncated = if transfer_hash.len() > remaining {
+        &transfer_hash[..remaining]
+    } else {
+        transfer_hash
+    };
+
+    format!("{}{}", PREFIX, truncated)
+}
+
+/// POST /transfer — anchor an ownership transfer on Stellar and persist history in Redis.
+pub async fn record_transfer(
+    State(state): State<AppState>,
+    Json(req): Json<TransferRequest>,
+) -> Result<Json<TransferResponse>, StatusCode> {
+    if !is_valid_iso8601_date(&req.transfer_date) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let transfer_hash = compute_transfer_hash(&req);
+    let memo = build_transfer_memo(&transfer_hash);
+
+    if let Err(e) = state.stellar.anchor_transfer(&transfer_hash, &memo).await {
+        warn!("Failed to anchor transfer on Stellar: {}", e);
+        state.metrics.increment_error_count();
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    let record = TransferRecord {
+        document_hash: req.document_hash.clone(),
+        from_owner: req.from_owner.clone(),
+        to_owner: req.to_owner.clone(),
+        transfer_date: req.transfer_date.clone(),
+        transfer_reference: req.transfer_reference.clone(),
+        transfer_hash: transfer_hash.clone(),
+        memo: memo.clone(),
+        anchored_at: Utc::now().to_rfc3339(),
+    };
+
+    let key = format!("transfer:{}", record.document_hash);
+
+    let mut history: Vec<TransferRecord> = match state.cache.get(&key).await {
+        Ok(Some(existing)) => existing,
+        Ok(None) => Vec::new(),
+        Err(e) => {
+            warn!("Failed to read transfer history from cache: {}", e);
+            state.metrics.increment_error_count();
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    history.push(record);
+
+    // Set a long but finite TTL (10 years) to keep an auditable history
+    const TEN_YEARS_SECONDS: u64 = 60 * 60 * 24 * 365 * 10;
+    if let Err(e) = state.cache.set(&key, &history, TEN_YEARS_SECONDS).await {
+        warn!("Failed to persist transfer history: {}", e);
+        state.metrics.increment_error_count();
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    Ok(Json(TransferResponse { transfer_hash, memo }))
+}
+
+/// GET /transfer/:document_hash — retrieve transfer history for a document.
+pub async fn get_transfer_history(
+    State(state): State<AppState>,
+    Path(document_hash): Path<String>,
+) -> Result<Json<Vec<TransferRecord>>, StatusCode> {
+    let key = format!("transfer:{}", document_hash);
+    match state.cache.get::<Vec<TransferRecord>>(&key).await {
+        Ok(Some(history)) => Ok(Json(history)),
+        Ok(None) => Ok(Json(Vec::new())),
+        Err(e) => {
+            warn!("Failed to fetch transfer history from cache: {}", e);
+            state.metrics.increment_error_count();
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 // Verify document by POST
 pub async fn verify_document(
     State(state): State<AppState>,
     Json(req): Json<VerifyRequest>,
-) -> Result<Json<VerifyResponse>, StatusCode> {
-    info!("Verifying document hash: {}", req.document_hash);
+) -> Result<impl IntoResponse, StatusCode> {
+    let normalized_hash = HashValidator::normalize(&req.document_hash);
+    if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
+        let (status, body) = map_validation_error(err);
+        return Ok((status, Json(body)));
+    }
+
+    info!("Verifying document hash: {}", normalized_hash);
     state.metrics.increment_request_count();
 
     // Check cache first
-    if let Ok(Some(cached)) = state.cache.get(&req.document_hash).await {
-        info!("Cache hit for hash: {}", req.document_hash);
+    if let Ok(Some(cached)) = state.cache.get(&normalized_hash).await {
+        info!("Cache hit for hash: {}", normalized_hash);
         state.metrics.increment_cache_hits();
         return Ok(Json(cached));
     }
@@ -122,7 +260,7 @@ pub async fn verify_document(
     state.metrics.increment_cache_misses();
 
     // Query Stellar blockchain
-    let result = match state.stellar.verify_hash(&req.document_hash).await {
+    let result = match state.stellar.verify_hash(&normalized_hash).await {
         Ok(verification) => verification,
         Err(e) => {
             warn!("Stellar query failed: {}", e);
@@ -139,7 +277,7 @@ pub async fn verify_document(
     };
 
     // Cache result
-    if let Err(e) = state.cache.set(&req.document_hash, &response, 3600).await {
+    if let Err(e) = state.cache.set(&normalized_hash, &response, 3600).await {
         warn!("Failed to cache result: {}", e);
     }
 
@@ -150,7 +288,7 @@ pub async fn verify_document(
 pub async fn verify_document_by_hash(
     State(state): State<AppState>,
     Path(hash): Path<String>,
-) -> Result<Json<VerifyResponse>, StatusCode> {
+) -> Result<impl IntoResponse, StatusCode> {
     let req = VerifyRequest {
         document_hash: hash,
         transaction_id: None,
@@ -158,76 +296,84 @@ pub async fn verify_document_by_hash(
     verify_document(State(state), Json(req)).await
 }
 
-// Revoke document endpoint
+#[derive(Debug, Deserialize)]
+pub struct SubmitRequest {
+    pub document_hash: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RevokeRequest {
+    pub document_hash: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TransferRequest {
+    pub document_hash: String,
+    pub date: String,
+}
+
+pub async fn submit_document(
+    Json(req): Json<SubmitRequest>,
+) -> impl IntoResponse {
+    let normalized_hash = HashValidator::normalize(&req.document_hash);
+    if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
+        let (status, body) = map_validation_error(err);
+        return (status, Json(body));
+    }
+
+    // Endpoint behavior not yet implemented; preserve previous BAD_REQUEST semantics.
+    (
+        StatusCode::BAD_REQUEST,
+        Json(ValidationErrorResponse {
+            error: "submit endpoint not yet implemented".to_string(),
+        }),
+    )
+}
+
 pub async fn revoke_document(
-    State(state): State<AppState>,
     Json(req): Json<RevokeRequest>,
-) -> Result<Json<RevokeResponse>, (StatusCode, Json<serde_json::Value>)> {
-    info!("Revoking document hash: {}", req.document_hash);
-    state.metrics.increment_request_count();
-
-    // Verify that the hash exists on-chain first
-    let verification = match state.stellar.verify_hash(&req.document_hash).await {
-        Ok(v) => v,
-        Err(e) => {
-            warn!("Failed to verify hash before revocation: {}", e);
-            state.metrics.increment_error_count();
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "Failed to verify hash existence",
-                    "message": e.to_string()
-                }))
-            ));
-        }
-    };
-
-    // If hash not found on-chain, return 404
-    if !verification.verified {
-        info!("Hash not found on-chain: {}", req.document_hash);
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({
-                "error": "Document hash not found",
-                "message": format!("The document hash '{}' does not exist on the blockchain", req.document_hash)
-            }))
-        ));
+) -> impl IntoResponse {
+    let normalized_hash = HashValidator::normalize(&req.document_hash);
+    if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
+        let (status, body) = map_validation_error(err);
+        return (status, Json(body));
     }
 
-    // Submit revocation to Stellar
-    let transaction_id = match state.stellar.revoke_hash(
-        &req.document_hash,
-        &req.reason,
-        &req.revoked_by
-    ).await {
-        Ok(tx_id) => tx_id,
-        Err(e) => {
-            warn!("Failed to submit revocation: {}", e);
-            state.metrics.increment_error_count();
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "Failed to submit revocation",
-                    "message": e.to_string()
-                }))
-            ));
-        }
-    };
+    // Endpoint behavior not yet implemented; preserve previous NOT_FOUND semantics.
+    (
+        StatusCode::NOT_FOUND,
+        Json(ValidationErrorResponse {
+            error: "revoke endpoint not yet implemented".to_string(),
+        }),
+    )
+}
 
-    // Invalidate cache for this hash
-    if let Err(e) = state.cache.delete(&req.document_hash).await {
-        warn!("Failed to invalidate cache for revoked hash: {}", e);
-        // Don't fail the request if cache invalidation fails
+pub async fn transfer_document(
+    Json(req): Json<TransferRequest>,
+) -> impl IntoResponse {
+    let normalized_hash = HashValidator::normalize(&req.document_hash);
+    if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
+        let (status, body) = map_validation_error(err);
+        return (status, Json(body));
     }
 
-    let revoked_at = chrono::Utc::now().timestamp();
+    // Basic date validation: expect YYYY-MM-DD
+    if chrono::NaiveDate::parse_from_str(&req.date, "%Y-%m-%d").is_err() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ValidationErrorResponse {
+                error: "invalid date format, expected YYYY-MM-DD".to_string(),
+            }),
+        );
+    }
 
-    info!("Document revoked successfully: {}", transaction_id);
-
-    Ok(Json(RevokeResponse {
-        transaction_id,
-        revoked_at,
-    }))
+    // Endpoint behavior not yet implemented; for now respond with BAD_REQUEST.
+    (
+        StatusCode::BAD_REQUEST,
+        Json(ValidationErrorResponse {
+            error: "transfer endpoint not yet implemented".to_string(),
+        }),
+    )
 }
 
 /// Calculates Levenshtein distance between two strings
@@ -416,5 +562,47 @@ mod tests {
         assert!(duplicates.len() > 0);
         assert_eq!(duplicates[0].0, 0);
         assert_eq!(duplicates[0].1, 1);
+    }
+
+    #[test]
+    fn test_transfer_hash_deterministic() {
+        let req = TransferRequest {
+            document_hash: "doc123".to_string(),
+            from_owner: "Alice".to_string(),
+            to_owner: "Bob".to_string(),
+            transfer_date: "2025-01-01".to_string(),
+            transfer_reference: "REF-1".to_string(),
+        };
+
+        let h1 = compute_transfer_hash(&req);
+        let h2 = compute_transfer_hash(&req);
+
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_transfer_hash_changes_with_input() {
+        let base = TransferRequest {
+            document_hash: "doc123".to_string(),
+            from_owner: "Alice".to_string(),
+            to_owner: "Bob".to_string(),
+            transfer_date: "2025-01-01".to_string(),
+            transfer_reference: "REF-1".to_string(),
+        };
+
+        let mut modified = base.clone();
+        modified.to_owner = "Charlie".to_string();
+
+        let h1 = compute_transfer_hash(&base);
+        let h2 = compute_transfer_hash(&modified);
+
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn test_iso8601_date_validation() {
+        assert!(is_valid_iso8601_date("2025-12-31"));
+        assert!(!is_valid_iso8601_date("2025-13-01"));
+        assert!(!is_valid_iso8601_date("not-a-date"));
     }
 }

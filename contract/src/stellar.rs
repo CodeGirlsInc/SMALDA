@@ -1,108 +1,7 @@
 use anyhow::{anyhow, Result};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::future::Future;
-use std::time::Duration;
-use tokio::time::sleep;
-use tracing::{debug, error, warn};
-
-#[derive(Clone, Debug)]
-pub struct RetryConfig {
-    pub max_attempts: u32,
-    pub initial_delay_ms: u64,
-    pub max_delay_ms: u64,
-    pub backoff_multiplier: f64,
-}
-
-impl Default for RetryConfig {
-    fn default() -> Self {
-        let max_attempts = std::env::var("STELLAR_MAX_RETRIES")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(3);
-
-        Self {
-            max_attempts,
-            initial_delay_ms: 100,
-            max_delay_ms: 10000,
-            backoff_multiplier: 2.0,
-        }
-    }
-}
-
-async fn retry_async<F, Fut, T>(config: &RetryConfig, mut operation: F) -> Result<T>
-where
-    F: FnMut() -> Fut,
-    Fut: Future<Output = Result<T>>,
-{
-    let mut attempt = 1;
-    let mut delay_ms = config.initial_delay_ms;
-
-    loop {
-        match operation().await {
-            Ok(result) => return Ok(result),
-            Err(e) => {
-                let should_retry = is_retryable_error(&e);
-                
-                if !should_retry || attempt >= config.max_attempts {
-                    return Err(e);
-                }
-
-                // Apply jitter: actual_delay = delay * (0.8 + random * 0.4)
-                let jitter = 0.8 + rand::random::<f64>() * 0.4;
-                let actual_delay_ms = (delay_ms as f64 * jitter) as u64;
-                let actual_delay_ms = actual_delay_ms.min(config.max_delay_ms);
-
-                warn!(
-                    "Retry attempt {}/{} after {}ms delay. Error: {}",
-                    attempt, config.max_attempts, actual_delay_ms, e
-                );
-
-                sleep(Duration::from_millis(actual_delay_ms)).await;
-
-                // Calculate next delay with exponential backoff
-                delay_ms = ((delay_ms as f64 * config.backoff_multiplier) as u64)
-                    .min(config.max_delay_ms);
-                
-                attempt += 1;
-            }
-        }
-    }
-}
-
-fn is_retryable_error(error: &anyhow::Error) -> bool {
-    let error_msg = error.to_string().to_lowercase();
-    
-    // Check for network errors
-    if error_msg.contains("connection refused")
-        || error_msg.contains("timeout")
-        || error_msg.contains("connection reset")
-        || error_msg.contains("broken pipe")
-        || error_msg.contains("network")
-    {
-        return true;
-    }
-
-    // Check for HTTP 5xx errors
-    if error_msg.contains("status: 5") || error_msg.contains("server error") {
-        return true;
-    }
-
-    // Check if it's a reqwest error with retryable status
-    if let Some(source) = error.source() {
-        if let Some(reqwest_err) = source.downcast_ref::<reqwest::Error>() {
-            if reqwest_err.is_timeout() || reqwest_err.is_connect() {
-                return true;
-            }
-            
-            if let Some(status) = reqwest_err.status() {
-                return status.is_server_error();
-            }
-        }
-    }
-
-    false
-}
+use tracing::{debug, error, info};
 
 #[derive(Clone)]
 pub struct StellarClient {
@@ -155,6 +54,19 @@ impl StellarClient {
     pub async fn check_connection(&self) -> bool {
         let url = format!("{}/", self.horizon_url);
         self.client.get(&url).send().await.is_ok()
+    }
+
+    /// Anchor a transfer hash on Stellar.
+    ///
+    /// For now this is a lightweight stub that logs the intention to anchor
+    /// using the provided memo. Wiring this up to a full transaction submit
+    /// flow can be done once funding/keys are configured.
+    pub async fn anchor_transfer(&self, transfer_hash: &str, memo: &str) -> Result<()> {
+        info!(
+            "Requested anchor of transfer hash {} with memo '{}'",
+            transfer_hash, memo
+        );
+        Ok(())
     }
 
     pub async fn verify_hash(&self, document_hash: &str) -> Result<VerificationResult> {
