@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 #[derive(Clone)]
 pub struct StellarClient {
@@ -44,6 +44,19 @@ impl StellarClient {
     pub async fn check_connection(&self) -> bool {
         let url = format!("{}/", self.horizon_url);
         self.client.get(&url).send().await.is_ok()
+    }
+
+    /// Anchor a transfer hash on Stellar.
+    ///
+    /// For now this is a lightweight stub that logs the intention to anchor
+    /// using the provided memo. Wiring this up to a full transaction submit
+    /// flow can be done once funding/keys are configured.
+    pub async fn anchor_transfer(&self, transfer_hash: &str, memo: &str) -> Result<()> {
+        info!(
+            "Requested anchor of transfer hash {} with memo '{}'",
+            transfer_hash, memo
+        );
+        Ok(())
     }
 
     pub async fn verify_hash(&self, document_hash: &str) -> Result<VerificationResult> {
