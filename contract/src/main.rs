@@ -16,29 +16,7 @@ use stellar_doc_verifier::stellar::StellarClient;
 use stellar_doc_verifier::cache::{CacheBackend, RedisCache};
 use stellar_doc_verifier::metrics::MetricsRegistry;
 use stellar_doc_verifier::config::AppConfig;
-use stellar_doc_verifier::app; // Assuming app function is made public in lib.rs
-
-// Request/Response types
-#[derive(Debug, Deserialize)]
-struct VerifyRequest {
-    document_hash: String,
-    transaction_id: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct VerifyResponse {
-    verified: bool,
-    transaction_id: Option<String>,
-    timestamp: Option<i64>,
-    cached: bool,
-}
-
-#[derive(Debug, Serialize)]
-struct HealthResponse {
-    status: String,
-    stellar_connected: bool,
-    redis_connected: bool,
-}
+use stellar_doc_verifier::app;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -94,81 +72,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     axum::serve(listener, app).await?;
 
     Ok(())
-}
-
-// Health check endpoint
-async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
-    let stellar_ok = state.stellar.check_connection().await;
-    let redis_ok = state.cache.check_connection().await;
-
-    let status = if stellar_ok && redis_ok {
-        "healthy"
-    } else {
-        "degraded"
-    };
-
-    Json(HealthResponse {
-        status: status.to_string(),
-        stellar_connected: stellar_ok,
-        redis_connected: redis_ok,
-    })
-}
-
-// Metrics endpoint
-async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
-    state.metrics.render()
-}
-
-// Verify document by POST
-async fn verify_document(
-    State(state): State<AppState>,
-    Json(req): Json<VerifyRequest>,
-) -> Result<Json<VerifyResponse>, StatusCode> {
-    info!("Verifying document hash: {}", req.document_hash);
-    state.metrics.increment_request_count();
-
-    // Check cache first
-    if let Ok(Some(cached)) = state.cache.get(&req.document_hash).await {
-        info!("Cache hit for hash: {}", req.document_hash);
-        state.metrics.increment_cache_hits();
-        return Ok(Json(cached));
-    }
-
-    state.metrics.increment_cache_misses();
-
-    // Query Stellar blockchain
-    let result = match state.stellar.verify_hash(&req.document_hash).await {
-        Ok(verification) => verification,
-        Err(e) => {
-            warn!("Stellar query failed: {}", e);
-            state.metrics.increment_error_count();
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
-
-    let response = VerifyResponse {
-        verified: result.verified,
-        transaction_id: result.transaction_id,
-        timestamp: result.timestamp,
-        cached: false,
-    };
-
-    // Cache result
-    if let Err(e) = state.cache.set(&req.document_hash, &response, 3600).await {
-        warn!("Failed to cache result: {}", e);
-    }
-
-    Ok(Json(response))
-}
-
-// Verify document by GET with hash in path
-async fn verify_document_by_hash(
-    State(state): State<AppState>,
-    Path(hash): Path<String>,
-) -> Result<Json<VerifyResponse>, StatusCode> {
-    let req = VerifyRequest {
-        document_hash: hash,
-        transaction_id: None,
-    };
-    verify_document(State(state), Json(req)).await
 }

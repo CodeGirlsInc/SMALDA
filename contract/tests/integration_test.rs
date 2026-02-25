@@ -189,17 +189,73 @@ async fn test_submit_missing_secret() {
 }
 
 #[tokio::test]
-async fn test_revoke() {
-    let (server, _) = test_app().await;
+async fn test_revoke_non_existent_hash() {
+    let (server, mock) = test_app().await;
+    let hash = valid_sha256();
+    
+    // Mock Stellar to return no records (hash doesn't exist)
+    mock_stellar_verify(&mock, &hash, false);
+
     let response = server
         .post("/revoke")
         .json(&serde_json::json!({
-            "document_hash": "non_existent"
+            "document_hash": hash,
+            "reason": "Test revocation",
+            "revoked_by": "test_user"
         }))
         .await;
 
-    // Issue: non-existent hash -> 404
+    // Non-existent hash should return 404
     response.assert_status(StatusCode::NOT_FOUND);
+    let json: serde_json::Value = response.json();
+    assert_eq!(json["error"], "Document hash not found");
+}
+
+#[tokio::test]
+async fn test_revoke_existing_hash() {
+    let (server, mock) = test_app().await;
+    let hash = valid_sha256();
+    
+    // Mock Stellar to return the hash exists
+    mock_stellar_verify(&mock, &hash, true);
+    
+    // Mock the revocation submission
+    mock.mock(|when, then| {
+        when.method(httpmock::Method::POST).path("/transactions");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(r#"{"id": "revoke_tx_123"}"#);
+    });
+
+    let response = server
+        .post("/revoke")
+        .json(&serde_json::json!({
+            "document_hash": hash,
+            "reason": "Document superseded",
+            "revoked_by": "admin@example.com"
+        }))
+        .await;
+
+    response.assert_status(StatusCode::OK);
+    let json: serde_json::Value = response.json();
+    assert_eq!(json["transaction_id"], "revoke_tx_123");
+    assert!(json["revoked_at"].is_number());
+}
+
+#[tokio::test]
+async fn test_revoke_missing_fields() {
+    let (server, _) = test_app().await;
+    
+    // Missing reason and revoked_by fields
+    let response = server
+        .post("/revoke")
+        .json(&serde_json::json!({
+            "document_hash": valid_sha256()
+        }))
+        .await;
+
+    // Should return 400 for missing required fields
+    response.assert_status(StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

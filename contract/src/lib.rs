@@ -48,6 +48,19 @@ pub struct VerifyResponse {
     pub cached: bool,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct RevokeRequest {
+    pub document_hash: String,
+    pub reason: String,
+    pub revoked_by: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RevokeResponse {
+    pub transaction_id: String,
+    pub revoked_at: i64,
+}
+
 #[derive(Debug, Serialize)]
 pub struct HealthResponse {
     pub status: String,
@@ -85,12 +98,12 @@ pub fn app(state: AppState) -> Router {
         .route("/metrics", get(metrics_handler))
         .route("/verify", post(verify_document))
         .route("/verify/:hash", get(verify_document_by_hash))
-        // Stubs for missing endpoints (with hash validation where applicable)
+        .route("/revoke", post(revoke_document))
+        // Stubs for missing endpoints
         .route("/verify/batch", post(|| async { StatusCode::BAD_REQUEST }))
         .route("/verify/:hash/history", get(|| async { StatusCode::NOT_FOUND }))
-        .route("/submit", post(submit_document))
-        .route("/revoke", post(revoke_document))
-        .route("/transfer", post(transfer_document))
+        .route("/submit", post(|| async { StatusCode::BAD_REQUEST }))
+        .route("/transfer", post(|| async { StatusCode::BAD_REQUEST }))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
