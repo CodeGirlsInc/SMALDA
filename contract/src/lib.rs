@@ -20,7 +20,7 @@ use tracing::{info, warn};
 use cache::{CacheBackend};
 use config::AppConfig;
 use metrics::MetricsRegistry;
-use stellar::StellarClient;
+use stellar::{StellarClient, TransactionRecord};
 
 // Application state
 #[derive(Clone)]
@@ -28,6 +28,7 @@ pub struct AppState {
     pub stellar: Arc<StellarClient>,
     pub cache: Arc<CacheBackend>,
     pub metrics: Arc<MetricsRegistry>,
+    pub stellar_secret_key: String,
 }
 
 // Request/Response types
@@ -45,11 +46,37 @@ pub struct VerifyResponse {
     pub cached: bool,
 }
 
+/// Request type for submitting a document hash to Stellar blockchain
+#[derive(Debug, Deserialize)]
+pub struct SubmitRequest {
+    pub document_hash: String,
+    pub document_id: String,
+    pub submitter: String,
+}
+
+/// Response type for document hash submission
+#[derive(Debug, Serialize)]
+pub struct SubmitResponse {
+    pub success: bool,
+    pub transaction_id: Option<String>,
+    pub anchored_at: Option<i64>,
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct HealthResponse {
     pub status: String,
     pub stellar_connected: bool,
     pub redis_connected: bool,
+}
+
+/// Response type for document verification history
+#[derive(Debug, Serialize)]
+pub struct HistoryResponse {
+    pub document_hash: String,
+    pub transactions: Vec<TransactionRecord>,
+    pub count: usize,
+    pub cached: bool,
 }
 
 pub fn app(state: AppState) -> Router {
@@ -58,10 +85,10 @@ pub fn app(state: AppState) -> Router {
         .route("/metrics", get(metrics_handler))
         .route("/verify", post(verify_document))
         .route("/verify/:hash", get(verify_document_by_hash))
+        .route("/verify/:hash/history", get(verify_document_history))
+        .route("/submit", post(submit_document))
         // Stubs for missing endpoints
         .route("/verify/batch", post(|| async { StatusCode::BAD_REQUEST }))
-        .route("/verify/:hash/history", get(|| async { StatusCode::NOT_FOUND }))
-        .route("/submit", post(|| async { StatusCode::BAD_REQUEST }))
         .route("/revoke", post(|| async { StatusCode::NOT_FOUND }))
         .route("/transfer", post(|| async { StatusCode::BAD_REQUEST }))
         .layer(TraceLayer::new_for_http())
@@ -143,6 +170,101 @@ pub async fn verify_document_by_hash(
         transaction_id: None,
     };
     verify_document(State(state), Json(req)).await
+}
+
+/// Get the full on-chain history for a document hash
+pub async fn verify_document_history(
+    State(state): State<AppState>,
+    Path(hash): Path<String>,
+) -> Result<Json<HistoryResponse>, StatusCode> {
+    info!("Fetching history for document hash: {}", hash);
+    state.metrics.increment_request_count();
+
+    // Check cache first with history-specific key
+    let cache_key = format!("history:{}", hash);
+    if let Ok(Some(cached)) = state.cache.get(&cache_key).await {
+        info!("Cache hit for history: {}", hash);
+        state.metrics.increment_cache_hits();
+        return Ok(Json(HistoryResponse {
+            document_hash: hash,
+            transactions: cached,
+            count: cached.len(),
+            cached: true,
+        }));
+    }
+
+    state.metrics.increment_cache_misses();
+
+    // Query Stellar blockchain for all transactions with this hash
+    let transactions = match state.stellar.get_hash_history(&hash).await {
+        Ok(txs) => txs,
+        Err(e) => {
+            warn!("Failed to fetch history for hash {}: {}", hash, e);
+            state.metrics.increment_error_count();
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    // Return 404 if no transactions found
+    if transactions.is_empty() {
+        info!("No transactions found for hash: {}", hash);
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let response = HistoryResponse {
+        document_hash: hash.clone(),
+        count: transactions.len(),
+        cached: false,
+        transactions: transactions.clone(),
+    };
+
+    // Cache the history with 300 second TTL
+    if let Err(e) = state.cache.set(&cache_key, &transactions, 300).await {
+        warn!("Failed to cache history: {}", e);
+    }
+
+    info!(
+        "Successfully fetched {} transactions for hash {}",
+        transactions.len(),
+        hash
+    );
+    Ok(Json(response))
+}
+
+/// Submit a document hash to the Stellar blockchain
+pub async fn submit_document(
+    State(state): State<AppState>,
+    Json(req): Json<SubmitRequest>,
+) -> Result<Json<SubmitResponse>, StatusCode> {
+    info!(
+        "Submitting document hash: {}, document_id: {}, submitter: {}",
+        req.document_hash, req.document_id, req.submitter
+    );
+    state.metrics.increment_request_count();
+
+    // Get the secret key from app state (passed during initialization)
+    match state.stellar.submit_hash(&req.document_hash, &state.stellar_secret_key).await {
+        Ok(tx_id) => {
+            let anchored_at = chrono::Utc::now().timestamp();
+            info!("Document anchored successfully. Transaction ID: {}", tx_id);
+            Ok(Json(SubmitResponse {
+                success: true,
+                transaction_id: Some(tx_id),
+                anchored_at: Some(anchored_at),
+                error: None,
+            }))
+        }
+        Err(e) => {
+            warn!("Failed to submit document hash: {}", e);
+            state.metrics.increment_error_count();
+            Ok(Json(SubmitResponse {
+                success: false,
+                transaction_id: None,
+                anchored_at: None,
+                error: Some(e.to_string()),
+            }))
+        }
+    }
 }
 
 /// Calculates Levenshtein distance between two strings

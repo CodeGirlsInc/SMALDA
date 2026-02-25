@@ -41,7 +41,25 @@ impl AppConfig {
         let log_level = get_env_or_default("LOG_LEVEL", "info");
         let webhook_urls_raw = get_env_or_default("WEBHOOK_URLS", "");
 
-        let stellar_secret_key = env::var("STELLAR_SECRET_KEY").ok();
+        let stellar_secret_key = match env::var("STELLAR_SECRET_KEY") {
+            Ok(key) => {
+                // Validate the secret key format (should be 56 chars starting with 'S')
+                if key.len() != 56 || !key.starts_with('S') {
+                    errors.push(
+                        "STELLAR_SECRET_KEY must be a 56-character string starting with 'S'"
+                            .to_string(),
+                    );
+                }
+                Some(key)
+            }
+            Err(_) => {
+                errors.push(
+                    "STELLAR_SECRET_KEY is required but not set. Please set the environment variable."
+                        .to_string(),
+                );
+                None
+            }
+        };
         let webhook_secret = env::var("WEBHOOK_SECRET").ok();
 
         // Numeric values with defaults
