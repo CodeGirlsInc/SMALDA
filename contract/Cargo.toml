@@ -41,6 +41,7 @@ sha2 = "0.10"
 hex = "0.4"
 chrono = "0.4.43"
 base64 = "0.22"
+rand = "0.8"
 
 [dev-dependencies]
 httpmock = "0.7"

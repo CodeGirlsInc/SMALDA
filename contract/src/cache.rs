@@ -49,6 +49,13 @@ impl CacheBackend {
         let serialized = serde_json::to_string(value)?;
         self.set_raw(key, &serialized, ttl).await
     }
+
+    pub async fn delete(&self, key: &str) -> Result<()> {
+        match self {
+            Self::Redis(c) => c.delete(key).await,
+            Self::InMemory(c) => c.delete(key).await,
+        }
+    }
 }
 
 pub struct RedisCache {
@@ -78,6 +85,12 @@ impl RedisCache {
         conn.set_ex(key, value, ttl).await?;
         Ok(())
     }
+
+    async fn delete(&self, key: &str) -> Result<()> {
+        let mut conn = self.connection.clone();
+        conn.del(key).await?;
+        Ok(())
+    }
 }
 
 pub struct InMemoryCache {
@@ -103,6 +116,12 @@ impl InMemoryCache {
     async fn set_raw(&self, key: &str, key_val: &str, _ttl: u64) -> Result<()> {
         let mut store = self.store.write().await;
         store.insert(key.to_string(), key_val.to_string());
+        Ok(())
+    }
+
+    async fn delete(&self, key: &str) -> Result<()> {
+        let mut store = self.store.write().await;
+        store.remove(key);
         Ok(())
     }
 }
