@@ -209,7 +209,10 @@ async fn test_transfer_invalid_date() {
         .post("/transfer")
         .json(&serde_json::json!({
             "document_hash": valid_sha256(),
-            "date": "invalid_date_format"
+            "from_owner": "Alice",
+            "to_owner": "Bob",
+            "transfer_date": "invalid_date_format",
+            "transfer_reference": "REF-123"
         }))
         .await;
 
