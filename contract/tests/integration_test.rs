@@ -151,7 +151,7 @@ async fn test_verify_by_hash_get() {
 }
 
 #[tokio::test]
-async fn test_verify_batch() {
+async fn test_verify_batch_empty_array() {
     let (server, _) = test_app().await;
     let response = server
         .post("/verify/batch")
@@ -160,8 +160,144 @@ async fn test_verify_batch() {
         }))
         .await;
 
-    // missing or empty batch -> 400
+    // Empty array should return 400
     response.assert_status(StatusCode::BAD_REQUEST);
+    let json: serde_json::Value = response.json();
+    assert!(json["error"].as_str().unwrap().contains("cannot be empty"));
+}
+
+#[tokio::test]
+async fn test_verify_batch_too_many_hashes() {
+    let (server, _) = test_app().await;
+    
+    // Create 51 hashes (exceeds the limit of 50)
+    let mut hashes = Vec::new();
+    for i in 0..51 {
+        hashes.push(format!("{:064x}", i)); // Valid SHA256 format
+    }
+    
+    let response = server
+        .post("/verify/batch")
+        .json(&serde_json::json!({
+            "hashes": hashes
+        }))
+        .await;
+
+    // Too many hashes should return 400
+    response.assert_status(StatusCode::BAD_REQUEST);
+    let json: serde_json::Value = response.json();
+    assert!(json["error"].as_str().unwrap().contains("maximum of 50"));
+}
+
+#[tokio::test]
+async fn test_verify_batch_valid_request() {
+    let (server, mock) = test_app().await;
+    
+    let hash1 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    let hash2 = "a54d88e06612d82112c20f29a86dc85477599c4f";
+    
+    // Mock Stellar responses
+    mock_stellar_verify(&mock, hash1, true);
+    mock_stellar_verify(&mock, hash2, false);
+    
+    let response = server
+        .post("/verify/batch")
+        .json(&serde_json::json!({
+            "hashes": [hash1, hash2]
+        }))
+        .await;
+
+    response.assert_status(StatusCode::OK);
+    let json: serde_json::Value = response.json();
+    
+    assert_eq!(json["total"], 2);
+    assert_eq!(json["verified_count"], 1);
+    assert_eq!(json["failed_count"], 1);
+    assert_eq!(json["results"].as_array().unwrap().len(), 2);
+    
+    // Check first result (verified)
+    let result1 = &json["results"][0];
+    assert_eq!(result1["hash"], hash1);
+    assert_eq!(result1["verified"], true);
+    assert!(result1["transaction_id"].is_string());
+    assert!(result1["timestamp"].is_number());
+    assert!(result1["error"].is_null());
+    
+    // Check second result (not verified)
+    let result2 = &json["results"][1];
+    assert_eq!(result2["hash"], hash2);
+    assert_eq!(result2["verified"], false);
+    assert!(result2["transaction_id"].is_null());
+    assert!(result2["timestamp"].is_null());
+    assert!(result2["error"].is_null());
+}
+
+#[tokio::test]
+async fn test_verify_batch_with_invalid_hashes() {
+    let (server, _) = test_app().await;
+    
+    let response = server
+        .post("/verify/batch")
+        .json(&serde_json::json!({
+            "hashes": [
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", // valid
+                "invalid_hash", // invalid
+                "short" // invalid length
+            ]
+        }))
+        .await;
+
+    response.assert_status(StatusCode::OK);
+    let json: serde_json::Value = response.json();
+    
+    assert_eq!(json["total"], 3);
+    assert_eq!(json["verified_count"], 0);
+    assert_eq!(json["failed_count"], 3);
+    
+    // Check that invalid hashes have error messages
+    let results = json["results"].as_array().unwrap();
+    for result in results {
+        assert_eq!(result["verified"], false);
+        assert!(result["error"].is_string());
+        assert!(!result["error"].as_str().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn test_verify_batch_cache_usage() {
+    let (server, mock) = test_app().await;
+    
+    let hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    
+    // Mock Stellar to return verified
+    mock_stellar_verify(&mock, hash, true);
+    
+    // First request - should hit Stellar
+    let response1 = server
+        .post("/verify/batch")
+        .json(&serde_json::json!({
+            "hashes": [hash.clone()]
+        }))
+        .await;
+
+    response1.assert_status(StatusCode::OK);
+    let json1: serde_json::Value = response1.json();
+    assert_eq!(json1["results"][0]["verified"], true);
+    
+    // Second request - should hit cache (no additional Stellar calls expected)
+    let response2 = server
+        .post("/verify/batch")
+        .json(&serde_json::json!({
+            "hashes": [hash.clone()]
+        }))
+        .await;
+
+    response2.assert_status(StatusCode::OK);
+    let json2: serde_json::Value = response2.json();
+    assert_eq!(json2["results"][0]["verified"], true);
+    
+    // Both responses should be identical
+    assert_eq!(json1["results"][0], json2["results"][0]);
 }
 
 #[tokio::test]
