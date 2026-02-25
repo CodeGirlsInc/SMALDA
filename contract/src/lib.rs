@@ -45,6 +45,19 @@ pub struct VerifyResponse {
     pub cached: bool,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct RevokeRequest {
+    pub document_hash: String,
+    pub reason: String,
+    pub revoked_by: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RevokeResponse {
+    pub transaction_id: String,
+    pub revoked_at: i64,
+}
+
 #[derive(Debug, Serialize)]
 pub struct HealthResponse {
     pub status: String,
@@ -58,11 +71,11 @@ pub fn app(state: AppState) -> Router {
         .route("/metrics", get(metrics_handler))
         .route("/verify", post(verify_document))
         .route("/verify/:hash", get(verify_document_by_hash))
+        .route("/revoke", post(revoke_document))
         // Stubs for missing endpoints
         .route("/verify/batch", post(|| async { StatusCode::BAD_REQUEST }))
         .route("/verify/:hash/history", get(|| async { StatusCode::NOT_FOUND }))
         .route("/submit", post(|| async { StatusCode::BAD_REQUEST }))
-        .route("/revoke", post(|| async { StatusCode::NOT_FOUND }))
         .route("/transfer", post(|| async { StatusCode::BAD_REQUEST }))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -143,6 +156,78 @@ pub async fn verify_document_by_hash(
         transaction_id: None,
     };
     verify_document(State(state), Json(req)).await
+}
+
+// Revoke document endpoint
+pub async fn revoke_document(
+    State(state): State<AppState>,
+    Json(req): Json<RevokeRequest>,
+) -> Result<Json<RevokeResponse>, (StatusCode, Json<serde_json::Value>)> {
+    info!("Revoking document hash: {}", req.document_hash);
+    state.metrics.increment_request_count();
+
+    // Verify that the hash exists on-chain first
+    let verification = match state.stellar.verify_hash(&req.document_hash).await {
+        Ok(v) => v,
+        Err(e) => {
+            warn!("Failed to verify hash before revocation: {}", e);
+            state.metrics.increment_error_count();
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "Failed to verify hash existence",
+                    "message": e.to_string()
+                }))
+            ));
+        }
+    };
+
+    // If hash not found on-chain, return 404
+    if !verification.verified {
+        info!("Hash not found on-chain: {}", req.document_hash);
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": "Document hash not found",
+                "message": format!("The document hash '{}' does not exist on the blockchain", req.document_hash)
+            }))
+        ));
+    }
+
+    // Submit revocation to Stellar
+    let transaction_id = match state.stellar.revoke_hash(
+        &req.document_hash,
+        &req.reason,
+        &req.revoked_by
+    ).await {
+        Ok(tx_id) => tx_id,
+        Err(e) => {
+            warn!("Failed to submit revocation: {}", e);
+            state.metrics.increment_error_count();
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "Failed to submit revocation",
+                    "message": e.to_string()
+                }))
+            ));
+        }
+    };
+
+    // Invalidate cache for this hash
+    if let Err(e) = state.cache.delete(&req.document_hash).await {
+        warn!("Failed to invalidate cache for revoked hash: {}", e);
+        // Don't fail the request if cache invalidation fails
+    }
+
+    let revoked_at = chrono::Utc::now().timestamp();
+
+    info!("Document revoked successfully: {}", transaction_id);
+
+    Ok(Json(RevokeResponse {
+        transaction_id,
+        revoked_at,
+    }))
 }
 
 /// Calculates Levenshtein distance between two strings
