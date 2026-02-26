@@ -19,6 +19,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
+use futures::future::join_all;
 
 use cache::CacheBackend;
 use metrics::MetricsRegistry;
@@ -73,6 +74,28 @@ pub struct ValidationErrorResponse {
     pub error: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct BatchVerifyRequest {
+    pub hashes: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BatchVerifyResponse {
+    pub results: Vec<BatchVerifyItem>,
+    pub total: usize,
+    pub verified_count: usize,
+    pub failed_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BatchVerifyItem {
+    pub hash: String,
+    pub verified: bool,
+    pub transaction_id: Option<String>,
+    pub timestamp: Option<i64>,
+    pub error: Option<String>,
+}
+
 fn map_validation_error(err: HashValidationError) -> (StatusCode, ValidationErrorResponse) {
     let message = match err {
         HashValidationError::EmptyHash => "hash must not be empty".to_string(),
@@ -100,7 +123,7 @@ pub fn app(state: AppState) -> Router {
         .route("/verify/:hash", get(verify_document_by_hash))
         .route("/revoke", post(revoke_document))
         // Stubs for missing endpoints
-        .route("/verify/batch", post(|| async { StatusCode::BAD_REQUEST }))
+        .route("/verify/batch", post(batch_verify_documents))
         .route("/verify/:hash/history", get(|| async { StatusCode::NOT_FOUND }))
         .route("/submit", post(|| async { StatusCode::BAD_REQUEST }))
         .route("/transfer", post(|| async { StatusCode::BAD_REQUEST }))
@@ -294,6 +317,150 @@ pub async fn verify_document_by_hash(
         transaction_id: None,
     };
     verify_document(State(state), Json(req)).await
+}
+
+// Batch verify documents
+pub async fn batch_verify_documents(
+    State(state): State<AppState>,
+    Json(req): Json<BatchVerifyRequest>,
+) -> Result<impl IntoResponse, StatusCode> {
+    // Validate batch size
+    if req.hashes.is_empty() {
+        return Ok((
+            StatusCode::BAD_REQUEST,
+            Json(ValidationErrorResponse {
+                error: "hashes array cannot be empty".to_string(),
+            }),
+        ));
+    }
+
+    if req.hashes.len() > 50 {
+        return Ok((
+            StatusCode::BAD_REQUEST,
+            Json(ValidationErrorResponse {
+                error: "batch size exceeds maximum of 50 hashes".to_string(),
+            }),
+        ));
+    }
+
+    info!("Batch verifying {} document hashes", req.hashes.len());
+    state.metrics.increment_request_count();
+
+    // Process all hashes concurrently
+    let verification_futures: Vec<_> = req.hashes.iter().map(|hash| {
+        let state = state.clone();
+        let hash = hash.clone();
+        
+        async move {
+            verify_single_hash(&state, hash).await
+        }
+    }).collect();
+
+    let results = join_all(verification_futures).await;
+    
+    let verified_count = results.iter().filter(|item| item.verified).count();
+    let failed_count = results.len() - verified_count;
+
+    let response = BatchVerifyResponse {
+        results,
+        total: req.hashes.len(),
+        verified_count,
+        failed_count,
+    };
+
+    Ok(Json(response))
+}
+
+// Helper function to verify a single hash
+async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
+    // Normalize and validate hash
+    let normalized_hash = match HashValidator::normalize(&hash) {
+        Ok(h) => h,
+        Err(_) => {
+            return BatchVerifyItem {
+                hash,
+                verified: false,
+                transaction_id: None,
+                timestamp: None,
+                error: Some("invalid hash format".to_string()),
+            };
+        }
+    };
+
+    if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
+        let error_msg = match err {
+            HashValidationError::EmptyHash => "hash must not be empty".to_string(),
+            HashValidationError::WrongLength { expected, actual } => format!(
+                "hash has wrong length: expected {} characters, got {}",
+                expected, actual
+            ),
+            HashValidationError::InvalidCharacter { position, character } => format!(
+                "hash contains invalid character '{}' at position {}",
+                character, position
+            ),
+        };
+
+        return BatchVerifyItem {
+            hash,
+            verified: false,
+            transaction_id: None,
+            timestamp: None,
+            error: Some(error_msg),
+        };
+    }
+
+    // Check cache first
+    if let Ok(Some(cached)) = state.cache.get::<VerifyResponse>(&normalized_hash).await {
+        info!("Cache hit for hash: {}", normalized_hash);
+        state.metrics.increment_cache_hits();
+        
+        return BatchVerifyItem {
+            hash,
+            verified: cached.verified,
+            transaction_id: cached.transaction_id,
+            timestamp: cached.timestamp,
+            error: None,
+        };
+    }
+
+    state.metrics.increment_cache_misses();
+
+    // Query Stellar blockchain
+    let result = match state.stellar.verify_hash(&normalized_hash).await {
+        Ok(verification) => verification,
+        Err(e) => {
+            warn!("Stellar query failed for hash {}: {}", normalized_hash, e);
+            state.metrics.increment_error_count();
+            
+            return BatchVerifyItem {
+                hash,
+                verified: false,
+                transaction_id: None,
+                timestamp: None,
+                error: Some(format!("stellar query failed: {}", e)),
+            };
+        }
+    };
+
+    // Cache the result
+    let cache_response = VerifyResponse {
+        verified: result.verified,
+        transaction_id: result.transaction_id.clone(),
+        timestamp: result.timestamp,
+        cached: false,
+    };
+
+    if let Err(e) = state.cache.set(&normalized_hash, &cache_response, 3600).await {
+        warn!("Failed to cache result for hash {}: {}", normalized_hash, e);
+    }
+
+    BatchVerifyItem {
+        hash,
+        verified: result.verified,
+        transaction_id: result.transaction_id,
+        timestamp: result.timestamp,
+        error: None,
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -604,5 +771,109 @@ mod tests {
         assert!(is_valid_iso8601_date("2025-12-31"));
         assert!(!is_valid_iso8601_date("2025-13-01"));
         assert!(!is_valid_iso8601_date("not-a-date"));
+    }
+
+    #[test]
+    fn test_batch_verify_request_validation() {
+        // Test empty batch
+        let empty_request = BatchVerifyRequest { hashes: vec![] };
+        assert!(empty_request.hashes.is_empty());
+
+        // Test valid batch size
+        let mut valid_hashes = Vec::new();
+        for i in 0..10 {
+            valid_hashes.push(format!("{:064x}", i));
+        }
+        let valid_request = BatchVerifyRequest { hashes: valid_hashes };
+        assert!(!valid_request.hashes.is_empty());
+        assert!(valid_request.hashes.len() <= 50);
+
+        // Test batch size exceeding limit
+        let mut too_many_hashes = Vec::new();
+        for i in 0..51 {
+            too_many_hashes.push(format!("{:064x}", i));
+        }
+        let oversized_request = BatchVerifyRequest { hashes: too_many_hashes };
+        assert!(oversized_request.hashes.len() > 50);
+    }
+
+    #[test]
+    fn test_batch_verify_response_structure() {
+        let results = vec![
+            BatchVerifyItem {
+                hash: "hash1".to_string(),
+                verified: true,
+                transaction_id: Some("tx1".to_string()),
+                timestamp: Some(1234567890),
+                error: None,
+            },
+            BatchVerifyItem {
+                hash: "hash2".to_string(),
+                verified: false,
+                transaction_id: None,
+                timestamp: None,
+                error: Some("verification failed".to_string()),
+            },
+        ];
+
+        let response = BatchVerifyResponse {
+            total: results.len(),
+            verified_count: 1,
+            failed_count: 1,
+            results,
+        };
+
+        assert_eq!(response.total, 2);
+        assert_eq!(response.verified_count, 1);
+        assert_eq!(response.failed_count, 1);
+        assert_eq!(response.results.len(), 2);
+        
+        // Verify first item
+        assert_eq!(response.results[0].hash, "hash1");
+        assert_eq!(response.results[0].verified, true);
+        assert_eq!(response.results[0].transaction_id, Some("tx1".to_string()));
+        assert_eq!(response.results[0].timestamp, Some(1234567890));
+        assert_eq!(response.results[0].error, None);
+        
+        // Verify second item
+        assert_eq!(response.results[1].hash, "hash2");
+        assert_eq!(response.results[1].verified, false);
+        assert_eq!(response.results[1].transaction_id, None);
+        assert_eq!(response.results[1].timestamp, None);
+        assert_eq!(response.results[1].error, Some("verification failed".to_string()));
+    }
+
+    #[test]
+    fn test_batch_verify_item_creation() {
+        let item = BatchVerifyItem {
+            hash: "test_hash".to_string(),
+            verified: true,
+            transaction_id: Some("transaction_123".to_string()),
+            timestamp: Some(1640995200), // 2022-01-01 00:00:00 UTC
+            error: None,
+        };
+
+        assert_eq!(item.hash, "test_hash");
+        assert!(item.verified);
+        assert_eq!(item.transaction_id, Some("transaction_123".to_string()));
+        assert_eq!(item.timestamp, Some(1640995200));
+        assert_eq!(item.error, None);
+    }
+
+    #[test]
+    fn test_batch_verify_item_with_error() {
+        let item = BatchVerifyItem {
+            hash: "invalid_hash".to_string(),
+            verified: false,
+            transaction_id: None,
+            timestamp: None,
+            error: Some("invalid hash format".to_string()),
+        };
+
+        assert_eq!(item.hash, "invalid_hash");
+        assert!(!item.verified);
+        assert_eq!(item.transaction_id, None);
+        assert_eq!(item.timestamp, None);
+        assert_eq!(item.error, Some("invalid hash format".to_string()));
     }
 }
