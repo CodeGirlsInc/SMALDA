@@ -1,0 +1,15 @@
+# Add these to your existing Cargo.toml [dependencies]
+
+[dependencies]
+tokio       = { version = "1", features = ["full"] }
+reqwest     = { version = "0.12", features = ["json"] }
+serde_json  = "1"
+serde       = { version = "1", features = ["derive"] }
+hmac        = "0.12"
+sha2        = "0.10"
+hex         = "0.4"
+tracing     = "0.1"
+
+[dev-dependencies]
+httpmock    = "0.7"
+tokio       = { version = "1", features = ["full", "test-util"] }
