@@ -23,6 +23,7 @@ use futures::future::join_all;
 
 use cache::CacheBackend;
 use metrics::MetricsRegistry;
+use stellar::{StellarClient, TransactionRecord};
 use stellar::StellarClient;
 use hash_validator::{HashValidator, ValidationError as HashValidationError};
 
@@ -32,6 +33,7 @@ pub struct AppState {
     pub stellar: Arc<StellarClient>,
     pub cache: Arc<CacheBackend>,
     pub metrics: Arc<MetricsRegistry>,
+    pub stellar_secret_key: String,
 }
 
 // Request/Response types
@@ -48,6 +50,22 @@ pub struct VerifyResponse {
     pub timestamp: Option<i64>,
     pub cached: bool,
 }
+
+/// Request type for submitting a document hash to Stellar blockchain
+#[derive(Debug, Deserialize)]
+pub struct SubmitRequest {
+    pub document_hash: String,
+    pub document_id: String,
+    pub submitter: String,
+}
+
+/// Response type for document hash submission
+#[derive(Debug, Serialize)]
+pub struct SubmitResponse {
+    pub success: bool,
+    pub transaction_id: Option<String>,
+    pub anchored_at: Option<i64>,
+    pub error: Option<String>,
 
 #[derive(Debug, Deserialize)]
 pub struct RevokeRequest {
@@ -68,6 +86,15 @@ pub struct HealthResponse {
     pub stellar_connected: bool,
     pub redis_connected: bool,
 }
+
+
+/// Response type for document verification history
+#[derive(Debug, Serialize)]
+pub struct HistoryResponse {
+    pub document_hash: String,
+    pub transactions: Vec<TransactionRecord>,
+    pub count: usize,
+    pub cached: bool,
 
 #[derive(Debug, Serialize)]
 pub struct ValidationErrorResponse {
@@ -113,6 +140,7 @@ fn map_validation_error(err: HashValidationError) -> (StatusCode, ValidationErro
         StatusCode::BAD_REQUEST,
         ValidationErrorResponse { error: message },
     )
+
 }
 
 pub fn app(state: AppState) -> Router {
@@ -121,6 +149,11 @@ pub fn app(state: AppState) -> Router {
         .route("/metrics", get(metrics_handler))
         .route("/verify", post(verify_document))
         .route("/verify/:hash", get(verify_document_by_hash))
+        .route("/verify/:hash/history", get(verify_document_history))
+        .route("/submit", post(submit_document))
+        // Stubs for missing endpoints
+        .route("/verify/batch", post(|| async { StatusCode::BAD_REQUEST }))
+        .route("/revoke", post(|| async { StatusCode::NOT_FOUND }))
         .route("/revoke", post(revoke_document))
         // Stubs for missing endpoints
         .route("/verify/batch", post(batch_verify_documents))

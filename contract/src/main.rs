@@ -61,6 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         stellar,
         cache,
         metrics,
+        stellar_secret_key: config.stellar_secret_key.clone().unwrap_or_default(),
     };
 
     let app = app(state);
