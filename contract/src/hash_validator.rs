@@ -127,7 +127,10 @@ mod tests {
         hash.replace_range(10..11, "g"); // 'g' is not a valid hex digit
 
         match HashValidator::validate_sha256(&hash) {
-            Err(ValidationError::InvalidCharacter { position, character }) => {
+            Err(ValidationError::InvalidCharacter {
+                position,
+                character,
+            }) => {
                 assert_eq!(position, 10);
                 assert_eq!(character, 'g');
             }
@@ -153,4 +156,3 @@ mod tests {
         assert_eq!(algo, None);
     }
 }
-

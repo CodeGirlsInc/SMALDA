@@ -1,9 +1,9 @@
+use anyhow::{anyhow, Result};
+use redis::{aio::ConnectionManager, AsyncCommands};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use anyhow::{Result, anyhow};
-use redis::{aio::ConnectionManager, AsyncCommands};
-use serde::{Deserialize, Serialize};
 
 pub enum CacheBackend {
     Redis(RedisCache),
@@ -17,21 +17,21 @@ impl CacheBackend {
             Self::InMemory(c) => c.check_connection().await,
         }
     }
-    
+
     pub async fn get_raw(&self, key: &str) -> Result<Option<String>> {
         match self {
             Self::Redis(c) => c.get_raw(key).await,
             Self::InMemory(c) => c.get_raw(key).await,
         }
     }
-    
+
     pub async fn set_raw(&self, key: &str, value: &str, ttl: u64) -> Result<()> {
         match self {
             Self::Redis(c) => c.set_raw(key, value, ttl).await,
             Self::InMemory(c) => c.set_raw(key, value, ttl).await,
         }
     }
-    
+
     pub async fn get<T>(&self, key: &str) -> Result<Option<T>>
     where
         T: for<'de> Deserialize<'de>,
@@ -71,7 +71,10 @@ impl RedisCache {
 
     async fn check_connection(&self) -> bool {
         let mut conn = self.connection.clone();
-        redis::cmd("PING").query_async::<_, String>(&mut conn).await.is_ok()
+        redis::cmd("PING")
+            .query_async::<_, String>(&mut conn)
+            .await
+            .is_ok()
     }
 
     async fn get_raw(&self, key: &str) -> Result<Option<String>> {

@@ -12,11 +12,9 @@ pub struct MetricsRegistry {
 impl MetricsRegistry {
     pub fn new() -> Self {
         let registry = Registry::new();
-        let request_count =
-            Counter::new("requests_total", "Total number of requests").unwrap();
+        let request_count = Counter::new("requests_total", "Total number of requests").unwrap();
         let cache_hits = Counter::new("cache_hits_total", "Total cache hits").unwrap();
-        let cache_misses =
-            Counter::new("cache_misses_total", "Total cache misses").unwrap();
+        let cache_misses = Counter::new("cache_misses_total", "Total cache misses").unwrap();
         let error_count = Counter::new("errors_total", "Total errors").unwrap();
 
         registry.register(Box::new(request_count.clone())).unwrap();
@@ -53,7 +51,9 @@ impl MetricsRegistry {
         let encoder = TextEncoder::new();
         let metric_families = self.registry.gather();
         let mut buffer = Vec::new();
-        encoder.encode(&metric_families, &mut buffer).unwrap_or_default();
+        encoder
+            .encode(&metric_families, &mut buffer)
+            .unwrap_or_default();
         String::from_utf8(buffer).unwrap_or_default()
     }
 }

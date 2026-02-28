@@ -239,4 +239,3 @@ mod tests {
         assert_eq!(cfg.webhook_urls.len(), 2);
     }
 }
-

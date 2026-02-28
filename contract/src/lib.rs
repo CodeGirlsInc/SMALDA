@@ -1,9 +1,9 @@
 pub mod cache;
 pub mod config;
+pub mod hash_validator;
 pub mod metrics;
 pub mod rate_limit;
 pub mod stellar;
-pub mod hash_validator;
 
 use axum::{
     extract::{Path, State},
@@ -13,19 +13,19 @@ use axum::{
     Json, Router,
 };
 use chrono::{NaiveDate, Utc};
+use futures::future::join_all;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
-use futures::future::join_all;
 
 use cache::CacheBackend;
-use metrics::MetricsRegistry;
-use stellar::{StellarClient, TransactionRecord};
-use stellar::StellarClient;
 use hash_validator::{HashValidator, ValidationError as HashValidationError};
+use metrics::MetricsRegistry;
+use stellar::StellarClient;
+use stellar::{StellarClient, TransactionRecord};
 
 // Application state
 #[derive(Clone)]
@@ -88,7 +88,6 @@ pub struct HealthResponse {
     pub redis_connected: bool,
 }
 
-
 /// Response type for document verification history
 #[derive(Debug, Serialize)]
 pub struct HistoryResponse {
@@ -132,7 +131,10 @@ fn map_validation_error(err: HashValidationError) -> (StatusCode, ValidationErro
             "hash has wrong length: expected {} characters, got {}",
             expected, actual
         ),
-        HashValidationError::InvalidCharacter { position, character } => format!(
+        HashValidationError::InvalidCharacter {
+            position,
+            character,
+        } => format!(
             "hash contains invalid character '{}' at position {}",
             character, position
         ),
@@ -142,7 +144,6 @@ fn map_validation_error(err: HashValidationError) -> (StatusCode, ValidationErro
         StatusCode::BAD_REQUEST,
         ValidationErrorResponse { error: message },
     )
-
 }
 
 pub fn app(state: AppState) -> Router {
@@ -159,7 +160,10 @@ pub fn app(state: AppState) -> Router {
         .route("/revoke", post(revoke_document))
         // Stubs for missing endpoints
         .route("/verify/batch", post(batch_verify_documents))
-        .route("/verify/:hash/history", get(|| async { StatusCode::NOT_FOUND }))
+        .route(
+            "/verify/:hash/history",
+            get(|| async { StatusCode::NOT_FOUND }),
+        )
         .route("/submit", post(|| async { StatusCode::BAD_REQUEST }))
         .route("/transfer", post(|| async { StatusCode::BAD_REQUEST }))
         .layer(TraceLayer::new_for_http())
@@ -274,7 +278,10 @@ pub async fn record_transfer(
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
 
-    Ok(Json(TransferResponse { transfer_hash, memo }))
+    Ok(Json(TransferResponse {
+        transfer_hash,
+        memo,
+    }))
 }
 
 /// GET /transfer/:document_hash — retrieve transfer history for a document.
@@ -382,17 +389,19 @@ pub async fn batch_verify_documents(
     state.metrics.increment_request_count();
 
     // Process all hashes concurrently
-    let verification_futures: Vec<_> = req.hashes.iter().map(|hash| {
-        let state = state.clone();
-        let hash = hash.clone();
-        
-        async move {
-            verify_single_hash(&state, hash).await
-        }
-    }).collect();
+    let verification_futures: Vec<_> = req
+        .hashes
+        .iter()
+        .map(|hash| {
+            let state = state.clone();
+            let hash = hash.clone();
+
+            async move { verify_single_hash(&state, hash).await }
+        })
+        .collect();
 
     let results = join_all(verification_futures).await;
-    
+
     let verified_count = results.iter().filter(|item| item.verified).count();
     let failed_count = results.len() - verified_count;
 
@@ -429,7 +438,10 @@ async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
                 "hash has wrong length: expected {} characters, got {}",
                 expected, actual
             ),
-            HashValidationError::InvalidCharacter { position, character } => format!(
+            HashValidationError::InvalidCharacter {
+                position,
+                character,
+            } => format!(
                 "hash contains invalid character '{}' at position {}",
                 character, position
             ),
@@ -448,7 +460,7 @@ async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
     if let Ok(Some(cached)) = state.cache.get::<VerifyResponse>(&normalized_hash).await {
         info!("Cache hit for hash: {}", normalized_hash);
         state.metrics.increment_cache_hits();
-        
+
         return BatchVerifyItem {
             hash,
             verified: cached.verified,
@@ -466,7 +478,7 @@ async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
         Err(e) => {
             warn!("Stellar query failed for hash {}: {}", normalized_hash, e);
             state.metrics.increment_error_count();
-            
+
             return BatchVerifyItem {
                 hash,
                 verified: false,
@@ -485,7 +497,11 @@ async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
         cached: false,
     };
 
-    if let Err(e) = state.cache.set(&normalized_hash, &cache_response, 3600).await {
+    if let Err(e) = state
+        .cache
+        .set(&normalized_hash, &cache_response, 3600)
+        .await
+    {
         warn!("Failed to cache result for hash {}: {}", normalized_hash, e);
     }
 
@@ -514,9 +530,7 @@ pub struct TransferRequest {
     pub date: String,
 }
 
-pub async fn submit_document(
-    Json(req): Json<SubmitRequest>,
-) -> impl IntoResponse {
+pub async fn submit_document(Json(req): Json<SubmitRequest>) -> impl IntoResponse {
     let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);
@@ -532,9 +546,7 @@ pub async fn submit_document(
     )
 }
 
-pub async fn revoke_document(
-    Json(req): Json<RevokeRequest>,
-) -> impl IntoResponse {
+pub async fn revoke_document(Json(req): Json<RevokeRequest>) -> impl IntoResponse {
     let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);
@@ -550,9 +562,7 @@ pub async fn revoke_document(
     )
 }
 
-pub async fn transfer_document(
-    Json(req): Json<TransferRequest>,
-) -> impl IntoResponse {
+pub async fn transfer_document(Json(req): Json<TransferRequest>) -> impl IntoResponse {
     let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);
@@ -595,10 +605,7 @@ pub fn levenshtein_distance(s1: &str, s2: &str) -> usize {
         for (j, c2) in s2.chars().enumerate() {
             let cost = if c1 == c2 { 0 } else { 1 };
             matrix[i + 1][j + 1] = std::cmp::min(
-                std::cmp::min(
-                    matrix[i][j + 1] + 1,
-                    matrix[i + 1][j] + 1,
-                ),
+                std::cmp::min(matrix[i][j + 1] + 1, matrix[i + 1][j] + 1),
                 matrix[i][j] + cost,
             );
         }
@@ -648,8 +655,16 @@ pub fn cosine_similarity(doc1: &str, doc2: &str) -> f64 {
         }
     }
 
-    let magnitude1: f64 = freq1.values().map(|c| (*c as f64).powi(2)).sum::<f64>().sqrt();
-    let magnitude2: f64 = freq2.values().map(|c| (*c as f64).powi(2)).sum::<f64>().sqrt();
+    let magnitude1: f64 = freq1
+        .values()
+        .map(|c| (*c as f64).powi(2))
+        .sum::<f64>()
+        .sqrt();
+    let magnitude2: f64 = freq2
+        .values()
+        .map(|c| (*c as f64).powi(2))
+        .sum::<f64>()
+        .sqrt();
 
     if magnitude1 == 0.0 || magnitude2 == 0.0 {
         return 0.0;
@@ -819,7 +834,9 @@ mod tests {
         for i in 0..10 {
             valid_hashes.push(format!("{:064x}", i));
         }
-        let valid_request = BatchVerifyRequest { hashes: valid_hashes };
+        let valid_request = BatchVerifyRequest {
+            hashes: valid_hashes,
+        };
         assert!(!valid_request.hashes.is_empty());
         assert!(valid_request.hashes.len() <= 50);
 
@@ -828,7 +845,9 @@ mod tests {
         for i in 0..51 {
             too_many_hashes.push(format!("{:064x}", i));
         }
-        let oversized_request = BatchVerifyRequest { hashes: too_many_hashes };
+        let oversized_request = BatchVerifyRequest {
+            hashes: too_many_hashes,
+        };
         assert!(oversized_request.hashes.len() > 50);
     }
 
@@ -862,20 +881,23 @@ mod tests {
         assert_eq!(response.verified_count, 1);
         assert_eq!(response.failed_count, 1);
         assert_eq!(response.results.len(), 2);
-        
+
         // Verify first item
         assert_eq!(response.results[0].hash, "hash1");
         assert_eq!(response.results[0].verified, true);
         assert_eq!(response.results[0].transaction_id, Some("tx1".to_string()));
         assert_eq!(response.results[0].timestamp, Some(1234567890));
         assert_eq!(response.results[0].error, None);
-        
+
         // Verify second item
         assert_eq!(response.results[1].hash, "hash2");
         assert_eq!(response.results[1].verified, false);
         assert_eq!(response.results[1].transaction_id, None);
         assert_eq!(response.results[1].timestamp, None);
-        assert_eq!(response.results[1].error, Some("verification failed".to_string()));
+        assert_eq!(
+            response.results[1].error,
+            Some("verification failed".to_string())
+        );
     }
 
     #[test]
