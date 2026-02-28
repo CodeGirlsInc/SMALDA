@@ -3,10 +3,6 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { RiskIndicatorModule } from './risk-indicator/risk-indicator.module';
-import { DocumentUploadModule } from './document-upload/document-upload.module';
-import { NotificationModule } from './notification/notification.module';
-import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -28,10 +24,6 @@ import { HealthModule } from './health/health.module';
         synchronize: true,
       }),
     }),
-    RiskIndicatorModule,
-    DocumentUploadModule,
-    NotificationModule,
-    HealthModule,
   ],
   controllers: [AppController],
   providers: [AppService],
