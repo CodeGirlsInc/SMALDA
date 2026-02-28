@@ -66,6 +66,7 @@ pub struct SubmitResponse {
     pub transaction_id: Option<String>,
     pub anchored_at: Option<i64>,
     pub error: Option<String>,
+}
 
 #[derive(Debug, Deserialize)]
 pub struct RevokeRequest {
@@ -95,6 +96,7 @@ pub struct HistoryResponse {
     pub transactions: Vec<TransactionRecord>,
     pub count: usize,
     pub cached: bool,
+}
 
 #[derive(Debug, Serialize)]
 pub struct ValidationErrorResponse {

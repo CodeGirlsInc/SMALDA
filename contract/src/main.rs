@@ -7,16 +7,16 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use stellar_doc_verifier::app;
+use stellar_doc_verifier::cache::{CacheBackend, RedisCache};
+use stellar_doc_verifier::config::AppConfig;
+use stellar_doc_verifier::metrics::MetricsRegistry;
+use stellar_doc_verifier::stellar::StellarClient;
+use stellar_doc_verifier::*;
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
-use stellar_doc_verifier::*;
-use stellar_doc_verifier::stellar::StellarClient;
-use stellar_doc_verifier::cache::{CacheBackend, RedisCache};
-use stellar_doc_verifier::metrics::MetricsRegistry;
-use stellar_doc_verifier::config::AppConfig;
-use stellar_doc_verifier::app;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
