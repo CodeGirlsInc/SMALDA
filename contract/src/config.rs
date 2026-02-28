@@ -194,6 +194,10 @@ mod tests {
     #[test]
     fn from_env_uses_defaults_when_missing() {
         clear_env();
+        env::set_var(
+            "STELLAR_SECRET_KEY",
+            "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        );
         let cfg = AppConfig::from_env().expect("config should load with defaults");
 
         assert_eq!(cfg.port, 8080);
@@ -229,6 +233,10 @@ mod tests {
         env::set_var("REDIS_URL", "redis://redis:6379");
         env::set_var("RATE_LIMIT_PER_SECOND", "100");
         env::set_var("WEBHOOK_URLS", "https://a.com, https://b.com");
+        env::set_var(
+            "STELLAR_SECRET_KEY",
+            "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        );
 
         let cfg = AppConfig::from_env().expect("config should load");
 
