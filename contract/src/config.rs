@@ -196,7 +196,7 @@ mod tests {
         clear_env();
         env::set_var(
             "STELLAR_SECRET_KEY",
-            "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         );
         let cfg = AppConfig::from_env().expect("config should load with defaults");
 
@@ -235,7 +235,7 @@ mod tests {
         env::set_var("WEBHOOK_URLS", "https://a.com, https://b.com");
         env::set_var(
             "STELLAR_SECRET_KEY",
-            "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         );
 
         let cfg = AppConfig::from_env().expect("config should load");
