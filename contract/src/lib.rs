@@ -333,7 +333,7 @@ pub async fn verify_document(
     state.metrics.increment_request_count();
 
     // Check cache first
-    if let Ok(Some(cached)) = state.cache.get(&normalized_hash).await {
+    if let Ok(Some(cached)) = state.cache.get::<VerifyResponse>(&normalized_hash).await {
         info!("Cache hit for hash: {}", normalized_hash);
         state.metrics.increment_cache_hits();
         return Json(cached).into_response();
