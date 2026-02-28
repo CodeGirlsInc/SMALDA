@@ -618,11 +618,11 @@ pub fn levenshtein_distance(s1: &str, s2: &str) -> usize {
     let len2 = s2.len();
     let mut matrix = vec![vec![0; len2 + 1]; len1 + 1];
 
-    for i in 0..=len1 {
-        matrix[i][0] = i;
+    for (i, row) in matrix.iter_mut().enumerate() {
+        row[0] = i;
     }
-    for j in 0..=len2 {
-        matrix[0][j] = j;
+    for (j, cell) in matrix[0].iter_mut().enumerate() {
+        *cell = j;
     }
 
     for (i, c1) in s1.chars().enumerate() {
@@ -800,7 +800,7 @@ mod tests {
             "completely different text",
         ];
         let duplicates = find_duplicates(&docs, 0.8);
-        assert!(duplicates.len() > 0);
+        assert!(!duplicates.is_empty());
         assert_eq!(duplicates[0].0, 0);
         assert_eq!(duplicates[0].1, 1);
     }
@@ -908,14 +908,14 @@ mod tests {
 
         // Verify first item
         assert_eq!(response.results[0].hash, "hash1");
-        assert_eq!(response.results[0].verified, true);
+        assert!(response.results[0].verified);
         assert_eq!(response.results[0].transaction_id, Some("tx1".to_string()));
         assert_eq!(response.results[0].timestamp, Some(1234567890));
         assert_eq!(response.results[0].error, None);
 
         // Verify second item
         assert_eq!(response.results[1].hash, "hash2");
-        assert_eq!(response.results[1].verified, false);
+        assert!(!response.results[1].verified);
         assert_eq!(response.results[1].transaction_id, None);
         assert_eq!(response.results[1].timestamp, None);
         assert_eq!(

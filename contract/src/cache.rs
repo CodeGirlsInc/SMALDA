@@ -100,6 +100,12 @@ pub struct InMemoryCache {
     store: Arc<RwLock<HashMap<String, String>>>,
 }
 
+impl Default for InMemoryCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryCache {
     pub fn new() -> Self {
         Self {
