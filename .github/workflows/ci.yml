@@ -86,7 +86,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: contracts
+        working-directory: contract
 
     steps:
       - name: Checkout code
@@ -103,8 +103,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            contracts/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('contracts/Cargo.lock') }}
+            contract/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('contract/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: Check formatting
