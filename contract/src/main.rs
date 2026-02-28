@@ -1,11 +1,3 @@
-use axum::{
-    extract::{Path, State},
-    http::StatusCode,
-    response::IntoResponse,
-    routing::{get, post},
-    Json, Router,
-};
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use stellar_doc_verifier::app;
 use stellar_doc_verifier::cache::{CacheBackend, RedisCache};
@@ -14,8 +6,7 @@ use stellar_doc_verifier::metrics::MetricsRegistry;
 use stellar_doc_verifier::stellar::StellarClient;
 use stellar_doc_verifier::*;
 use tokio::net::TcpListener;
-use tower_http::trace::TraceLayer;
-use tracing::{info, warn};
+use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
