@@ -8,7 +8,7 @@ pub mod stellar;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -24,7 +24,6 @@ use tracing::{info, warn};
 use cache::CacheBackend;
 use hash_validator::{HashValidator, ValidationError as HashValidationError};
 use metrics::MetricsRegistry;
-use stellar::StellarClient;
 use stellar::{StellarClient, TransactionRecord};
 
 // Application state
@@ -124,6 +123,33 @@ pub struct BatchVerifyItem {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct TransferRequest {
+    pub document_hash: String,
+    pub from_owner: String,
+    pub to_owner: String,
+    pub transfer_date: String,
+    pub transfer_reference: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TransferRecord {
+    pub document_hash: String,
+    pub from_owner: String,
+    pub to_owner: String,
+    pub transfer_date: String,
+    pub transfer_reference: String,
+    pub transfer_hash: String,
+    pub memo: String,
+    pub anchored_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TransferResponse {
+    pub transfer_hash: String,
+    pub memo: String,
+}
+
 fn map_validation_error(err: HashValidationError) -> (StatusCode, ValidationErrorResponse) {
     let message = match err {
         HashValidationError::EmptyHash => "hash must not be empty".to_string(),
@@ -151,21 +177,12 @@ pub fn app(state: AppState) -> Router {
         .route("/health", get(health_check))
         .route("/metrics", get(metrics_handler))
         .route("/verify", post(verify_document))
+        .route("/verify/batch", post(batch_verify_documents))
         .route("/verify/:hash", get(verify_document_by_hash))
         .route("/verify/:hash/history", get(verify_document_history))
         .route("/submit", post(submit_document))
-        // Stubs for missing endpoints
-        .route("/verify/batch", post(|| async { StatusCode::BAD_REQUEST }))
-        .route("/revoke", post(|| async { StatusCode::NOT_FOUND }))
         .route("/revoke", post(revoke_document))
-        // Stubs for missing endpoints
-        .route("/verify/batch", post(batch_verify_documents))
-        .route(
-            "/verify/:hash/history",
-            get(|| async { StatusCode::NOT_FOUND }),
-        )
-        .route("/submit", post(|| async { StatusCode::BAD_REQUEST }))
-        .route("/transfer", post(|| async { StatusCode::BAD_REQUEST }))
+        .route("/transfer", post(record_transfer))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -305,11 +322,11 @@ pub async fn get_transfer_history(
 pub async fn verify_document(
     State(state): State<AppState>,
     Json(req): Json<VerifyRequest>,
-) -> Result<impl IntoResponse, StatusCode> {
+) -> Response {
     let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);
-        return Ok((status, Json(body)));
+        return (status, Json(body)).into_response();
     }
 
     info!("Verifying document hash: {}", normalized_hash);
@@ -319,7 +336,7 @@ pub async fn verify_document(
     if let Ok(Some(cached)) = state.cache.get(&normalized_hash).await {
         info!("Cache hit for hash: {}", normalized_hash);
         state.metrics.increment_cache_hits();
-        return Ok(Json(cached));
+        return Json(cached).into_response();
     }
 
     state.metrics.increment_cache_misses();
@@ -330,7 +347,7 @@ pub async fn verify_document(
         Err(e) => {
             warn!("Stellar query failed: {}", e);
             state.metrics.increment_error_count();
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     };
 
@@ -346,14 +363,14 @@ pub async fn verify_document(
         warn!("Failed to cache result: {}", e);
     }
 
-    Ok(Json(response))
+    Json(response).into_response()
 }
 
 // Verify document by GET with hash in path
 pub async fn verify_document_by_hash(
     State(state): State<AppState>,
     Path(hash): Path<String>,
-) -> Result<impl IntoResponse, StatusCode> {
+) -> Response {
     let req = VerifyRequest {
         document_hash: hash,
         transaction_id: None,
@@ -361,28 +378,63 @@ pub async fn verify_document_by_hash(
     verify_document(State(state), Json(req)).await
 }
 
+// Verify document history by hash
+pub async fn verify_document_history(
+    State(state): State<AppState>,
+    Path(hash): Path<String>,
+) -> Response {
+    let normalized_hash = HashValidator::normalize(&hash);
+    if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
+        let (status, body) = map_validation_error(err);
+        return (status, Json(body)).into_response();
+    }
+
+    let cache_key = format!("history:{}", normalized_hash);
+    let transactions: Vec<TransactionRecord> = match state.cache.get(&cache_key).await {
+        Ok(Some(records)) => records,
+        Ok(None) => Vec::new(),
+        Err(e) => {
+            warn!("Failed to fetch history from cache: {}", e);
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let count = transactions.len();
+    let cached = !transactions.is_empty();
+
+    Json(HistoryResponse {
+        document_hash: normalized_hash,
+        transactions,
+        count,
+        cached,
+    })
+    .into_response()
+}
+
 // Batch verify documents
 pub async fn batch_verify_documents(
     State(state): State<AppState>,
     Json(req): Json<BatchVerifyRequest>,
-) -> Result<impl IntoResponse, StatusCode> {
+) -> Response {
     // Validate batch size
     if req.hashes.is_empty() {
-        return Ok((
+        return (
             StatusCode::BAD_REQUEST,
             Json(ValidationErrorResponse {
                 error: "hashes array cannot be empty".to_string(),
             }),
-        ));
+        )
+            .into_response();
     }
 
     if req.hashes.len() > 50 {
-        return Ok((
+        return (
             StatusCode::BAD_REQUEST,
             Json(ValidationErrorResponse {
                 error: "batch size exceeds maximum of 50 hashes".to_string(),
             }),
-        ));
+        )
+            .into_response();
     }
 
     info!("Batch verifying {} document hashes", req.hashes.len());
@@ -412,24 +464,12 @@ pub async fn batch_verify_documents(
         failed_count,
     };
 
-    Ok(Json(response))
+    Json(response).into_response()
 }
 
 // Helper function to verify a single hash
 async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
-    // Normalize and validate hash
-    let normalized_hash = match HashValidator::normalize(&hash) {
-        Ok(h) => h,
-        Err(_) => {
-            return BatchVerifyItem {
-                hash,
-                verified: false,
-                transaction_id: None,
-                timestamp: None,
-                error: Some("invalid hash format".to_string()),
-            };
-        }
-    };
+    let normalized_hash = HashValidator::normalize(&hash);
 
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let error_msg = match err {
@@ -514,22 +554,6 @@ async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub struct SubmitRequest {
-    pub document_hash: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct RevokeRequest {
-    pub document_hash: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct TransferRequest {
-    pub document_hash: String,
-    pub date: String,
-}
-
 pub async fn submit_document(Json(req): Json<SubmitRequest>) -> impl IntoResponse {
     let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
@@ -570,7 +594,7 @@ pub async fn transfer_document(Json(req): Json<TransferRequest>) -> impl IntoRes
     }
 
     // Basic date validation: expect YYYY-MM-DD
-    if chrono::NaiveDate::parse_from_str(&req.date, "%Y-%m-%d").is_err() {
+    if chrono::NaiveDate::parse_from_str(&req.transfer_date, "%Y-%m-%d").is_err() {
         return (
             StatusCode::BAD_REQUEST,
             Json(ValidationErrorResponse {

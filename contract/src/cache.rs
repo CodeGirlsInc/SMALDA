@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use redis::{aio::ConnectionManager, AsyncCommands};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -85,13 +85,13 @@ impl RedisCache {
 
     async fn set_raw(&self, key: &str, value: &str, ttl: u64) -> Result<()> {
         let mut conn = self.connection.clone();
-        conn.set_ex(key, value, ttl).await?;
+        conn.set_ex::<_, _, ()>(key, value, ttl).await?;
         Ok(())
     }
 
     async fn delete(&self, key: &str) -> Result<()> {
         let mut conn = self.connection.clone();
-        conn.del(key).await?;
+        conn.del::<_, ()>(key).await?;
         Ok(())
     }
 }
