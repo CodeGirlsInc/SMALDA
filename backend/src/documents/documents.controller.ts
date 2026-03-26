@@ -24,9 +24,8 @@ import { DocumentsService } from './documents.service';
 import { DocumentStatus } from './entities/document.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User } from '../users/entities/user.entity';
-import { StellarService } from '../stellar/stellar.service';
+import { QueueService } from '../queue/queue.service';
 import { VerificationService } from '../verification/verification.service';
-import { VerificationStatus } from '../verification/entities/verification-record.entity';
 
 const ALLOWED_MIME_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
@@ -46,7 +45,7 @@ export class DocumentsController {
   constructor(
     private readonly documentsService: DocumentsService,
     private readonly configService: ConfigService,
-    private readonly stellarService: StellarService,
+    private readonly queueService: QueueService,
     private readonly verificationService: VerificationService,
   ) {}
 
@@ -97,12 +96,13 @@ export class DocumentsController {
       status: DocumentStatus.PENDING,
     });
 
-    return res.status(201).send(document);
+    await this.queueService.enqueueAnalyze(document.id);
+    return res.status(202).send(document);
   }
 
   @Post(':id/verify')
   @UseGuards(JwtAuthGuard)
-  async verifyDocument(@Param('id') id: string) {
+  async verifyDocument(@Param('id') id: string, @Res() res: Response) {
     const document = await this.documentsService.findById(id);
     if (!document) {
       throw new NotFoundException('Document not found');
@@ -112,18 +112,12 @@ export class DocumentsController {
       throw new ConflictException('Document has already been verified');
     }
 
-    const { txHash, ledger } = await this.stellarService.anchorHash(document.fileHash);
-    const record = await this.verificationService.create({
+    await this.queueService.enqueueAnchor(document.id);
+
+    return res.status(202).json({
+      message: 'Verification queued',
       documentId: document.id,
-      stellarTxHash: txHash,
-      stellarLedger: ledger,
-      anchoredAt: new Date(),
-      status: VerificationStatus.CONFIRMED,
     });
-
-    await this.documentsService.updateStatus(document.id, DocumentStatus.VERIFIED);
-
-    return record;
   }
 
   @Get(':id/verification')
