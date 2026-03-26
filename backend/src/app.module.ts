@@ -5,6 +5,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { DocumentsModule } from './documents/documents.module';
+import { MailModule } from './mail/mail.module';
 import { RiskAssessmentModule } from './risk-assessment/risk-assessment.module';
 import { StellarModule } from './stellar/stellar.module';
 import { UsersModule } from './users/users.module';
@@ -36,6 +37,7 @@ import { VerificationModule } from './verification/verification.module';
     RiskAssessmentModule,
     StellarModule,
     VerificationModule,
+    MailModule,
   ],
   controllers: [AppController],
   providers: [AppService],
