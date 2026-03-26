@@ -49,6 +49,26 @@ export class AuthService {
     return { access_token, refresh_token };
   }
 
+  async handleOAuthLogin(email: string, fullName?: string) {
+    if (!email) {
+      throw new BadRequestException('Email is required from the OAuth provider');
+    }
+
+    let user = await this.usersService.findByEmail(email);
+    if (!user) {
+      user = await this.usersService.create({
+        email,
+        fullName: fullName || email,
+        passwordHash: null,
+        role: UserRole.USER,
+        isVerified: true,
+      });
+    }
+
+    const access_token = await this.generateAccessToken(user);
+    return { access_token };
+  }
+
   async refreshToken(dto: RefreshAuthDto) {
     const refreshToken = dto.refreshToken?.trim();
     if (!refreshToken) {
@@ -78,7 +98,12 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const passwordMatches = await bcrypt.compare(password, user.passwordHash);
+    const passwordHash = user.passwordHash;
+    if (!passwordHash) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const passwordMatches = await bcrypt.compare(password, passwordHash);
     if (!passwordMatches) {
       throw new UnauthorizedException('Invalid credentials');
     }
