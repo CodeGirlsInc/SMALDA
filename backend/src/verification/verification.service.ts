@@ -23,6 +23,13 @@ export class VerificationService {
     return this.verificationRepository.find({ where: { documentId } });
   }
 
+  findLatestByDocument(documentId: string): Promise<VerificationRecord | null> {
+    return this.verificationRepository.findOne({
+      where: { documentId },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
   async updateStatus(id: string, status: VerificationStatus): Promise<VerificationRecord | null> {
     await this.verificationRepository.update(id, { status });
     return this.verificationRepository.findOne({ where: { id } });

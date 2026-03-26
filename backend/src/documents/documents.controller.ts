@@ -1,6 +1,10 @@
-﻿import {
+import {
   BadRequestException,
+  ConflictException,
   Controller,
+  Get,
+  NotFoundException,
+  Param,
   Post,
   Req,
   Res,
@@ -20,6 +24,9 @@ import { DocumentsService } from './documents.service';
 import { DocumentStatus } from './entities/document.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User } from '../users/entities/user.entity';
+import { StellarService } from '../stellar/stellar.service';
+import { VerificationService } from '../verification/verification.service';
+import { VerificationStatus } from '../verification/entities/verification-record.entity';
 
 const ALLOWED_MIME_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
@@ -39,6 +46,8 @@ export class DocumentsController {
   constructor(
     private readonly documentsService: DocumentsService,
     private readonly configService: ConfigService,
+    private readonly stellarService: StellarService,
+    private readonly verificationService: VerificationService,
   ) {}
 
   @Post('upload')
@@ -74,7 +83,7 @@ export class DocumentsController {
     await fs.mkdir(uploadDir, { recursive: true });
 
     const extension = extname(file.originalname) || '';
-    const filename = ${fileHash};
+    const filename = `${fileHash}${extension}`;
     const targetPath = join(uploadDir, filename);
     await fs.writeFile(targetPath, file.buffer);
 
@@ -89,5 +98,47 @@ export class DocumentsController {
     });
 
     return res.status(201).send(document);
+  }
+
+  @Post(':id/verify')
+  @UseGuards(JwtAuthGuard)
+  async verifyDocument(@Param('id') id: string) {
+    const document = await this.documentsService.findById(id);
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+
+    if (document.status === DocumentStatus.VERIFIED) {
+      throw new ConflictException('Document has already been verified');
+    }
+
+    const { txHash, ledger } = await this.stellarService.anchorHash(document.fileHash);
+    const record = await this.verificationService.create({
+      documentId: document.id,
+      stellarTxHash: txHash,
+      stellarLedger: ledger,
+      anchoredAt: new Date(),
+      status: VerificationStatus.CONFIRMED,
+    });
+
+    await this.documentsService.updateStatus(document.id, DocumentStatus.VERIFIED);
+
+    return record;
+  }
+
+  @Get(':id/verification')
+  @UseGuards(JwtAuthGuard)
+  async getVerification(@Param('id') id: string) {
+    const document = await this.documentsService.findById(id);
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+
+    const record = await this.verificationService.findLatestByDocument(id);
+    if (!record) {
+      throw new NotFoundException('No verification record found for this document');
+    }
+
+    return record;
   }
 }
