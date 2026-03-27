@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { DocumentsModule } from './documents/documents.module';
 import { RiskAssessmentModule } from './risk-assessment/risk-assessment.module';
 import { UsersModule } from './users/users.module';
+import { VerificationModule } from './verification/verification.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { UsersModule } from './users/users.module';
     AuthModule,
     DocumentsModule,
     RiskAssessmentModule,
+    VerificationModule,
   ],
   controllers: [AppController],
   providers: [AppService],
