@@ -11,7 +11,8 @@
 import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '@nestjs/passport';
 import { Request, Response } from 'express';
-import { Profile } from 'passport-google-oauth20';
+import { Profile as GoogleProfile } from 'passport-google-oauth20';
+import { Profile as GithubProfile } from 'passport-github2';
 
 import { AuthService } from './auth.service';
 import { RegisterAuthDto } from './dto/register-auth.dto';
@@ -49,7 +50,7 @@ export class AuthController {
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
   async googleAuthRedirect(
-    @Req() req: Request & { user?: Profile },
+    @Req() req: Request & { user?: GoogleProfile },
     @Res() res: Response,
   ) {
     const profile = req.user;
@@ -60,25 +61,64 @@ export class AuthController {
       );
     }
 
-    const nameParts = [
+    const fullName = this.buildFullName([
       profile?.displayName,
       profile?.name?.givenName,
       profile?.name?.familyName,
-    ]
-      .filter(Boolean)
-      .map((part) => part?.trim())
-      .filter(Boolean);
-    const fullName = nameParts.join(' ');
+    ]);
 
     const { access_token } = await this.authService.handleOAuthLogin(
       email,
       fullName || email,
     );
+
+    return this.redirectWithToken(access_token, res);
+  }
+
+  @Get('github')
+  @UseGuards(AuthGuard('github'))
+  githubAuth() {
+    return;
+  }
+
+  @Get('github/callback')
+  @UseGuards(AuthGuard('github'))
+  async githubAuthRedirect(
+    @Req() req: Request & { user?: GithubProfile },
+    @Res() res: Response,
+  ) {
+    const profile = req.user;
+    const githubId = profile?.id?.toString();
+    const email = profile?.emails?.[0]?.value;
+    const identifier = email || (githubId ? github: : null);
+    if (!identifier) {
+      throw new BadRequestException('GitHub profile could not be identified');
+    }
+
+    const fullName =
+      this.buildFullName([profile?.displayName, profile?.username]) ||
+      identifier;
+
+    const { access_token } = await this.authService.handleOAuthLogin(
+      identifier,
+      fullName,
+    );
+
+    return this.redirectWithToken(access_token, res);
+  }
+
+  private redirectWithToken(accessToken: string, res: Response) {
     const frontendUrl =
       this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3001';
     const redirectUrl = new URL(frontendUrl);
-    redirectUrl.searchParams.set('token', access_token);
-
+    redirectUrl.searchParams.set('token', accessToken);
     return res.redirect(redirectUrl.toString());
+  }
+
+  private buildFullName(parts: (string | undefined)[]) {
+    return parts
+      .map((part) => part?.trim())
+      .filter(Boolean)
+      .join(' ');
   }
 }
