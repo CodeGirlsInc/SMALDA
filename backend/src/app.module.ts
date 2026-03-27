@@ -5,7 +5,10 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { DocumentsModule } from './documents/documents.module';
+import { MailModule } from './mail/mail.module';
+import { QueueModule } from './queue/queue.module';
 import { RiskAssessmentModule } from './risk-assessment/risk-assessment.module';
+import { StellarModule } from './stellar/stellar.module';
 import { UsersModule } from './users/users.module';
 import { VerificationModule } from './verification/verification.module';
 
@@ -33,7 +36,10 @@ import { VerificationModule } from './verification/verification.module';
     AuthModule,
     DocumentsModule,
     RiskAssessmentModule,
+    StellarModule,
     VerificationModule,
+    MailModule,
+    QueueModule,
   ],
   controllers: [AppController],
   providers: [AppService],

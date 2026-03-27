@@ -1,6 +1,10 @@
-﻿import {
+import {
   BadRequestException,
+  ConflictException,
   Controller,
+  Get,
+  NotFoundException,
+  Param,
   Post,
   Req,
   Res,
@@ -20,6 +24,8 @@ import { DocumentsService } from './documents.service';
 import { DocumentStatus } from './entities/document.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User } from '../users/entities/user.entity';
+import { QueueService } from '../queue/queue.service';
+import { VerificationService } from '../verification/verification.service';
 
 const ALLOWED_MIME_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
@@ -39,6 +45,8 @@ export class DocumentsController {
   constructor(
     private readonly documentsService: DocumentsService,
     private readonly configService: ConfigService,
+    private readonly queueService: QueueService,
+    private readonly verificationService: VerificationService,
   ) {}
 
   @Post('upload')
@@ -74,7 +82,7 @@ export class DocumentsController {
     await fs.mkdir(uploadDir, { recursive: true });
 
     const extension = extname(file.originalname) || '';
-    const filename = ${fileHash};
+    const filename = `${fileHash}${extension}`;
     const targetPath = join(uploadDir, filename);
     await fs.writeFile(targetPath, file.buffer);
 
@@ -88,6 +96,43 @@ export class DocumentsController {
       status: DocumentStatus.PENDING,
     });
 
-    return res.status(201).send(document);
+    await this.queueService.enqueueAnalyze(document.id);
+    return res.status(202).send(document);
+  }
+
+  @Post(':id/verify')
+  @UseGuards(JwtAuthGuard)
+  async verifyDocument(@Param('id') id: string, @Res() res: Response) {
+    const document = await this.documentsService.findById(id);
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+
+    if (document.status === DocumentStatus.VERIFIED) {
+      throw new ConflictException('Document has already been verified');
+    }
+
+    await this.queueService.enqueueAnchor(document.id);
+
+    return res.status(202).json({
+      message: 'Verification queued',
+      documentId: document.id,
+    });
+  }
+
+  @Get(':id/verification')
+  @UseGuards(JwtAuthGuard)
+  async getVerification(@Param('id') id: string) {
+    const document = await this.documentsService.findById(id);
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+
+    const record = await this.verificationService.findLatestByDocument(id);
+    if (!record) {
+      throw new NotFoundException('No verification record found for this document');
+    }
+
+    return record;
   }
 }
