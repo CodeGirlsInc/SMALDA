@@ -32,6 +32,18 @@ export class DocumentsService {
     return this.findById(id);
   }
 
+  async updateRisk(
+    id: string,
+    score: number,
+    flags: string[],
+  ): Promise<Document | null> {
+    await this.documentRepository.update(id, {
+      riskScore: score,
+      riskFlags: flags,
+    });
+    return this.findById(id);
+  }
+
   async delete(id: string): Promise<void> {
     await this.documentRepository.delete(id);
   }
