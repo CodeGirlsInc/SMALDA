@@ -4,9 +4,15 @@ import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { WinstonModule } from 'nest-winston';
+import { buildWinstonOptions } from './common/logger.config';
+import { config as loadEnv } from 'dotenv';
+
+loadEnv({ path: '.env' });
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const logger = WinstonModule.createLogger(buildWinstonOptions());
+  const app = await NestFactory.create(AppModule, { logger });
 
   const configService = app.get(ConfigService);
 
