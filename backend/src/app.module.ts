@@ -14,6 +14,7 @@ import { QueueModule } from './queue/queue.module';
 import { RiskAssessmentModule } from './risk-assessment/risk-assessment.module';
 import { StellarModule } from './stellar/stellar.module';
 import { UsersModule } from './users/users.module';
+import { TransfersModule } from './transfers/transfers.module';
 import { VerificationModule } from './verification/verification.module';
 
 @Module({
@@ -48,6 +49,7 @@ import { VerificationModule } from './verification/verification.module';
     RiskAssessmentModule,
     StellarModule,
     VerificationModule,
+    TransfersModule,
     MailModule,
     QueueModule,
   ],

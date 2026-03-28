@@ -6,6 +6,7 @@ import {
   NotFoundException,
   Param,
   Post,
+  Query,
   Req,
   Res,
   UploadedFile,
@@ -23,9 +24,10 @@ import * as multer from 'multer';
 import { DocumentsService } from './documents.service';
 import { DocumentStatus } from './entities/document.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { User } from '../users/entities/user.entity';
+import { User, UserRole } from '../users/entities/user.entity';
 import { QueueService } from '../queue/queue.service';
 import { VerificationService } from '../verification/verification.service';
+import { QueryDocumentsDto } from './dto/query-documents.dto';
 
 const ALLOWED_MIME_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
@@ -48,6 +50,21 @@ export class DocumentsController {
     private readonly queueService: QueueService,
     private readonly verificationService: VerificationService,
   ) {}
+
+  @Get()
+  @UseGuards(JwtAuthGuard)
+  async listDocuments(
+    @Query() query: QueryDocumentsDto,
+    @Req() req: Request & { user?: User },
+  ) {
+    const user = req.user;
+    if (!user) {
+      throw new BadRequestException('Authenticated user is required');
+    }
+
+    const isAdmin = user.role === UserRole.ADMIN;
+    return this.documentsService.findWithFilters(query, user.id, isAdmin);
+  }
 
   @Post('upload')
   @UseGuards(JwtAuthGuard)
