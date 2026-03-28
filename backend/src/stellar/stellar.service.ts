@@ -1,6 +1,9 @@
-﻿import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+﻿import { Injectable, InternalServerErrorException, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Keypair, Networks, Operation, Server, TransactionBuilder } from 'stellar-sdk';
+import type { Redis } from 'ioredis';
+
+export const STELLAR_REDIS = 'STELLAR_REDIS';
 
 @Injectable()
 export class StellarService {
@@ -10,7 +13,10 @@ export class StellarService {
   private readonly networkPassphrase: string;
   private readonly accountId: string;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    @Inject(STELLAR_REDIS) private readonly redis: Redis,
+  ) {
     const secretKey = this.configService.get<string>('STELLAR_SECRET_KEY');
     const horizonUrl = this.configService.get<string>('STELLAR_HORIZON_URL') || 'https://horizon-testnet.stellar.org';
     this.networkPassphrase =
@@ -65,12 +71,18 @@ export class StellarService {
       throw new InternalServerErrorException('Hash is required to verify a document');
     }
 
+    const cacheKey = `stellar:verify:${hash}`;
+    const cached = await this.redis.get(cacheKey);
+    if (cached !== null) return cached === 'true';
+
     try {
       const key = this.buildDataKey(hash);
       await this.server.accountData(this.accountId, key);
+      await this.redis.set(cacheKey, 'true');
       return true;
     } catch (error) {
       if (error?.response?.status === 404) {
+        await this.redis.set(cacheKey, 'false', 'EX', 60);
         return false;
       }
       this.logger.error('Failed to verify document hash', error);
