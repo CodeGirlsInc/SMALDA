@@ -1,4 +1,6 @@
-﻿import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 
 import { DocumentsService } from '../documents/documents.service';
 import { Document } from '../documents/entities/document.entity';
@@ -28,7 +30,10 @@ const FLAG_WEIGHTS: Record<RiskFlag, number> = {
 
 @Injectable()
 export class RiskAssessmentService {
-  constructor(private readonly documentsService: DocumentsService) {}
+  constructor(
+    private readonly documentsService: DocumentsService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+  ) {}
 
   async assessDocument(documentId: string): Promise<RiskResult> {
     const document = await this.documentsService.findById(documentId);
@@ -40,6 +45,8 @@ export class RiskAssessmentService {
     const score = this.calculateScore(flags);
 
     await this.documentsService.updateRisk(documentId, score, flags);
+    // Invalidate cached risk result for this document
+    await this.cacheManager.del(`document-risk:${documentId}`);
 
     return { score, flags };
   }

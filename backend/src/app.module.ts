@@ -1,6 +1,8 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { CacheModule } from '@nestjs/cache-manager';
 import { WinstonModule } from 'nest-winston';
 
 import { AppController } from './app.controller';
@@ -9,6 +11,7 @@ import { AuthModule } from './auth/auth.module';
 import { buildWinstonOptions } from './common/logger.config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { DocumentsModule } from './documents/documents.module';
+import { AuditModule } from './audit/audit.module';
 import { MailModule } from './mail/mail.module';
 import { QueueModule } from './queue/queue.module';
 import { RiskAssessmentModule } from './risk-assessment/risk-assessment.module';
@@ -21,6 +24,19 @@ import { VerificationModule } from './verification/verification.module';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+    }),
+    EventEmitterModule.forRoot(),
+    CacheModule.registerAsync({
+      isGlobal: true,
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        store: 'ioredis',
+        host: config.get('REDIS_HOST') || '127.0.0.1',
+        port: +(config.get('REDIS_PORT') || 6379),
+        password: config.get('REDIS_PASSWORD') || undefined,
+        ttl: +(config.get('CACHE_TTL') || 300) * 1000, // ms
+      }),
     }),
     WinstonModule.forRootAsync({
       imports: [ConfigModule],
@@ -50,6 +66,7 @@ import { VerificationModule } from './verification/verification.module';
     VerificationModule,
     MailModule,
     QueueModule,
+    AuditModule,
   ],
   controllers: [AppController],
   providers: [AppService, LoggerMiddleware],

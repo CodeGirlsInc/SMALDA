@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Controller,
+  Delete,
   Get,
   NotFoundException,
   Param,
@@ -26,6 +27,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User } from '../users/entities/user.entity';
 import { QueueService } from '../queue/queue.service';
 import { VerificationService } from '../verification/verification.service';
+import { AuditService } from '../audit/audit.service';
+import { AuditAction } from '../audit/entities/audit-log.entity';
 
 const ALLOWED_MIME_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
@@ -47,6 +50,7 @@ export class DocumentsController {
     private readonly configService: ConfigService,
     private readonly queueService: QueueService,
     private readonly verificationService: VerificationService,
+    private readonly auditService: AuditService,
   ) {}
 
   @Post('upload')
@@ -97,12 +101,34 @@ export class DocumentsController {
     });
 
     await this.queueService.enqueueAnalyze(document.id);
+    await this.auditService.log(user.id, AuditAction.DOCUMENT_UPLOAD, 'document', document.id, {
+      fileName: file.originalname,
+      mimeType: file.mimetype,
+    });
+
     return res.status(202).send(document);
+  }
+
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard)
+  async deleteDocument(@Param('id') id: string, @Req() req: Request & { user?: User }) {
+    const document = await this.documentsService.findById(id);
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+
+    await this.documentsService.delete(id);
+    await this.auditService.log(req.user!.id, AuditAction.DOCUMENT_DELETE, 'document', id);
+    return { message: 'Document deleted' };
   }
 
   @Post(':id/verify')
   @UseGuards(JwtAuthGuard)
-  async verifyDocument(@Param('id') id: string, @Res() res: Response) {
+  async verifyDocument(
+    @Param('id') id: string,
+    @Req() req: Request & { user?: User },
+    @Res() res: Response,
+  ) {
     const document = await this.documentsService.findById(id);
     if (!document) {
       throw new NotFoundException('Document not found');
@@ -113,6 +139,7 @@ export class DocumentsController {
     }
 
     await this.queueService.enqueueAnchor(document.id);
+    await this.auditService.log(req.user!.id, AuditAction.VERIFICATION_TRIGGER, 'document', id);
 
     return res.status(202).json({
       message: 'Verification queued',
