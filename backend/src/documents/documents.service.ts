@@ -29,6 +29,14 @@ export class DocumentsService {
     return this.documentRepository.findOne({ where: { fileHash } });
   }
 
+  findByParcelId(parcelId: string, excludeId: string): Promise<Document | null> {
+    return this.documentRepository
+      .createQueryBuilder('document')
+      .where('document.id != :excludeId', { excludeId })
+      .andWhere('LOWER(document.title) LIKE :parcel', { parcel: `%${parcelId.toLowerCase()}%` })
+      .getOne();
+  }
+
   async updateStatus(id: string, status: DocumentStatus): Promise<Document | null> {
     await this.documentRepository.update(id, { status });
     return this.findById(id);
