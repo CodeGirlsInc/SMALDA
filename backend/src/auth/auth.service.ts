@@ -130,16 +130,14 @@ export class AuthService {
 
     return this.jwtService.signAsync(payload, {
       secret: this.getRefreshSecret(),
-      expiresIn: this.getRefreshExpiration(),
     });
   }
 
   private getRefreshSecret() {
-    return this.configService.get<string>('JWT_REFRESH_SECRET') ??
-      this.configService.get<string>('JWT_SECRET');
-  }
-
-  private getRefreshExpiration() {
-    return this.configService.get<string>('JWT_REFRESH_EXPIRATION') ?? '7d';
+    const refreshSecret = this.configService.get<string>('JWT_REFRESH_SECRET');
+    if (!refreshSecret) {
+      throw new Error('JWT_REFRESH_SECRET is not configured');
+    }
+    return refreshSecret;
   }
 }

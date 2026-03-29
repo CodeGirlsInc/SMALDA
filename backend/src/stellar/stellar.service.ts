@@ -8,7 +8,7 @@ export const STELLAR_REDIS = 'STELLAR_REDIS';
 @Injectable()
 export class StellarService {
   private readonly logger = new Logger(StellarService.name);
-  private readonly server: Server;
+  private readonly server: Horizon.Server;
   private readonly anchorKeypair: Keypair;
   private readonly networkPassphrase: string;
   private readonly accountId: string;
@@ -18,17 +18,24 @@ export class StellarService {
     @Inject(STELLAR_REDIS) private readonly redis: Redis,
   ) {
     const secretKey = this.configService.get<string>('STELLAR_SECRET_KEY');
-    const horizonUrl = this.configService.get<string>('STELLAR_HORIZON_URL') || 'https://horizon-testnet.stellar.org';
-    this.networkPassphrase =
-      this.configService.get<string>('STELLAR_NETWORK') || Networks.TESTNET;
+    const horizonUrl = this.configService.get<string>('STELLAR_HORIZON_URL');
+    this.networkPassphrase = this.configService.get<string>('STELLAR_NETWORK');
 
     if (!secretKey) {
       throw new InternalServerErrorException('Stellar secret key is not configured');
     }
 
+    if (!horizonUrl) {
+      throw new InternalServerErrorException('Stellar horizon URL is not configured');
+    }
+
+    if (!this.networkPassphrase) {
+      throw new InternalServerErrorException('Stellar network passphrase is not configured');
+    }
+
     this.anchorKeypair = Keypair.fromSecret(secretKey);
     this.accountId = this.anchorKeypair.publicKey();
-    this.server = new Server(horizonUrl);
+    this.server = new Horizon.Server(horizonUrl);
   }
 
   private buildDataKey(hash: string) {

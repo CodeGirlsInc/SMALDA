@@ -1,12 +1,12 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Queue, RedisConnectionOptions } from 'bullmq';
+import { Queue, ConnectionOptions } from 'bullmq';
 
 @Injectable()
 export class QueueService implements OnModuleDestroy {
   private readonly logger = new Logger(QueueService.name);
   private readonly queue: Queue;
-  private readonly connection: RedisConnectionOptions;
+  private readonly connection: ConnectionOptions;
   readonly queueName = 'document-processing';
 
   constructor(private readonly configService: ConfigService) {
@@ -21,14 +21,14 @@ export class QueueService implements OnModuleDestroy {
     });
   }
 
-  private buildConnection(): RedisConnectionOptions {
+  private buildConnection(): ConnectionOptions {
     const host = this.configService.get<string>('REDIS_HOST') || '127.0.0.1';
     const port = Number(this.configService.get<string>('REDIS_PORT') || '6379');
     const password = this.configService.get<string>('REDIS_PASSWORD') || undefined;
     return { host, port, password };
   }
 
-  getConnectionOptions(): RedisConnectionOptions {
+  getConnectionOptions(): ConnectionOptions {
     return this.connection;
   }
 

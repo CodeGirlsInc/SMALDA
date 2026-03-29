@@ -18,8 +18,7 @@ async function bootstrap() {
 
   // Enable CORS
   app.enableCors({
-    origin:
-      configService.get<string>('FRONTEND_URL') || 'http://localhost:3001',
+    origin: configService.get<string>('FRONTEND_URL'),
     credentials: true,
   });
 
@@ -78,7 +77,7 @@ async function bootstrap() {
     },
   });
 
-  const port = configService.get<number>('APP_PORT') || 6004;
+  const port = configService.get<number>('APP_PORT');
   await app.listen(port);
 
   console.log(`Application is running on: http://localhost:${port}`);

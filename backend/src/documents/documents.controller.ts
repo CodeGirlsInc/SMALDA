@@ -81,7 +81,7 @@ export class DocumentsController {
   @ApiResponse({ status: 400, description: 'Invalid file type or missing file' })
   @ApiResponse({ status: 401, description: 'Unauthenticated' })
   async uploadDocument(
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file: any,
     @Req() req: Request & { user?: User },
     @Res() res: Response,
   ) {
