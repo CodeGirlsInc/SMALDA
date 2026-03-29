@@ -36,8 +36,12 @@ export class DocumentProcessor implements OnModuleDestroy {
       { connection },
     );
 
-    this.worker.on('failed', (job, err) => {
-      this.logger.error(`Job ${job.id} (${job.name}) failed`, err?.message, err?.stack);
+    this.worker.on('failed', async (job, err) => {
+      this.logger.error(`Job ${job?.id} (${job?.name}) failed: ${err?.message}`);
+      // BE-25: Move to dead-letter queue after all retries exhausted
+      if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
+        await this.queueService.addToDLQ(job.name, job.data, err?.message ?? 'Unknown error');
+      }
     });
   }
 
