@@ -1,6 +1,6 @@
 ﻿import { Injectable, InternalServerErrorException, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Keypair, Networks, Operation, Server, TransactionBuilder } from 'stellar-sdk';
+import { Horizon, Keypair, Networks, Operation, TransactionBuilder } from 'stellar-sdk';
 import type { Redis } from 'ioredis';
 
 export const STELLAR_REDIS = 'STELLAR_REDIS';
@@ -84,7 +84,12 @@ export class StellarService {
 
     try {
       const key = this.buildDataKey(hash);
-      await this.server.accountData(this.accountId, key);
+      const account = await this.server.accounts().accountId(this.accountId).call();
+      if (!account.data_attr || !(key in account.data_attr)) {
+        const err: any = new Error('Not found');
+        err.response = { status: 404 };
+        throw err;
+      }
       await this.redis.set(cacheKey, 'true');
       return true;
     } catch (error) {

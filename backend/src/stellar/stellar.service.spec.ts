@@ -2,7 +2,8 @@ const mockSign = jest.fn();
 const mockBuild = jest.fn().mockReturnValue({ sign: mockSign });
 const mockSubmitTransaction = jest.fn();
 const mockLoadAccount = jest.fn();
-const mockAccountData = jest.fn();
+const mockAccountsCall = jest.fn();
+const mockAccountId = jest.fn().mockReturnValue({ call: mockAccountsCall });
 
 jest.mock('stellar-sdk', () => ({
   Keypair: {
@@ -11,11 +12,13 @@ jest.mock('stellar-sdk', () => ({
     }),
   },
   Networks: { TESTNET: 'Test SDF Network ; September 2015' },
-  Server: jest.fn().mockImplementation(() => ({
-    loadAccount: mockLoadAccount,
-    submitTransaction: mockSubmitTransaction,
-    accountData: mockAccountData,
-  })),
+  Horizon: {
+    Server: jest.fn().mockImplementation(() => ({
+      loadAccount: mockLoadAccount,
+      submitTransaction: mockSubmitTransaction,
+      accounts: jest.fn().mockReturnValue({ accountId: mockAccountId }),
+    })),
+  },
   TransactionBuilder: jest.fn().mockImplementation(() => ({
     addOperation: jest.fn().mockReturnThis(),
     setTimeout: jest.fn().mockReturnThis(),
@@ -27,10 +30,11 @@ jest.mock('stellar-sdk', () => ({
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { InternalServerErrorException } from '@nestjs/common';
-import { StellarService } from './stellar.service';
+import { StellarService, STELLAR_REDIS } from './stellar.service';
 
 describe('StellarService', () => {
   let service: StellarService;
+  const mockRedis = { get: jest.fn().mockResolvedValue(null), set: jest.fn().mockResolvedValue('OK') };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -42,10 +46,13 @@ describe('StellarService', () => {
           useValue: {
             get: jest.fn((key: string) => {
               if (key === 'STELLAR_SECRET_KEY') return 'SCZANGBA5BNUF6LHFL2CDNMFGUIO2IIJIWZ6NQWQDL26DGS7YN6MMCM';
+              if (key === 'STELLAR_HORIZON_URL') return 'https://horizon-testnet.stellar.org';
+              if (key === 'STELLAR_NETWORK') return 'Test SDF Network ; September 2015';
               return undefined;
             }),
           },
         },
+        { provide: STELLAR_REDIS, useValue: mockRedis },
       ],
     }).compile();
     service = module.get<StellarService>(StellarService);
@@ -75,19 +82,19 @@ describe('StellarService', () => {
 
   describe('verifyHash', () => {
     it('returns true when hash exists on ledger', async () => {
-      mockAccountData.mockResolvedValueOnce({ value: 'abc123' });
+      mockAccountsCall.mockResolvedValueOnce({ data_attr: { doc_abc123: 'YWJjMTIz' } });
 
       expect(await service.verifyHash('abc123')).toBe(true);
     });
 
     it('returns false on 404', async () => {
-      mockAccountData.mockRejectedValueOnce({ response: { status: 404 } });
+      mockAccountsCall.mockResolvedValueOnce({ data_attr: {} });
 
       expect(await service.verifyHash('abc123')).toBe(false);
     });
 
     it('throws InternalServerErrorException on non-404 error', async () => {
-      mockAccountData.mockRejectedValueOnce(new Error('Server error'));
+      mockAccountsCall.mockRejectedValueOnce(new Error('Server error'));
 
       await expect(service.verifyHash('abc123')).rejects.toThrow(InternalServerErrorException);
     });
