@@ -76,7 +76,7 @@ export class DocumentsController {
     }),
   )
   async uploadDocument(
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file: any,
     @Req() req: Request & { user?: User },
     @Res() res: Response,
   ) {

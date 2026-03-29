@@ -1,34 +1,41 @@
 ﻿import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Keypair, Networks, Operation, Server, TransactionBuilder } from 'stellar-sdk';
+import { Keypair, Networks, Operation, TransactionBuilder, Horizon } from 'stellar-sdk';
 
 @Injectable()
 export class StellarService {
   private readonly logger = new Logger(StellarService.name);
-  private readonly server: Server;
+  private readonly server: Horizon.Server;
   private readonly anchorKeypair: Keypair;
   private readonly networkPassphrase: string;
   private readonly accountId: string;
 
   constructor(private readonly configService: ConfigService) {
     const secretKey = this.configService.get<string>('STELLAR_SECRET_KEY');
-    const horizonUrl = this.configService.get<string>('STELLAR_HORIZON_URL') || 'https://horizon-testnet.stellar.org';
-    this.networkPassphrase =
-      this.configService.get<string>('STELLAR_NETWORK') || Networks.TESTNET;
+    const horizonUrl = this.configService.get<string>('STELLAR_HORIZON_URL');
+    this.networkPassphrase = this.configService.get<string>('STELLAR_NETWORK');
 
     if (!secretKey) {
       throw new InternalServerErrorException('Stellar secret key is not configured');
     }
 
+    if (!horizonUrl) {
+      throw new InternalServerErrorException('Stellar horizon URL is not configured');
+    }
+
+    if (!this.networkPassphrase) {
+      throw new InternalServerErrorException('Stellar network passphrase is not configured');
+    }
+
     this.anchorKeypair = Keypair.fromSecret(secretKey);
     this.accountId = this.anchorKeypair.publicKey();
-    this.server = new Server(horizonUrl);
+    this.server = new Horizon.Server(horizonUrl);
   }
 
   private buildDataKey(hash: string) {
     const sanitized = hash.replace(/[^a-zA-Z0-9]/g, '');
     const payload = sanitized.slice(0, 58);
-    return doc_;
+    return `doc_${payload}`;
   }
 
   async anchorHash(hash: string): Promise<{ txHash: string; ledger: number }> {
@@ -67,8 +74,8 @@ export class StellarService {
 
     try {
       const key = this.buildDataKey(hash);
-      await this.server.accountData(this.accountId, key);
-      return true;
+      const account = await this.server.loadAccount(this.accountId);
+      return account.data && account.data[key] !== undefined;
     } catch (error) {
       if (error?.response?.status === 404) {
         return false;

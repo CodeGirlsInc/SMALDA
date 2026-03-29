@@ -47,7 +47,29 @@ export class DocumentsService {
   }
 
   async delete(id: string): Promise<void> {
+    await this.documentRepository.softDelete(id);
+  }
+
+  async hardDelete(id: string): Promise<void> {
     await this.documentRepository.delete(id);
+  }
+
+  async restore(id: string): Promise<void> {
+    await this.documentRepository.restore(id);
+  }
+
+  findByIdIncludingDeleted(id: string): Promise<Document | null> {
+    return this.documentRepository.findOne({ 
+      where: { id }, 
+      withDeleted: true 
+    });
+  }
+
+  findByOwnerIncludingDeleted(ownerId: string): Promise<Document[]> {
+    return this.documentRepository.find({ 
+      where: { ownerId }, 
+      withDeleted: true 
+    });
   }
 
   async findWithFilters(

@@ -90,7 +90,7 @@ export class AuthController {
     const profile = req.user;
     const githubId = profile?.id?.toString();
     const email = profile?.emails?.[0]?.value;
-    const identifier = email || (githubId ? github: : null);
+    const identifier = email || githubId || null;
     if (!identifier) {
       throw new BadRequestException('GitHub profile could not be identified');
     }

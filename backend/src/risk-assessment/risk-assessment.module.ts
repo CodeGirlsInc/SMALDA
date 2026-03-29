@@ -1,10 +1,10 @@
-﻿import { Module } from '@nestjs/common';
+﻿import { forwardRef, Module } from '@nestjs/common';
 import { DocumentsModule } from '../documents/documents.module';
 import { RiskAssessmentController } from './risk-assessment.controller';
 import { RiskAssessmentService } from './risk-assessment.service';
 
 @Module({
-  imports: [DocumentsModule],
+  imports: [forwardRef(() => DocumentsModule)],
   controllers: [RiskAssessmentController],
   providers: [RiskAssessmentService],
   exports: [RiskAssessmentService],
