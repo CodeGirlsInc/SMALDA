@@ -63,12 +63,18 @@ export class VerificationService {
   }
 
   async hardDeleteByDocument(documentId: string): Promise<void> {
-    // Find all verification records for this document (including soft-deleted ones)
     const records = await this.findByDocumentIncludingDeleted(documentId);
-    
-    // Hard delete each record
     for (const record of records) {
       await this.hardDelete(record.id);
     }
+  }
+
+  async findAll(page: number, limit: number): Promise<{ data: VerificationRecord[]; total: number; page: number; limit: number }> {
+    const [data, total] = await this.verificationRepository.findAndCount({
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+    return { data, total, page, limit };
   }
 }

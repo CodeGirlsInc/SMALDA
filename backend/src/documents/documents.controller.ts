@@ -31,6 +31,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User, UserRole } from '../users/entities/user.entity';
 import { QueueService } from '../queue/queue.service';
 import { VerificationService } from '../verification/verification.service';
+import { VerificationResponseDto } from '../verification/dto/verification-response.dto';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/entities/audit-log.entity';
 
@@ -159,9 +160,9 @@ export class DocumentsController {
   @Get(':id/verification')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get the latest verification record for a document' })
-  @ApiResponse({ status: 200, description: 'Verification record' })
+  @ApiResponse({ status: 200, type: VerificationResponseDto })
   @ApiResponse({ status: 404, description: 'Document or record not found' })
-  async getVerification(@Param('id') id: string) {
+  async getVerification(@Param('id') id: string): Promise<VerificationResponseDto> {
     const document = await this.documentsService.findById(id);
     if (!document) throw new NotFoundException('Document not found');
 
