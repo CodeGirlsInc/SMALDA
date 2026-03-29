@@ -14,6 +14,7 @@ import { QueueModule } from './queue/queue.module';
 import { RiskAssessmentModule } from './risk-assessment/risk-assessment.module';
 import { StellarModule } from './stellar/stellar.module';
 import { UsersModule } from './users/users.module';
+import { TasksModule } from './tasks/tasks.module';
 import { TransfersModule } from './transfers/transfers.module';
 import { VerificationModule } from './verification/verification.module';
 import { validateConfig } from './config/env.validation';
@@ -56,6 +57,7 @@ import { validateConfig } from './config/env.validation';
     TransfersModule,
     MailModule,
     QueueModule,
+    TasksModule,
   ],
   controllers: [AppController],
   providers: [AppService, LoggerMiddleware],
