@@ -13,7 +13,7 @@ import { QueueService } from './queue.service';
   imports: [
     ConfigModule,
     forwardRef(() => DocumentsModule),
-    RiskAssessmentModule,
+    forwardRef(() => RiskAssessmentModule),
     StellarModule,
     VerificationModule,
   ],

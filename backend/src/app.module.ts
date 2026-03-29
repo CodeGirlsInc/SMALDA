@@ -14,13 +14,17 @@ import { QueueModule } from './queue/queue.module';
 import { RiskAssessmentModule } from './risk-assessment/risk-assessment.module';
 import { StellarModule } from './stellar/stellar.module';
 import { UsersModule } from './users/users.module';
+import { TasksModule } from './tasks/tasks.module';
+import { TransfersModule } from './transfers/transfers.module';
 import { VerificationModule } from './verification/verification.module';
+import { validateConfig } from './config/env.validation';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+      validate: validateConfig,
     }),
     WinstonModule.forRootAsync({
       imports: [ConfigModule],
@@ -39,7 +43,9 @@ import { VerificationModule } from './verification/verification.module';
         port: +configService.get('DATABASE_PORT'),
         host: configService.get('DATABASE_HOST'),
         autoLoadEntities: true,
-        synchronize: true,
+        synchronize: false,
+        migrations: ['dist/migrations/*.js'],
+        migrationsRun: false,
       }),
     }),
     UsersModule,
@@ -48,8 +54,10 @@ import { VerificationModule } from './verification/verification.module';
     RiskAssessmentModule,
     StellarModule,
     VerificationModule,
+    TransfersModule,
     MailModule,
     QueueModule,
+    TasksModule,
   ],
   controllers: [AppController],
   providers: [AppService, LoggerMiddleware],

@@ -5,6 +5,7 @@
   Index,
   ManyToOne,
   PrimaryGeneratedColumn,
+  DeleteDateColumn,
 } from 'typeorm';
 import { Document } from '../../documents/entities/document.entity';
 
@@ -16,6 +17,7 @@ export enum VerificationStatus {
 
 @Entity('verification_records')
 @Index('IDX_VERIFICATION_RECORD_DOCUMENT', ['documentId'])
+@Index('IDX_VERIFICATION_RECORD_STATUS', ['status'])
 export class VerificationRecord {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -44,4 +46,7 @@ export class VerificationRecord {
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
+
+  @DeleteDateColumn({ name: 'deleted_at', nullable: true })
+  deletedAt?: Date;
 }
