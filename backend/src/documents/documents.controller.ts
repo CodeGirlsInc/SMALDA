@@ -3,6 +3,7 @@ import {
   ConflictException,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   NotFoundException,
   Param,
@@ -24,6 +25,7 @@ import { extname, join } from 'path';
 import * as multer from 'multer';
 import * as PDFDocument from 'pdfkit';
 import * as ExcelJS from 'exceljs';
+import { v4 as uuidv4 } from 'uuid';                          // BE-20: UUID filenames
 
 import { DocumentsService } from './documents.service';
 import { DocumentStatus } from './entities/document.entity';
@@ -33,17 +35,46 @@ import { QueueService } from '../queue/queue.service';
 import { VerificationService } from '../verification/verification.service';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/entities/audit-log.entity';
+import { MagicBytesInterceptor } from './upload.config';      // BE-20: magic-bytes check
 
-const ALLOWED_MIME_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
+// ─── BE-20: Extension + declared-MIME whitelist ───────────────────────────────
+// Keyed by extension; value is the only accepted MIME for that extension.
+const ALLOWED_EXTENSIONS: Record<string, string> = {
+  '.pdf':  'application/pdf',
+  '.png':  'image/png',
+  '.jpg':  'image/jpeg',
+  '.jpeg': 'image/jpeg',
+};
+
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
 
+// memoryStorage keeps the buffer available for both hashing and magic-bytes check
 const multerStorage = multer.memoryStorage();
 
-const fileFilter: multer.FileFilterCallback = (_req, file, callback) => {
-  if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-    return callback(null, true);
+// BE-20: replaces the old ALLOWED_MIME_TYPES-only check with extension+MIME pairing
+const fileFilter: multer.Options['fileFilter'] = (_req, file, callback) => {
+  const ext = extname(file.originalname).toLowerCase();
+  const expectedMime = ALLOWED_EXTENSIONS[ext];
+
+  if (!expectedMime) {
+    return callback(
+      new BadRequestException(
+        `Extension "${ext}" is not allowed. Accepted: ${Object.keys(ALLOWED_EXTENSIONS).join(', ')}`,
+      ),
+      false,
+    );
   }
-  return callback(new BadRequestException('Only PDF, PNG, or JPEG files are allowed'), false);
+
+  if (file.mimetype !== expectedMime) {
+    return callback(
+      new BadRequestException(
+        `Declared MIME type "${file.mimetype}" does not match extension "${ext}"`,
+      ),
+      false,
+    );
+  }
+
+  return callback(null, true);
 };
 
 @ApiTags('Documents')
@@ -75,15 +106,22 @@ export class DocumentsController {
 
   @Post('upload')
   @UseGuards(JwtAuthGuard)
-  @UseInterceptors(FileInterceptor('file', { storage: multerStorage, fileFilter, limits: { fileSize: MAX_FILE_SIZE_BYTES } }))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: multerStorage,
+      fileFilter,
+      limits: { fileSize: MAX_FILE_SIZE_BYTES },
+    }),
+    MagicBytesInterceptor, // BE-20: magic-bytes check runs after multer buffers the file
+  )
   @ApiOperation({ summary: 'Upload a document for analysis' })
   @ApiConsumes('multipart/form-data')
   @ApiResponse({ status: 202, description: 'Document accepted for processing' })
   @ApiResponse({ status: 200, description: 'Document already exists (duplicate)' })
-  @ApiResponse({ status: 400, description: 'Invalid file type or missing file' })
+  @ApiResponse({ status: 400, description: 'Invalid file type, spoofed content, or missing file' })
   @ApiResponse({ status: 401, description: 'Unauthenticated' })
   async uploadDocument(
-    @UploadedFile() file: any,
+    @UploadedFile() file: Express.Multer.File,
     @Req() req: Request & { user?: User },
     @Res() res: Response,
   ) {
@@ -92,20 +130,24 @@ export class DocumentsController {
     const user = req.user;
     if (!user) throw new BadRequestException('Authenticated user is required');
 
+    // Hash the content for deduplication (unchanged)
     const fileHash = createHash('sha256').update(file.buffer).digest('hex');
     const existing = await this.documentsService.findByFileHash(fileHash);
     if (existing) return res.status(200).send(existing);
 
-    const uploadDir = this.configService.get<string>('UPLOAD_DIR') || './uploads';
+    // BE-20: store under UUID name — not originalname, not the hash.
+    // UPLOAD_DIR must be outside the web root (set via env).
+    const uploadDir = this.configService.get<string>('UPLOAD_DIR') || './private-uploads';
     await fs.mkdir(uploadDir, { recursive: true });
 
-    const filename = `${fileHash}${extname(file.originalname) || ''}`;
-    const targetPath = join(uploadDir, filename);
+    const ext = extname(file.originalname).toLowerCase();
+    const safeFilename = `${uuidv4()}${ext}`;          // UUID — no path traversal possible
+    const targetPath = join(uploadDir, safeFilename);
     await fs.writeFile(targetPath, file.buffer);
 
     const document = await this.documentsService.create({
       ownerId: user.id,
-      title: file.originalname,
+      title: file.originalname,   // display-only; never used as a filesystem path
       filePath: targetPath,
       fileHash,
       fileSize: file.size,

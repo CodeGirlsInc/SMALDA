@@ -1,9 +1,11 @@
-﻿import { Injectable, InternalServerErrorException, Logger, Inject } from '@nestjs/common';
+﻿import { Injectable, InternalServerErrorException, BadRequestException, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Keypair, Networks, Operation, Server, TransactionBuilder } from 'stellar-sdk';
 import type { Redis } from 'ioredis';
 
 export const STELLAR_REDIS = 'STELLAR_REDIS';
+
+const SHA256_HEX_REGEX = /^[a-f0-9]{64}$/i;
 
 @Injectable()
 export class StellarService {
@@ -38,16 +40,27 @@ export class StellarService {
     this.server = new Horizon.Server(horizonUrl);
   }
 
-  private buildDataKey(hash: string) {
+  /**
+   * Validates that the input is a well-formed SHA-256 hex digest.
+   * Throws BadRequestException (400) — not 500 — because malformed input
+   * is a caller error, not a server fault.
+   */
+  private validateHash(hash: string): void {
+    if (!hash || !SHA256_HEX_REGEX.test(hash)) {
+      throw new BadRequestException(
+        'Invalid hash: expected a 64-character lowercase hex SHA-256 digest.',
+      );
+    }
+  }
+
+  private buildDataKey(hash: string): string {
     const sanitized = hash.replace(/[^a-zA-Z0-9]/g, '');
     const payload = sanitized.slice(0, 58);
     return `doc_${payload}`;
   }
 
   async anchorHash(hash: string): Promise<{ txHash: string; ledger: number }> {
-    if (!hash) {
-      throw new InternalServerErrorException('Hash is required to anchor a document');
-    }
+    this.validateHash(hash); // replaces the loose `if (!hash)` guard
 
     try {
       const account = await this.server.loadAccount(this.accountId);
@@ -68,15 +81,14 @@ export class StellarService {
       const result = await this.server.submitTransaction(transaction);
       return { txHash: result.hash, ledger: result.ledger };
     } catch (error) {
+      if (error instanceof BadRequestException) throw error;
       this.logger.error('Failed to anchor document hash', error);
       throw new InternalServerErrorException('Unable to anchor document hash on Stellar');
     }
   }
 
   async verifyHash(hash: string): Promise<boolean> {
-    if (!hash) {
-      throw new InternalServerErrorException('Hash is required to verify a document');
-    }
+    this.validateHash(hash); // replaces the loose `if (!hash)` guard
 
     const cacheKey = `stellar:verify:${hash}`;
     const cached = await this.redis.get(cacheKey);
@@ -88,6 +100,7 @@ export class StellarService {
       await this.redis.set(cacheKey, 'true');
       return true;
     } catch (error) {
+      if (error instanceof BadRequestException) throw error;
       if (error?.response?.status === 404) {
         await this.redis.set(cacheKey, 'false', 'EX', 60);
         return false;
