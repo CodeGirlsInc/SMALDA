@@ -2,7 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Controller,
-  ForbiddenException,
+  Delete,
   Get,
   NotFoundException,
   Param,
@@ -31,7 +31,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User, UserRole } from '../users/entities/user.entity';
 import { QueueService } from '../queue/queue.service';
 import { VerificationService } from '../verification/verification.service';
-import { QueryDocumentsDto } from './dto/query-documents.dto';
+import { AuditService } from '../audit/audit.service';
+import { AuditAction } from '../audit/entities/audit-log.entity';
 
 const ALLOWED_MIME_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
@@ -54,6 +55,7 @@ export class DocumentsController {
     private readonly configService: ConfigService,
     private readonly queueService: QueueService,
     private readonly verificationService: VerificationService,
+    private readonly auditService: AuditService,
   ) {}
 
   @Get()
@@ -112,47 +114,29 @@ export class DocumentsController {
     });
 
     await this.queueService.enqueueAnalyze(document.id);
+    await this.auditService.log(user.id, AuditAction.DOCUMENT_UPLOAD, 'document', document.id, {
+      fileName: file.originalname,
+      mimeType: file.mimetype,
+    });
+
     return res.status(202).send(document);
   }
 
-  // BE-39: Excel export — static route must come before dynamic :id routes
-  @Get('export/excel')
+  @Delete(':id')
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Export all user documents as Excel (.xlsx)' })
-  @ApiResponse({ status: 200, description: 'Excel file download' })
-  async exportExcel(@Req() req: Request & { user?: User }, @Res() res: Response) {
-    const documents = await this.documentsService.findByOwner(req.user!.id);
+  async deleteDocument(@Param('id') id: string, @Req() req: Request & { user?: User }) {
+    const document = await this.documentsService.findById(id);
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
 
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('Documents');
-    sheet.columns = [
-      { header: 'ID', key: 'id', width: 36 },
-      { header: 'Title', key: 'title', width: 30 },
-      { header: 'Status', key: 'status', width: 12 },
-      { header: 'Risk Score', key: 'riskScore', width: 12 },
-      { header: 'Risk Flags', key: 'riskFlags', width: 40 },
-      { header: 'Uploaded At', key: 'createdAt', width: 24 },
-    ];
-    documents.forEach((doc) =>
-      sheet.addRow({
-        ...doc,
-        riskFlags: doc.riskFlags?.join(', ') ?? '',
-      }),
-    );
-
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename="documents.xlsx"');
-    await workbook.xlsx.write(res);
-    res.end();
+    await this.documentsService.delete(id);
+    await this.auditService.log(req.user!.id, AuditAction.DOCUMENT_DELETE, 'document', id);
+    return { message: 'Document deleted' };
   }
 
   @Post(':id/verify')
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Queue a document for Stellar blockchain verification' })
-  @ApiResponse({ status: 202, description: 'Verification queued' })
-  @ApiResponse({ status: 403, description: 'Not the document owner' })
-  @ApiResponse({ status: 404, description: 'Document not found' })
-  @ApiResponse({ status: 409, description: 'Already verified' })
   async verifyDocument(
     @Param('id') id: string,
     @Req() req: Request & { user?: User },
@@ -164,7 +148,12 @@ export class DocumentsController {
     if (document.status === DocumentStatus.VERIFIED) throw new ConflictException('Document has already been verified');
 
     await this.queueService.enqueueAnchor(document.id);
-    return res.status(202).json({ message: 'Verification queued', documentId: document.id });
+    await this.auditService.log(req.user!.id, AuditAction.VERIFICATION_TRIGGER, 'document', id);
+
+    return res.status(202).json({
+      message: 'Verification queued',
+      documentId: document.id,
+    });
   }
 
   @Get(':id/verification')

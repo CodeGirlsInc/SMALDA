@@ -7,6 +7,7 @@ import { Document } from './entities/document.entity';
 import { StellarModule } from '../stellar/stellar.module';
 import { VerificationModule } from '../verification/verification.module';
 import { QueueModule } from '../queue/queue.module';
+import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { QueueModule } from '../queue/queue.module';
     StellarModule,
     VerificationModule,
     forwardRef(() => QueueModule),
+    AuditModule,
   ],
   controllers: [DocumentsController],
   providers: [DocumentsService],
