@@ -4,6 +4,8 @@ import { CacheInterceptor, CacheKey, CacheTTL } from '@nestjs/cache-manager';
 import { RiskAssessmentService } from './risk-assessment.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
+@ApiTags('Documents')
+@ApiBearerAuth('JWT-auth')
 @Controller('documents')
 @UseInterceptors(CacheInterceptor)
 export class RiskAssessmentController {

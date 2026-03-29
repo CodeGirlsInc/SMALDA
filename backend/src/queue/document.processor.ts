@@ -23,7 +23,6 @@ import { QueueService } from './queue.service';
 export class DocumentProcessor implements OnModuleDestroy {
   private readonly logger = new Logger(DocumentProcessor.name);
   private readonly worker: Worker;
-  private readonly scheduler: QueueScheduler;
 
   constructor(
     private readonly queueService: QueueService,
@@ -34,7 +33,6 @@ export class DocumentProcessor implements OnModuleDestroy {
     private readonly eventEmitter: EventEmitter2,
   ) {
     const connection = this.queueService.getConnectionOptions();
-    this.scheduler = new QueueScheduler(this.queueService.queueName, { connection });
     this.worker = new Worker(
       this.queueService.queueName,
       async (job) => {
@@ -102,6 +100,5 @@ export class DocumentProcessor implements OnModuleDestroy {
 
   async onModuleDestroy(): Promise<void> {
     await this.worker?.close();
-    await this.scheduler?.close();
   }
 }

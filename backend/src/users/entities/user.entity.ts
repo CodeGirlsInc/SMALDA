@@ -5,6 +5,7 @@
   CreateDateColumn,
   UpdateDateColumn,
   DeleteDateColumn,
+  Index,
 } from 'typeorm';
 
 export enum UserRole {
@@ -13,6 +14,7 @@ export enum UserRole {
 }
 
 @Entity('users')
+@Index('IDX_USER_IS_VERIFIED', ['isVerified'])
 export class User {
   @PrimaryGeneratedColumn('uuid')
   id: string;

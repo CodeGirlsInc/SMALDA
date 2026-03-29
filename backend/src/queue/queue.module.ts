@@ -7,6 +7,7 @@ import { RiskAssessmentModule } from '../risk-assessment/risk-assessment.module'
 import { StellarModule } from '../stellar/stellar.module';
 import { VerificationModule } from '../verification/verification.module';
 import { DocumentProcessor } from './document.processor';
+import { QueueController } from './queue.controller';
 import { QueueService } from './queue.service';
 
 @Module({
@@ -14,10 +15,11 @@ import { QueueService } from './queue.service';
     ConfigModule,
     EventEmitterModule,
     forwardRef(() => DocumentsModule),
-    RiskAssessmentModule,
+    forwardRef(() => RiskAssessmentModule),
     StellarModule,
     VerificationModule,
   ],
+  controllers: [QueueController],
   providers: [QueueService, DocumentProcessor],
   exports: [QueueService],
 })

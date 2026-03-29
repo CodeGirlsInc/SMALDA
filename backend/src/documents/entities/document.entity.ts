@@ -6,6 +6,7 @@
   ManyToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
+  DeleteDateColumn,
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 
@@ -19,6 +20,9 @@ export enum DocumentStatus {
 
 @Entity('documents')
 @Index('IDX_DOCUMENT_FILE_HASH', ['fileHash'], { unique: true })
+@Index('IDX_DOCUMENT_OWNER_ID', ['ownerId'])
+@Index('IDX_DOCUMENT_STATUS', ['status'])
+@Index('IDX_DOCUMENT_CREATED_AT', ['createdAt'])
 export class Document {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -62,4 +66,7 @@ export class Document {
 
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
+
+  @DeleteDateColumn({ name: 'deleted_at', nullable: true })
+  deletedAt?: Date;
 }

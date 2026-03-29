@@ -1,4 +1,4 @@
-﻿import {
+import {
   Body,
   Controller,
   Post,
@@ -8,6 +8,7 @@
   UseGuards,
   BadRequestException,
 } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '@nestjs/passport';
 import { Request, Response } from 'express';
@@ -19,6 +20,7 @@ import { RegisterAuthDto } from './dto/register-auth.dto';
 import { LoginAuthDto } from './dto/login-auth.dto';
 import { RefreshAuthDto } from './dto/refresh-auth.dto';
 
+@ApiTags('Authentication')
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -27,28 +29,41 @@ export class AuthController {
   ) {}
 
   @Post('register')
+  @ApiOperation({ summary: 'Register a new user' })
+  @ApiResponse({ status: 201, description: 'User registered successfully' })
+  @ApiResponse({ status: 409, description: 'Email already in use' })
   register(@Body() dto: RegisterAuthDto) {
     return this.authService.register(dto);
   }
 
   @Post('login')
+  @ApiOperation({ summary: 'Login with email and password' })
+  @ApiResponse({ status: 200, description: 'Returns access and refresh tokens' })
+  @ApiResponse({ status: 401, description: 'Invalid credentials' })
   login(@Body() dto: LoginAuthDto) {
     return this.authService.login(dto);
   }
 
   @Post('refresh')
+  @ApiOperation({ summary: 'Refresh access token' })
+  @ApiResponse({ status: 200, description: 'Returns a new access token' })
+  @ApiResponse({ status: 401, description: 'Invalid or expired refresh token' })
   refresh(@Body() dto: RefreshAuthDto) {
     return this.authService.refreshToken(dto);
   }
 
   @Get('google')
   @UseGuards(AuthGuard('google'))
+  @ApiOperation({ summary: 'Initiate Google OAuth login' })
+  @ApiResponse({ status: 302, description: 'Redirects to Google login' })
   googleAuth() {
     return;
   }
 
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
+  @ApiOperation({ summary: 'Google OAuth callback' })
+  @ApiResponse({ status: 302, description: 'Redirects to frontend with token' })
   async googleAuthRedirect(
     @Req() req: Request & { user?: GoogleProfile },
     @Res() res: Response,
@@ -77,12 +92,16 @@ export class AuthController {
 
   @Get('github')
   @UseGuards(AuthGuard('github'))
+  @ApiOperation({ summary: 'Initiate GitHub OAuth login' })
+  @ApiResponse({ status: 302, description: 'Redirects to GitHub login' })
   githubAuth() {
     return;
   }
 
   @Get('github/callback')
   @UseGuards(AuthGuard('github'))
+  @ApiOperation({ summary: 'GitHub OAuth callback' })
+  @ApiResponse({ status: 302, description: 'Redirects to frontend with token' })
   async githubAuthRedirect(
     @Req() req: Request & { user?: GithubProfile },
     @Res() res: Response,
@@ -90,7 +109,7 @@ export class AuthController {
     const profile = req.user;
     const githubId = profile?.id?.toString();
     const email = profile?.emails?.[0]?.value;
-    const identifier = email || (githubId ? github: : null);
+    const identifier = email || (githubId ? `github:${githubId}` : null);
     if (!identifier) {
       throw new BadRequestException('GitHub profile could not be identified');
     }
