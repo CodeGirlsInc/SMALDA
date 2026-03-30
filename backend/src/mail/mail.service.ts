@@ -73,4 +73,32 @@ export class MailService {
       `,
     });
   }
+
+  async sendVerificationEmail(to: string, fullName: string, verificationLink: string): Promise<void> {
+    await this.sendMail({
+      to,
+      subject: 'Verify Your Email - Smalda',
+      html: `
+        <p>Hi ${fullName},</p>
+        <p>Welcome to Smalda! Please verify your email address by clicking the link below:</p>
+        <p><a href="${verificationLink}">Verify Email</a></p>
+        <p>This link will expire in 24 hours.</p>
+        <p>If you didn't create an account, please ignore this email.</p>
+      `,
+    });
+  }
+
+  async sendPasswordResetEmail(to: string, fullName: string, resetLink: string): Promise<void> {
+    await this.sendMail({
+      to,
+      subject: 'Password Reset Request - Smalda',
+      html: `
+        <p>Hi ${fullName},</p>
+        <p>You requested to reset your password. Click the link below to set a new password:</p>
+        <p><a href="${resetLink}">Reset Password</a></p>
+        <p>This link will expire in 1 hour.</p>
+        <p>If you didn't request this, please ignore this email and your password will remain unchanged.</p>
+      `,
+    });
+  }
 }
