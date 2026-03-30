@@ -4,6 +4,7 @@ import { Cache } from 'cache-manager';
 
 import { DocumentsService } from '../documents/documents.service';
 import { Document } from '../documents/entities/document.entity';
+import { RiskAssessmentResponseDto } from './dto/risk-assessment-response.dto';
 
 export enum RiskFlag {
   MISSING_PARCEL_ID = 'MISSING_PARCEL_ID',
@@ -46,7 +47,7 @@ export class RiskAssessmentService {
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
 
-  async assessDocument(documentId: string): Promise<RiskResult> {
+  async assessDocument(documentId: string): Promise<RiskAssessmentResponseDto> {
     const document = await this.documentsService.findById(documentId);
     if (!document) {
       throw new NotFoundException('Document not found');
@@ -56,10 +57,14 @@ export class RiskAssessmentService {
     const score = this.calculateScore(flags);
 
     await this.documentsService.updateRisk(documentId, score, flags);
-    // Invalidate cached risk result for this document
     await this.cacheManager.del(`document-risk:${documentId}`);
 
-    return { score, flags };
+    return {
+      documentId,
+      riskScore: score,
+      riskFlags: flags,
+      assessedAt: new Date(),
+    };
   }
 
   async extractTextContent(document: Document): Promise<string> {

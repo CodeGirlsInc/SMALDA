@@ -4,6 +4,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { CacheModule } from '@nestjs/cache-manager';
 import { WinstonModule } from 'nest-winston';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -29,6 +31,18 @@ import { validateConfig } from './config/env.validation';
       envFilePath: '.env',
       validate: validateConfig,
     }),
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        throttlers: [
+          {
+            ttl: +(config.get('THROTTLE_TTL') ?? 60) * 1000,
+            limit: +(config.get('THROTTLE_LIMIT') ?? 10),
+          },
+        ],
+      }),
+    }),
     EventEmitterModule.forRoot(),
     CacheModule.registerAsync({
       isGlobal: true,
@@ -39,7 +53,7 @@ import { validateConfig } from './config/env.validation';
         host: config.get('REDIS_HOST') || '127.0.0.1',
         port: +(config.get('REDIS_PORT') || 6379),
         password: config.get('REDIS_PASSWORD') || undefined,
-        ttl: +(config.get('CACHE_TTL') || 300) * 1000, // ms
+        ttl: +(config.get('CACHE_TTL') || 300) * 1000,
       }),
     }),
     WinstonModule.forRootAsync({
@@ -76,7 +90,11 @@ import { validateConfig } from './config/env.validation';
     AuditModule,
   ],
   controllers: [AppController],
-  providers: [AppService, LoggerMiddleware],
+  providers: [
+    AppService,
+    LoggerMiddleware,
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
