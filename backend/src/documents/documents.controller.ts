@@ -29,6 +29,8 @@ import { v4 as uuidv4 } from 'uuid';                          // BE-20: UUID fil
 
 import { DocumentsService } from './documents.service';
 import { DocumentStatus } from './entities/document.entity';
+import { DocumentResponseDto, UpdateDocumentStatusDto } from './dto/document-request-response.dto';
+import { QueryDocumentsDto } from './dto/query-documents.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { VerifiedUserGuard } from '../auth/guards/verified-user.guard';
 import { User, UserRole } from '../users/entities/user.entity';
@@ -118,8 +120,8 @@ export class DocumentsController {
   )
   @ApiOperation({ summary: 'Upload a document for analysis' })
   @ApiConsumes('multipart/form-data')
-  @ApiResponse({ status: 202, description: 'Document accepted for processing' })
-  @ApiResponse({ status: 200, description: 'Document already exists (duplicate)' })
+  @ApiResponse({ status: 202, description: 'Document accepted for processing', type: DocumentResponseDto })
+  @ApiResponse({ status: 200, description: 'Document already exists (duplicate)', type: DocumentResponseDto })
   @ApiResponse({ status: 400, description: 'Invalid file type, spoofed content, or missing file' })
   @ApiResponse({ status: 401, description: 'Unauthenticated' })
   async uploadDocument(
