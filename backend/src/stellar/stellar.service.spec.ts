@@ -48,6 +48,7 @@ jest.mock('stellar-sdk', () => {
 // ── Test suite ────────────────────────────────────────────────────────────────
 describe('StellarService', () => {
   let service: StellarService;
+  const mockRedis = { get: jest.fn().mockResolvedValue(null), set: jest.fn().mockResolvedValue('OK') };
 
   beforeEach(async () => {
     jest.clearAllMocks();
