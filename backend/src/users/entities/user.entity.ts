@@ -38,6 +38,12 @@ export class User {
   @Column({ name: 'is_verified', default: false })
   isVerified: boolean;
 
+  @Column({ name: 'two_factor_secret', nullable: true })
+  twoFactorSecret?: string | null;
+
+  @Column({ name: 'is_two_factor_enabled', default: false })
+  isTwoFactorEnabled: boolean;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

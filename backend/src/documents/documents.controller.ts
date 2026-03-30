@@ -30,6 +30,7 @@ import { v4 as uuidv4 } from 'uuid';                          // BE-20: UUID fil
 import { DocumentsService } from './documents.service';
 import { DocumentStatus } from './entities/document.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { VerifiedUserGuard } from '../auth/guards/verified-user.guard';
 import { User, UserRole } from '../users/entities/user.entity';
 import { QueueService } from '../queue/queue.service';
 import { VerificationService } from '../verification/verification.service';
@@ -106,7 +107,7 @@ export class DocumentsController {
   }
 
   @Post('upload')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(VerifiedUserGuard)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: multerStorage,
