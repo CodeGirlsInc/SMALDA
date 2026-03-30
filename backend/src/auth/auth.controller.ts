@@ -11,6 +11,7 @@ import {
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '@nestjs/passport';
+import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { Profile as GoogleProfile } from 'passport-google-oauth20';
 import { Profile as GithubProfile } from 'passport-github2';
@@ -29,6 +30,7 @@ export class AuthController {
   ) {}
 
   @Post('register')
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @ApiOperation({ summary: 'Register a new user' })
   @ApiResponse({ status: 201, description: 'User registered successfully' })
   @ApiResponse({ status: 409, description: 'Email already in use' })
@@ -37,6 +39,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @ApiOperation({ summary: 'Login with email and password' })
   @ApiResponse({ status: 200, description: 'Returns access and refresh tokens' })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })

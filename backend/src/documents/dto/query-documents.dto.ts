@@ -1,8 +1,9 @@
 import { IsEnum, IsISO8601, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { DocumentStatus } from '../entities/document.entity';
+import { PaginationDto } from '../../common/dto/pagination.dto';
 
-export class QueryDocumentsDto {
+export class QueryDocumentsDto extends PaginationDto {
   @IsOptional()
   @IsEnum(DocumentStatus)
   status?: DocumentStatus;
@@ -30,17 +31,4 @@ export class QueryDocumentsDto {
   @IsOptional()
   @IsString()
   search?: string;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(1)
-  page?: number = 1;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(1)
-  @Max(100)
-  limit?: number = 20;
 }
