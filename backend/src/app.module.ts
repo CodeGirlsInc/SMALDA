@@ -23,6 +23,7 @@ import { TasksModule } from './tasks/tasks.module';
 import { TransfersModule } from './transfers/transfers.module';
 import { VerificationModule } from './verification/verification.module';
 import { validateConfig } from './config/env.validation';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -88,6 +89,7 @@ import { validateConfig } from './config/env.validation';
     MailModule,
     QueueModule,
     AuditModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [

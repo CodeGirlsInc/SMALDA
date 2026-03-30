@@ -1,11 +1,15 @@
-import { Controller, Get, Param, Delete, UseGuards, Post } from '@nestjs/common';
+import { Controller, Get, Param, Delete, UseGuards, Post, Body, Patch } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { DocumentsService } from './documents.service';
 import { VerificationService } from '../verification/verification.service';
 import { UserRole } from '../users/entities/user.entity';
+import { UpdateDocumentStatusDto } from './dto/document-request-response.dto';
 
 @Controller('admin/documents')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN)
 export class AdminDocumentsController {
   constructor(
     private readonly documentsService: DocumentsService,
@@ -14,8 +18,6 @@ export class AdminDocumentsController {
 
   @Get('deleted')
   async getDeletedDocuments() {
-    // This endpoint would require user role checking in a real implementation
-    // For now, we'll assume the controller is protected by role-based middleware
     const deletedDocuments = await this.documentsService.findByOwnerIncludingDeleted('admin');
     return deletedDocuments.filter(doc => doc.deletedAt);
   }
@@ -23,6 +25,11 @@ export class AdminDocumentsController {
   @Get(':id/deleted-verification-records')
   async getDeletedVerificationRecords(@Param('id') id: string) {
     return this.verificationService.findByDocumentIncludingDeleted(id);
+  }
+
+  @Patch(':id/status')
+  async updateStatus(@Param('id') id: string, @Body() dto: UpdateDocumentStatusDto) {
+    return this.documentsService.updateStatus(id, dto.status);
   }
 
   @Post(':id/restore')
@@ -33,7 +40,6 @@ export class AdminDocumentsController {
 
   @Delete(':id/hard-delete')
   async hardDeleteDocument(@Param('id') id: string) {
-    // This permanently deletes the document and its verification records
     await this.verificationService.hardDeleteByDocument(id);
     await this.documentsService.hardDelete(id);
     return { message: 'Document permanently deleted' };
