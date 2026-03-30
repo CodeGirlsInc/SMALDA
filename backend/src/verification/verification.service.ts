@@ -77,4 +77,34 @@ export class VerificationService {
     });
     return { data, total, page, limit };
   }
+
+  async findAllWithFilters(filters: {
+    status?: VerificationStatus;
+    from?: string;
+    to?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ data: VerificationRecord[]; total: number; page: number; limit: number }> {
+    const page = filters.page ?? 1;
+    const limit = Math.min(filters.limit ?? 20, 100);
+
+    const qb = this.verificationRepository
+      .createQueryBuilder('v')
+      .orderBy('v.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    if (filters.status) {
+      qb.andWhere('v.status = :status', { status: filters.status });
+    }
+    if (filters.from) {
+      qb.andWhere('v.created_at >= :from', { from: new Date(filters.from) });
+    }
+    if (filters.to) {
+      qb.andWhere('v.created_at <= :to', { to: new Date(filters.to) });
+    }
+
+    const [data, total] = await qb.getManyAndCount();
+    return { data, total, page, limit };
+  }
 }
