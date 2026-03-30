@@ -11,6 +11,7 @@ import {
   Query,
   Req,
   Res,
+  StreamableFile,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -20,6 +21,7 @@ import { ConfigService } from '@nestjs/config';
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
 import { createHash } from 'crypto';
+import { createReadStream } from 'fs';
 import { promises as fs } from 'fs';
 import { extname, join } from 'path';
 import * as multer from 'multer';
@@ -29,6 +31,7 @@ import { v4 as uuidv4 } from 'uuid';                          // BE-20: UUID fil
 
 import { DocumentsService } from './documents.service';
 import { DocumentStatus } from './entities/document.entity';
+import { QueryDocumentsDto } from './dto/query-documents.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { VerifiedUserGuard } from '../auth/guards/verified-user.guard';
 import { User, UserRole } from '../users/entities/user.entity';
@@ -170,13 +173,64 @@ export class DocumentsController {
   @UseGuards(JwtAuthGuard)
   async deleteDocument(@Param('id') id: string, @Req() req: Request & { user?: User }) {
     const document = await this.documentsService.findById(id);
-    if (!document) {
-      throw new NotFoundException('Document not found');
+    if (!document) throw new NotFoundException('Document not found');
+
+    const isAdmin = req.user!.role === UserRole.ADMIN;
+    if (document.ownerId !== req.user!.id && !isAdmin) {
+      throw new ForbiddenException('Access denied');
     }
 
     await this.documentsService.delete(id);
     await this.auditService.log(req.user!.id, AuditAction.DOCUMENT_DELETE, 'document', id);
     return { message: 'Document deleted' };
+  }
+
+  @Get(':id/file')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Download the original document file' })
+  @ApiResponse({ status: 200, description: 'File stream' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  @ApiResponse({ status: 404, description: 'Document or file not found' })
+  async downloadFile(
+    @Param('id') id: string,
+    @Req() req: Request & { user?: User },
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const document = await this.documentsService.findById(id);
+    if (!document) throw new NotFoundException('Document not found');
+
+    const isAdmin = req.user!.role === UserRole.ADMIN;
+    if (document.ownerId !== req.user!.id && !isAdmin) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    try {
+      await fs.access(document.filePath);
+    } catch {
+      throw new NotFoundException('File not found on disk');
+    }
+
+    res.setHeader('Content-Type', document.mimeType);
+    res.setHeader('Content-Disposition', `attachment; filename="${document.title}"`);
+    return new StreamableFile(createReadStream(document.filePath));
+  }
+
+  @Get(':id')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Get a single document by ID' })
+  @ApiResponse({ status: 200, description: 'Document record' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  @ApiResponse({ status: 404, description: 'Document not found' })
+  async getDocument(@Param('id') id: string, @Req() req: Request & { user?: User }) {
+    const document = await this.documentsService.findById(id);
+    if (!document) throw new NotFoundException('Document not found');
+
+    const isAdmin = req.user!.role === UserRole.ADMIN;
+    if (document.ownerId !== req.user!.id && !isAdmin) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    return document;
   }
 
   @Post(':id/verify')
