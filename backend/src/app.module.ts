@@ -1,11 +1,7 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { EventEmitterModule } from '@nestjs/event-emitter';
-import { CacheModule } from '@nestjs/cache-manager';
 import { WinstonModule } from 'nest-winston';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { APP_GUARD } from '@nestjs/core';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -13,49 +9,18 @@ import { AuthModule } from './auth/auth.module';
 import { buildWinstonOptions } from './common/logger.config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { DocumentsModule } from './documents/documents.module';
-import { AuditModule } from './audit/audit.module';
 import { MailModule } from './mail/mail.module';
 import { QueueModule } from './queue/queue.module';
 import { RiskAssessmentModule } from './risk-assessment/risk-assessment.module';
 import { StellarModule } from './stellar/stellar.module';
 import { UsersModule } from './users/users.module';
-import { TasksModule } from './tasks/tasks.module';
-import { TransfersModule } from './transfers/transfers.module';
 import { VerificationModule } from './verification/verification.module';
-import { validateConfig } from './config/env.validation';
-import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
-      validate: validateConfig,
-    }),
-    ThrottlerModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        throttlers: [
-          {
-            ttl: +(config.get('THROTTLE_TTL') ?? 60) * 1000,
-            limit: +(config.get('THROTTLE_LIMIT') ?? 10),
-          },
-        ],
-      }),
-    }),
-    EventEmitterModule.forRoot(),
-    CacheModule.registerAsync({
-      isGlobal: true,
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        store: 'ioredis',
-        host: config.get('REDIS_HOST') || '127.0.0.1',
-        port: +(config.get('REDIS_PORT') || 6379),
-        password: config.get('REDIS_PASSWORD') || undefined,
-        ttl: +(config.get('CACHE_TTL') || 300) * 1000,
-      }),
     }),
     WinstonModule.forRootAsync({
       imports: [ConfigModule],
@@ -74,9 +39,7 @@ import { HealthModule } from './health/health.module';
         port: +configService.get('DATABASE_PORT'),
         host: configService.get('DATABASE_HOST'),
         autoLoadEntities: true,
-        synchronize: false,
-        migrations: ['dist/migrations/*.js'],
-        migrationsRun: false,
+        synchronize: true,
       }),
     }),
     UsersModule,
@@ -85,18 +48,11 @@ import { HealthModule } from './health/health.module';
     RiskAssessmentModule,
     StellarModule,
     VerificationModule,
-    TransfersModule,
     MailModule,
     QueueModule,
-    AuditModule,
-    HealthModule,
   ],
   controllers: [AppController],
-  providers: [
-    AppService,
-    LoggerMiddleware,
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
-  ],
+  providers: [AppService, LoggerMiddleware],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

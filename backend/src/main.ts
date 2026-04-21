@@ -1,6 +1,6 @@
-import { NestFactory, Reflector } from '@nestjs/core';
+import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ClassSerializerInterceptor, ValidationPipe } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
@@ -18,7 +18,8 @@ async function bootstrap() {
 
   // Enable CORS
   app.enableCors({
-    origin: configService.get<string>('FRONTEND_URL'),
+    origin:
+      configService.get<string>('FRONTEND_URL') || 'http://localhost:3001',
     credentials: true,
   });
 
@@ -42,9 +43,6 @@ async function bootstrap() {
       configService.get<string>('NODE_ENV') === 'production',
     ),
   );
-
-  // Global serializer — enforces @Exclude() / @Expose() on response DTOs
-  app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
 
   // Swagger documentation
   const config = new DocumentBuilder()
@@ -80,7 +78,7 @@ async function bootstrap() {
     },
   });
 
-  const port = configService.get<number>('APP_PORT');
+  const port = configService.get<number>('APP_PORT') || 6004;
   await app.listen(port);
 
   console.log(`Application is running on: http://localhost:${port}`);

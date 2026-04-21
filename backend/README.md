@@ -24,42 +24,7 @@
 
 ## Description
 
-[SMALDA](https://github.com/RUKAYAT-CODER/SMALDA) - Secure Document Management and Ledger Anchoring system built with NestJS.
-
-## Database Migrations
-
-This project uses TypeORM migrations for database schema management.
-
-### Migration Commands
-
-```bash
-# Generate a new migration
-npm run migration:generate -- -n MigrationName
-
-# Run all pending migrations
-npm run migration:run
-
-# Revert the last migration
-npm run migration:revert
-
-# Show migration status
-npm run migration:show
-
-# Run migrations with CI/CD script
-npm run migrate
-```
-
-### Migration Files
-
-Migration files are located in `src/migrations/` and are automatically compiled to `dist/migrations/`.
-
-### CI/CD Integration
-
-The deployment pipeline automatically runs migrations before starting the application:
-
-1. Database connection check
-2. Run pending migrations
-3. Start the application
+[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
 ## Project setup
 

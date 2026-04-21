@@ -39,7 +39,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     };
 
     this.logger.error(
-      `${status} -> ${JSON.stringify(payload)}`,
+      ${status}   -> ,
       (exception as Error)?.stack,
     );
 
