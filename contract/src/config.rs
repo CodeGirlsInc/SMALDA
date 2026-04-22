@@ -171,6 +171,9 @@ impl AppConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn clear_env() {
         let keys = [
@@ -193,6 +196,7 @@ mod tests {
 
     #[test]
     fn from_env_uses_defaults_when_missing() {
+        let _guard = ENV_LOCK.lock().unwrap();
         clear_env();
         env::set_var(
             "STELLAR_SECRET_KEY",
@@ -212,6 +216,7 @@ mod tests {
 
     #[test]
     fn from_env_invalid_values_report_errors() {
+        let _guard = ENV_LOCK.lock().unwrap();
         clear_env();
         env::set_var("PORT", "0");
         env::set_var("STELLAR_HORIZON_URL", "not-a-url");
@@ -227,6 +232,7 @@ mod tests {
 
     #[test]
     fn from_env_parses_valid_config() {
+        let _guard = ENV_LOCK.lock().unwrap();
         clear_env();
         env::set_var("PORT", "9090");
         env::set_var("STELLAR_HORIZON_URL", "https://example.com");

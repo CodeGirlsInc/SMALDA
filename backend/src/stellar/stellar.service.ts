@@ -28,7 +28,7 @@ export class StellarService {
   private buildDataKey(hash: string) {
     const sanitized = hash.replace(/[^a-zA-Z0-9]/g, '');
     const payload = sanitized.slice(0, 58);
-    return doc_;
+    return `doc_${payload}`;
   }
 
   async anchorHash(hash: string): Promise<{ txHash: string; ledger: number }> {
