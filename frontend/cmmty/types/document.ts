@@ -19,6 +19,8 @@ export interface Document {
   riskScore?: number;
   riskFlags?: string[];
   stellarTxHash?: string;
+  ledgerNumber?: number;
+  anchoredTimestamp?: string;
   createdAt: string;
   updatedAt: string;
 }
