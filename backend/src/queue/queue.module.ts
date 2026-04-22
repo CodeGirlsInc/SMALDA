@@ -1,25 +1,21 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { EventEmitterModule } from '@nestjs/event-emitter';
 
 import { DocumentsModule } from '../documents/documents.module';
 import { RiskAssessmentModule } from '../risk-assessment/risk-assessment.module';
 import { StellarModule } from '../stellar/stellar.module';
 import { VerificationModule } from '../verification/verification.module';
 import { DocumentProcessor } from './document.processor';
-import { QueueController } from './queue.controller';
 import { QueueService } from './queue.service';
 
 @Module({
   imports: [
     ConfigModule,
-    EventEmitterModule,
     forwardRef(() => DocumentsModule),
-    forwardRef(() => RiskAssessmentModule),
+    RiskAssessmentModule,
     StellarModule,
     VerificationModule,
   ],
-  controllers: [QueueController],
   providers: [QueueService, DocumentProcessor],
   exports: [QueueService],
 })

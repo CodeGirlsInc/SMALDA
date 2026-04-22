@@ -1,9 +1,0 @@
-{
-  "dependencies": {
-    "file-type": "^22.0.0",
-    "uuid": "^13.0.0"
-  },
-  "devDependencies": {
-    "@types/uuid": "^10.0.0"
-  }
-}
