@@ -32,7 +32,7 @@ const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
 
 const multerStorage = multer.memoryStorage();
 
-const fileFilter: multer.FileFilterCallback = (_req, file, callback) => {
+const fileFilter: multer.Options['fileFilter'] = (_req, file, callback) => {
   if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
     return callback(null, true);
   }

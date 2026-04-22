@@ -67,8 +67,8 @@ export class StellarService {
 
     try {
       const key = this.buildDataKey(hash);
-      await this.server.accountData(this.accountId, key);
-      return true;
+      const account = await this.server.loadAccount(this.accountId);
+      return key in account.data_attr;
     } catch (error) {
       if (error?.response?.status === 404) {
         return false;
