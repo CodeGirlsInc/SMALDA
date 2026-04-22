@@ -37,7 +37,7 @@ const fileFilter: multer.Options['fileFilter'] = (_req, file, callback) => {
     return callback(null, true);
   }
 
-  return callback(new BadRequestException('Only PDF, PNG, or JPEG files are allowed'), false);
+  return callback(new BadRequestException('Only PDF, PNG, or JPEG files are allowed'));
 };
 
 @Controller('documents')
