@@ -1,11 +1,11 @@
 ﻿import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Keypair, Networks, Operation, Server, TransactionBuilder } from 'stellar-sdk';
+import { Keypair, Horizon, Networks, Operation, TransactionBuilder } from 'stellar-sdk';
 
 @Injectable()
 export class StellarService {
   private readonly logger = new Logger(StellarService.name);
-  private readonly server: Server;
+  private readonly server: Horizon.Server;
   private readonly anchorKeypair: Keypair;
   private readonly networkPassphrase: string;
   private readonly accountId: string;
@@ -22,7 +22,7 @@ export class StellarService {
 
     this.anchorKeypair = Keypair.fromSecret(secretKey);
     this.accountId = this.anchorKeypair.publicKey();
-    this.server = new Server(horizonUrl);
+    this.server = new Horizon.Server(horizonUrl);
   }
 
   private buildDataKey(hash: string) {

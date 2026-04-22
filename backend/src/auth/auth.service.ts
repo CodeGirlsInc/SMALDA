@@ -130,7 +130,7 @@ export class AuthService {
 
     return this.jwtService.signAsync(payload, {
       secret: this.getRefreshSecret(),
-      expiresIn: this.getRefreshExpiration(),
+      expiresIn: this.getRefreshExpiration() as unknown as number,
     });
   }
 

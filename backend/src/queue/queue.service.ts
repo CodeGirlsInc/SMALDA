@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Queue, RedisConnectionOptions } from 'bullmq';
+import { Queue, ConnectionOptions as RedisConnectionOptions } from 'bullmq';
 
 @Injectable()
 export class QueueService implements OnModuleDestroy {
