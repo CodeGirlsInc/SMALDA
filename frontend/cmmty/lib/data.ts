@@ -1,4 +1,4 @@
-import { Document, DocumentStatus } from "../types/document";
+import { Document, DocumentStatus, RISK_FLAG_WEIGHTS } from "../types/document";
 
 export const mockDocuments: Document[] = [
   {
@@ -219,4 +219,55 @@ export function formatDateTime(dateString: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+export function formatFlagName(flag: string): string {
+  return flag
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+export function getFlagContribution(
+  flag: string,
+  flags: string[],
+  totalScore: number,
+): number {
+  const totalWeight = flags.reduce(
+    (sum, f) => sum + (RISK_FLAG_WEIGHTS[f] || 0),
+    0,
+  );
+  if (totalWeight === 0) return 0;
+  const weight = RISK_FLAG_WEIGHTS[flag] || 0;
+  return Math.round((weight / totalWeight) * totalScore);
+}
+
+export function getRiskLevel(score: number): {
+  label: string;
+  colorClass: string;
+  bgClass: string;
+  barClass: string;
+} {
+  if (score > 60) {
+    return {
+      label: "High Risk",
+      colorClass: "text-rose-600 dark:text-rose-400",
+      bgClass: "bg-rose-50 dark:bg-rose-950/30",
+      barClass: "bg-rose-500",
+    };
+  }
+  if (score >= 30) {
+    return {
+      label: "Medium Risk",
+      colorClass: "text-amber-600 dark:text-amber-400",
+      bgClass: "bg-amber-50 dark:bg-amber-950/30",
+      barClass: "bg-amber-500",
+    };
+  }
+  return {
+    label: "Low Risk",
+    colorClass: "text-emerald-600 dark:text-emerald-400",
+    bgClass: "bg-emerald-50 dark:bg-emerald-950/30",
+    barClass: "bg-emerald-500",
+  };
 }

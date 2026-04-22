@@ -39,3 +39,30 @@ export const RISK_FLAG_DESCRIPTIONS: Record<string, string> = {
   expired_permit:
     "The permit or license referenced in this document has expired.",
 };
+
+export const RISK_FLAG_WEIGHTS: Record<string, number> = {
+  duplicate_claim: 40,
+  boundary_dispute: 30,
+  encoding_issue: 35,
+  forged_signature: 50,
+  invalid_notary: 42,
+  missing_heir: 42,
+  expired_permit: 58,
+};
+
+export const RISK_FLAG_REMEDIATIONS: Record<string, string> = {
+  duplicate_claim:
+    "Cross-reference with the land registry to verify ownership records and resolve any conflicting claims.",
+  boundary_dispute:
+    "Engage a licensed surveyor to conduct a fresh boundary survey and mediate with adjacent landowners.",
+  encoding_issue:
+    "Re-scan or re-export the document using standard PDF/A format to ensure proper encoding.",
+  forged_signature:
+    "Request an affidavit from the signatory and consult a forensic document examiner for verification.",
+  invalid_notary:
+    "Re-notarize the document with a currently licensed and recognized notary public.",
+  missing_heir:
+    "Conduct a thorough genealogical search and update the declaration with all legal heirs.",
+  expired_permit:
+    "Apply for permit renewal with the relevant regulatory authority before proceeding.",
+};
