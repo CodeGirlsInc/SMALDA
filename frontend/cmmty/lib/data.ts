@@ -4,6 +4,7 @@ export const mockDocuments: Document[] = [
   {
     id: "1",
     ownerId: "user-1",
+    ownerName: "John Kamau",
     title: "Land Deed - Plot 42A Nairobi",
     filePath: "/uploads/deed_42a.pdf",
     fileHash: "a1b2c3d4e5f6",
@@ -12,12 +13,15 @@ export const mockDocuments: Document[] = [
     status: DocumentStatus.VERIFIED,
     riskScore: 12,
     riskFlags: [],
+    stellarTxHash:
+      "a1b2c3d4e5f6789012345678901234567890abcd1234ef5678901234567890abcd",
     createdAt: "2026-04-10T08:30:00Z",
     updatedAt: "2026-04-12T14:20:00Z",
   },
   {
     id: "2",
     ownerId: "user-1",
+    ownerName: "John Kamau",
     title: "Title Certificate - Mombasa Region",
     filePath: "/uploads/title_mombasa.pdf",
     fileHash: "b2c3d4e5f6g7",
@@ -32,6 +36,7 @@ export const mockDocuments: Document[] = [
   {
     id: "3",
     ownerId: "user-1",
+    ownerName: "John Kamau",
     title: "Survey Plan - Kisumu Township",
     filePath: "/uploads/survey_kisumu.pdf",
     fileHash: "c3d4e5f6g7h8",
@@ -46,6 +51,7 @@ export const mockDocuments: Document[] = [
   {
     id: "4",
     ownerId: "user-1",
+    ownerName: "John Kamau",
     title: "Lease Agreement - Plot 12B",
     filePath: "/uploads/lease_12b.pdf",
     fileHash: "d4e5f6g7h8i9",
@@ -60,6 +66,7 @@ export const mockDocuments: Document[] = [
   {
     id: "5",
     ownerId: "user-1",
+    ownerName: "John Kamau",
     title: "Land Transfer Form - Eldoret",
     filePath: "/uploads/transfer_eldoret.pdf",
     fileHash: "e5f6g7h8i9j0",
@@ -74,6 +81,7 @@ export const mockDocuments: Document[] = [
   {
     id: "6",
     ownerId: "user-1",
+    ownerName: "John Kamau",
     title: "Property Tax Receipt 2026",
     filePath: "/uploads/tax_receipt_2026.pdf",
     fileHash: "f6g7h8i9j0k1",
@@ -82,12 +90,15 @@ export const mockDocuments: Document[] = [
     status: DocumentStatus.VERIFIED,
     riskScore: 5,
     riskFlags: [],
+    stellarTxHash:
+      "b2c3d4e5f6789012345678901234567890abcd5678ef9012345678901234efgh",
     createdAt: "2026-04-01T07:45:00Z",
     updatedAt: "2026-04-02T10:00:00Z",
   },
   {
     id: "7",
     ownerId: "user-1",
+    ownerName: "John Kamau",
     title: "Boundary Dispute Resolution",
     filePath: "/uploads/boundary_resolution.pdf",
     fileHash: "g7h8i9j0k1l2",
@@ -102,6 +113,7 @@ export const mockDocuments: Document[] = [
   {
     id: "8",
     ownerId: "user-1",
+    ownerName: "John Kamau",
     title: "Coastal Zone Land Permit",
     filePath: "/uploads/coastal_permit.pdf",
     fileHash: "h8i9j0k1l2m3",
@@ -116,6 +128,7 @@ export const mockDocuments: Document[] = [
   {
     id: "9",
     ownerId: "user-1",
+    ownerName: "John Kamau",
     title: "Inheritance Declaration - Nakuru",
     filePath: "/uploads/inheritance_nakuru.pdf",
     fileHash: "i9j0k1l2m3n4",
@@ -130,6 +143,7 @@ export const mockDocuments: Document[] = [
   {
     id: "10",
     ownerId: "user-1",
+    ownerName: "John Kamau",
     title: "Mortgage Agreement - ABC Bank",
     filePath: "/uploads/mortgage_abc.pdf",
     fileHash: "j0k1l2m3n4o5",
@@ -138,12 +152,15 @@ export const mockDocuments: Document[] = [
     status: DocumentStatus.VERIFIED,
     riskScore: 18,
     riskFlags: [],
+    stellarTxHash:
+      "c3d4e5f6789012345678901234567890abcd9012ef345678901234567890ijkl",
     createdAt: "2026-03-28T09:30:00Z",
     updatedAt: "2026-04-01T10:15:00Z",
   },
   {
     id: "11",
     ownerId: "user-1",
+    ownerName: "John Kamau",
     title: "Subdivision Approval - Kitale",
     filePath: "/uploads/subdivision_kitale.pdf",
     fileHash: "k1l2m3n4o5p6",
@@ -158,6 +175,7 @@ export const mockDocuments: Document[] = [
   {
     id: "12",
     ownerId: "user-1",
+    ownerName: "John Kamau",
     title: "Environmental Impact Assessment",
     filePath: "/uploads/eia_report.pdf",
     fileHash: "l2m3n4o5p6q7",
@@ -170,3 +188,35 @@ export const mockDocuments: Document[] = [
     updatedAt: "2026-04-11T16:45:00Z",
   },
 ];
+
+export function getDocumentById(id: string): Document | undefined {
+  return mockDocuments.find((doc) => doc.id === id);
+}
+
+export function formatFileSize(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+}
+
+export function formatDate(dateString: string): string {
+  const date = new Date(dateString);
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+export function formatDateTime(dateString: string): string {
+  const date = new Date(dateString);
+  return date.toLocaleString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
