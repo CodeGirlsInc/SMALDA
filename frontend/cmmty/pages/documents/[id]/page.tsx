@@ -229,6 +229,12 @@ export default function DocumentDetailPage() {
               <div className="mt-4 flex justify-center">
                 <RiskGauge score={document.riskScore} />
               </div>
+              <a
+                href={`/documents/${document.id}/risk`}
+                className="mt-4 inline-flex w-full items-center justify-center rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
+              >
+                View Full Risk Assessment
+              </a>
             </div>
 
             {/* Verification Card */}
