@@ -1,0 +1,18 @@
+.verify-container {
+  max-width: 500px;
+  margin: auto;
+  padding: 1rem;
+  text-align: center;
+}
+
+button {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  width: 100%;
+}
+
+@media (max-width: 600px) {
+  .verify-container {
+    padding: 0.5rem;
+  }
+}
