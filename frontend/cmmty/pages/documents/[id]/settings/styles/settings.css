@@ -1,0 +1,21 @@
+.settings-container {
+  max-width: 600px;
+  margin: auto;
+  padding: 1rem;
+}
+
+.settings-section {
+  margin-bottom: 2rem;
+}
+
+input, button {
+  display: block;
+  width: 100%;
+  margin: 0.5rem 0;
+}
+
+@media (max-width: 600px) {
+  .settings-container {
+    padding: 0.5rem;
+  }
+}
