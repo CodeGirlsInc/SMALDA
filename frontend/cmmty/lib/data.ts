@@ -15,6 +15,8 @@ export const mockDocuments: Document[] = [
     riskFlags: [],
     stellarTxHash:
       "a1b2c3d4e5f6789012345678901234567890abcd1234ef5678901234567890abcd",
+    ledgerNumber: 52487361,
+    anchoredTimestamp: "2026-04-12T14:22:05Z",
     createdAt: "2026-04-10T08:30:00Z",
     updatedAt: "2026-04-12T14:20:00Z",
   },
@@ -92,6 +94,8 @@ export const mockDocuments: Document[] = [
     riskFlags: [],
     stellarTxHash:
       "b2c3d4e5f6789012345678901234567890abcd5678ef9012345678901234efgh",
+    ledgerNumber: 52391044,
+    anchoredTimestamp: "2026-04-02T10:03:18Z",
     createdAt: "2026-04-01T07:45:00Z",
     updatedAt: "2026-04-02T10:00:00Z",
   },
@@ -154,6 +158,8 @@ export const mockDocuments: Document[] = [
     riskFlags: [],
     stellarTxHash:
       "c3d4e5f6789012345678901234567890abcd9012ef345678901234567890ijkl",
+    ledgerNumber: 52158732,
+    anchoredTimestamp: "2026-04-01T10:17:42Z",
     createdAt: "2026-03-28T09:30:00Z",
     updatedAt: "2026-04-01T10:15:00Z",
   },
