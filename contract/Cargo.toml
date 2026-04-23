@@ -43,6 +43,8 @@ hex = "0.4"
 chrono = "0.4.43"
 base64 = "0.22"
 rand = "0.8"
+uuid = { version = "1", features = ["v4"] }
+async-trait = "0.1"
 
 [dev-dependencies]
 httpmock = "0.7"
