@@ -1,0 +1,112 @@
+.timeline-container {
+  position: relative;
+  padding: 1rem 0;
+  max-width: 600px;
+}
+
+.timeline-line {
+  position: absolute;
+  left: 19px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(to bottom, #6366f1 0%, #e2e8f0 100%);
+  z-index: 0;
+}
+
+.timeline-events {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  position: relative;
+  z-index: 1;
+}
+
+.timeline-event {
+  display: flex;
+  gap: 1.5rem;
+  opacity: 0;
+  transform: translateY(10px);
+  animation: slideUp 0.4s ease forwards;
+}
+
+@keyframes slideUp {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.timeline-icon-wrapper {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  items-center: center;
+  justify-content: center;
+  background: white;
+  border: 2px solid #6366f1;
+  box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.1), 0 2px 4px -1px rgba(99, 102, 241, 0.06);
+  z-index: 2;
+  color: #6366f1;
+  transition: all 0.3s ease;
+}
+
+.timeline-event:hover .timeline-icon-wrapper {
+  transform: scale(1.1);
+  box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.2);
+}
+
+.timeline-content {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  padding: 1rem;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+}
+
+.timeline-event:hover .timeline-content {
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+  border-color: #6366f1;
+}
+
+.timeline-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.25rem;
+}
+
+.timeline-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #1e293b;
+}
+
+.timeline-timestamp {
+  font-size: 0.75rem;
+  color: #64748b;
+  cursor: help;
+  white-space: nowrap;
+}
+
+.timeline-description {
+  font-size: 0.875rem;
+  color: #475569;
+  line-height: 1.5;
+}
+
+/* Status variants */
+.timeline-event.uploaded .timeline-icon-wrapper { border-color: #3b82f6; color: #3b82f6; }
+.timeline-event.risk_analysis_started .timeline-icon-wrapper { border-color: #f59e0b; color: #f59e0b; }
+.timeline-event.risk_analysis_completed .timeline-icon-wrapper { border-color: #10b981; color: #10b981; }
+.timeline-event.verification_requested .timeline-icon-wrapper { border-color: #8b5cf6; color: #8b5cf6; }
+.timeline-event.verified_on_stellar .timeline-icon-wrapper { border-color: #6366f1; color: #6366f1; background: #6366f1; color: white; }
+
+.timeline-event.verified_on_stellar .timeline-content {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, rgba(255, 255, 255, 0.7) 100%);
+}
