@@ -1,0 +1,24 @@
+services:
+  cmmty:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "3002:3002"
+    environment:
+      REDIS_URL: redis://redis:6379
+      PORT: "3002"
+      RUST_LOG: info
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
