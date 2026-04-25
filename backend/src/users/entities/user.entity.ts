@@ -36,6 +36,9 @@ export class User {
   @Column({ name: 'is_verified', default: false })
   isVerified: boolean;
 
+  @Column({ name: 'preferred_language', default: 'en' })
+  preferredLanguage: string;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
