@@ -21,6 +21,14 @@ export class AuditLogController {
     if (req.user?.role !== UserRole.ADMIN) {
       throw new ForbiddenException('Access denied: Admin role required');
     }
+    // Log admin access
+    await this.auditLogService.create(
+      req.user.id,
+      AuditAction.ADMIN_ACCESS,
+      ResourceType.SYSTEM,
+      undefined,
+      req.ip || 'unknown',
+    );
     return this.auditLogService.findAll(dto);
   }
 
