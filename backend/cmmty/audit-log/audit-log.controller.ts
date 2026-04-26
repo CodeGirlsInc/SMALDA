@@ -3,6 +3,7 @@ import { AuditLogService } from './audit-log.service';
 import { AuditLogPaginationQueryDto } from './dto/audit-log-pagination-query.dto';
 import { JwtAuthGuard } from '../../src/auth/guards/jwt-auth.guard';
 import { User, UserRole } from '../../src/users/entities/user.entity';
+import { AuditAction, ResourceType } from './entities/audit-log.entity';
 
 interface AuthenticatedRequest extends Request {
   user?: User;
