@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, X, Bell, LayoutDashboard, FileText, Upload, Map, Settings, ShieldCheck } from "lucide-react";
+import { ThemeToggle } from "../ThemeToggle";
 
 interface HeaderProps {
   onNotificationClick?: () => void;
@@ -27,14 +28,17 @@ export default function Header({ onNotificationClick, unreadCount = 0, isAdmin =
   const links = isAdmin ? [...navLinks, adminLink] : navLinks;
 
   return (
-    <header className="md:hidden bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-      <span className="text-lg font-bold text-indigo-600">SMALDA</span>
+    <header className="md:hidden bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex items-center justify-between">
+      <span className="text-lg font-bold text-indigo-600 dark:text-indigo-400">SMALDA</span>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1">
+        {/* Theme toggle */}
+        <ThemeToggle />
+
         {/* Notification bell */}
         <button
           onClick={onNotificationClick}
-          className="relative flex items-center justify-center min-w-[44px] min-h-[44px] text-gray-500 hover:text-gray-700 active:bg-gray-100 rounded-lg transition-colors"
+          className="relative flex items-center justify-center min-w-[44px] min-h-[44px] text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 active:bg-gray-100 dark:active:bg-gray-800 rounded-lg transition-colors"
           aria-label="Notifications"
         >
           <Bell size={20} />
@@ -48,7 +52,7 @@ export default function Header({ onNotificationClick, unreadCount = 0, isAdmin =
         {/* Hamburger */}
         <button
           onClick={() => setMenuOpen((o) => !o)}
-          className="flex items-center justify-center min-w-[44px] min-h-[44px] text-gray-500 hover:text-gray-700 active:bg-gray-100 rounded-lg transition-colors"
+          className="flex items-center justify-center min-w-[44px] min-h-[44px] text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 active:bg-gray-100 dark:active:bg-gray-800 rounded-lg transition-colors"
           aria-label={menuOpen ? "Close menu" : "Open menu"}
           aria-expanded={menuOpen}
         >
@@ -58,7 +62,7 @@ export default function Header({ onNotificationClick, unreadCount = 0, isAdmin =
 
       {/* Mobile nav drawer */}
       {menuOpen && (
-        <nav className="absolute top-14 left-0 right-0 bg-white border-b border-gray-200 z-50 py-2 shadow-md">
+        <nav className="absolute top-14 left-0 right-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 z-50 py-2 shadow-md">
           {links.map(({ href, label, icon: Icon }) => {
             const active = pathname === href || pathname.startsWith(href + "/");
             return (
@@ -67,7 +71,7 @@ export default function Header({ onNotificationClick, unreadCount = 0, isAdmin =
                 href={href}
                 onClick={() => setMenuOpen(false)}
                 className={`flex items-center gap-3 px-5 py-3 min-h-[44px] text-sm font-medium transition-colors ${
-                  active ? "text-indigo-700 bg-indigo-50" : "text-gray-700 hover:bg-gray-50"
+                  active ? "text-indigo-700 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/30" : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
                 }`}
                 aria-current={active ? "page" : undefined}
               >

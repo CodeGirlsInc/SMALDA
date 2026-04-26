@@ -1,63 +1,96 @@
-import React, { useState } from 'react';
-import { useRouter } from 'next/router';
+"use client";
+
+import React, { useState } from "react";
+import Link from "next/link";
+import { useZodForm, passwordResetSchema } from "../../lib/forms";
+import { Input } from "../../components/Input";
 
 interface Props {
   token: string;
 }
 
 const ResetPasswordForm: React.FC<Props> = ({ token }) => {
-  const [newPass, setNewPass] = useState('');
-  const [confirmPass, setConfirmPass] = useState('');
-  const [error, setError] = useState('');
+  const [apiError, setApiError] = useState("");
   const [success, setSuccess] = useState(false);
-  const router = useRouter();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newPass.length < 8) {
-      setError('Password must be at least 8 characters.');
-      return;
-    }
-    if (newPass !== confirmPass) {
-      setError('Passwords do not match.');
-      return;
-    }
-    setError('');
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useZodForm(passwordResetSchema, {
+    defaultValues: { newPassword: "", confirmPassword: "" },
+  });
+
+  const onSubmit = async (data: { newPassword: string; confirmPassword: string }) => {
+    setApiError("");
     try {
-      const res = await fetch('/api/auth/reset-password', {
-        method: 'POST',
-        body: JSON.stringify({ token, newPass }),
+      const res = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, newPassword: data.newPassword }),
       });
       if (res.ok) {
         setSuccess(true);
-        setTimeout(() => router.push('/login'), 3000);
       } else {
-        setError('Invalid or expired token.');
+        setApiError("Invalid or expired token. Please request a new reset link.");
       }
     } catch {
-      setError('Something went wrong. Please try again.');
+      setApiError("Something went wrong. Please try again.");
     }
   };
 
+  if (success) {
+    return (
+      <div className="rounded-md bg-green-50 p-4 text-center">
+        <p className="text-sm text-green-800">
+          Password reset successful!
+        </p>
+        <Link
+          href="/login"
+          className="mt-3 inline-flex min-h-[44px] items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
+        >
+          Sign in
+        </Link>
+      </div>
+    );
+  }
+
   return (
-    <form onSubmit={handleSubmit} className="reset-form">
-      <label>New Password</label>
-      <input
+    <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-5">
+      {apiError && (
+        <div className="rounded-md bg-red-50 p-4">
+          <p className="text-sm text-red-800">{apiError}</p>
+        </div>
+      )}
+
+      <Input
+        id="newPassword"
+        label="New password"
         type="password"
-        value={newPass}
-        onChange={(e) => setNewPass(e.target.value)}
-        required
+        autoComplete="new-password"
+        error={!!errors.newPassword}
+        errorMessage={errors.newPassword?.message}
+        helperText="Must be at least 8 characters with uppercase, lowercase, and a number"
+        {...register("newPassword")}
       />
-      <label>Confirm Password</label>
-      <input
+
+      <Input
+        id="confirmPassword"
+        label="Confirm new password"
         type="password"
-        value={confirmPass}
-        onChange={(e) => setConfirmPass(e.target.value)}
-        required
+        autoComplete="new-password"
+        error={!!errors.confirmPassword}
+        errorMessage={errors.confirmPassword?.message}
+        {...register("confirmPassword")}
       />
-      <button type="submit">Reset Password</button>
-      {error && <p className="error-msg">{error}</p>}
-      {success && <p className="success-msg">Password reset successful! Redirecting to login...</p>}
+
+      <button
+        type="submit"
+        disabled={isSubmitting}
+        className="flex w-full items-center justify-center min-h-[44px] rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 active:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
+      >
+        {isSubmitting ? "Resetting..." : "Reset Password"}
+      </button>
     </form>
   );
 };
