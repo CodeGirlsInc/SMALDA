@@ -34,12 +34,12 @@ export default function Header({ onNotificationClick, unreadCount = 0, isAdmin =
         {/* Notification bell */}
         <button
           onClick={onNotificationClick}
-          className="relative p-1 text-gray-500 hover:text-gray-700"
+          className="relative flex items-center justify-center min-w-[44px] min-h-[44px] text-gray-500 hover:text-gray-700 active:bg-gray-100 rounded-lg transition-colors"
           aria-label="Notifications"
         >
           <Bell size={20} />
           {unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+            <span className="absolute top-1 right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
               {unreadCount > 9 ? "9+" : unreadCount}
             </span>
           )}
@@ -48,7 +48,7 @@ export default function Header({ onNotificationClick, unreadCount = 0, isAdmin =
         {/* Hamburger */}
         <button
           onClick={() => setMenuOpen((o) => !o)}
-          className="p-1 text-gray-500 hover:text-gray-700"
+          className="flex items-center justify-center min-w-[44px] min-h-[44px] text-gray-500 hover:text-gray-700 active:bg-gray-100 rounded-lg transition-colors"
           aria-label={menuOpen ? "Close menu" : "Open menu"}
           aria-expanded={menuOpen}
         >
@@ -66,7 +66,7 @@ export default function Header({ onNotificationClick, unreadCount = 0, isAdmin =
                 key={href}
                 href={href}
                 onClick={() => setMenuOpen(false)}
-                className={`flex items-center gap-3 px-5 py-3 text-sm font-medium ${
+                className={`flex items-center gap-3 px-5 py-3 min-h-[44px] text-sm font-medium transition-colors ${
                   active ? "text-indigo-700 bg-indigo-50" : "text-gray-700 hover:bg-gray-50"
                 }`}
                 aria-current={active ? "page" : undefined}
