@@ -60,14 +60,6 @@ export class RateLimitService {
     return Math.max(0, this.maxRequests - requestCount);
   }
 
-  async getResetTime(ip: string): Promise<number> {
-    const key = `rate_limit:${ip}`;
-    const now = Date.now();
-    const windowStart = now - this.windowMs;
-
-    const oldestTimestamp = await this.redis.zrange(key, 0, 0, 'WITHSCORES');
-    return oldestTimestamp.length > 0
-      ? Number(oldestTimestamp[1]) + this.windowMs
-      : now + this.windowMs;
+  getMaxRequests(): number {
+    return this.maxRequests;
   }
-}
