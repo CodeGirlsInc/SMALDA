@@ -38,6 +38,14 @@ export class User {
 
   @Column({ name: 'preferred_language', default: 'en' })
   preferredLanguage: string;
+  @Column({ name: 'two_factor_enabled', default: false })
+  twoFactorEnabled: boolean;
+
+  @Column({ name: 'two_factor_secret', nullable: true })
+  twoFactorSecret?: string;
+
+  @Column({ name: 'two_factor_backup_codes', type: 'text', nullable: true })
+  twoFactorBackupCodes?: string;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
