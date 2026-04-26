@@ -20,6 +20,7 @@ import { NotificationPrefsModule } from '../cmmty/notification-prefs/notificatio
 import { AnalyticsModule } from '../cmmty/analytics/analytics.module';
 import { BulkUploadModule } from '../cmmty/bulk-upload/bulk-upload.module';
 import { TwoFactorAuthModule } from '../cmmty/two-factor-auth/two-factor-auth.module';
+import { RealtimeModule } from '../cmmty/realtime/realtime.module';
 
 @Module({
   imports: [
@@ -67,6 +68,7 @@ import { TwoFactorAuthModule } from '../cmmty/two-factor-auth/two-factor-auth.mo
     AnalyticsModule,
     BulkUploadModule,
     TwoFactorAuthModule,
+    RealtimeModule,
   ],
   controllers: [AppController],
   providers: [AppService, LoggerMiddleware],
