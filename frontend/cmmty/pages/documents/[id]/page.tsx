@@ -27,6 +27,7 @@ import {
 } from "../../../lib/data";
 import StatusBadge from "../../../components/status-badge";
 import RiskGauge from "../../../components/risk-gauge";
+import AppShell from "../../../responsive/AppShell";
 
 export default function DocumentDetailPage() {
   const params = useParams();
@@ -50,26 +51,28 @@ export default function DocumentDetailPage() {
 
   if (!document) {
     return (
-      <div className="min-h-screen bg-background px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-4xl">
-          <a
-            href="/documents"
-            className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="mr-1 h-4 w-4" />
-            Back to documents
-          </a>
-          <div className="mt-8 flex flex-col items-center justify-center rounded-lg border border-border bg-card py-16">
-            <XCircle className="h-12 w-12 text-muted-foreground" />
-            <h1 className="mt-4 text-xl font-semibold text-foreground">
-              Document not found
-            </h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              The document you are looking for does not exist.
-            </p>
+      <AppShell userName="John Kamau" userInitials="JK">
+        <div className="min-h-screen bg-background px-4 py-8 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-4xl">
+            <a
+              href="/documents"
+              className="inline-flex items-center min-h-[44px] text-sm text-muted-foreground hover:text-foreground"
+            >
+              <ArrowLeft className="mr-1 h-4 w-4" />
+              Back to documents
+            </a>
+            <div className="mt-8 flex flex-col items-center justify-center rounded-lg border border-border bg-card py-16">
+              <XCircle className="h-12 w-12 text-muted-foreground" />
+              <h1 className="mt-4 text-xl font-semibold text-foreground">
+                Document not found
+              </h1>
+              <p className="mt-2 text-sm text-muted-foreground">
+                The document you are looking for does not exist.
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      </AppShell>
     );
   }
 
@@ -79,16 +82,17 @@ export default function DocumentDetailPage() {
     document.status === DocumentStatus.FLAGGED;
 
   return (
-    <div className="min-h-screen bg-background px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-4xl">
-        {/* Back link */}
-        <a
-          href="/documents"
-          className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="mr-1 h-4 w-4" />
-          Back to documents
-        </a>
+    <AppShell userName="John Kamau" userInitials="JK">
+      <div className="min-h-screen bg-background px-4 py-8 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-4xl">
+          {/* Back link */}
+          <a
+            href="/documents"
+            className="inline-flex items-center min-h-[44px] text-sm text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="mr-1 h-4 w-4" />
+            Back to documents
+          </a>
 
         {/* Header */}
         <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -231,7 +235,7 @@ export default function DocumentDetailPage() {
               </div>
               <a
                 href={`/documents/${document.id}/risk`}
-                className="mt-4 inline-flex w-full items-center justify-center rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
+                className="inline-flex w-full items-center justify-center min-h-[44px] rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted active:bg-muted/70"
               >
                 View Full Risk Assessment
               </a>
@@ -277,7 +281,7 @@ export default function DocumentDetailPage() {
                     <button
                       onClick={handleVerify}
                       disabled={verifying}
-                      className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex w-full items-center justify-center min-h-[44px] rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 active:bg-primary/80 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {verifying ? (
                         <>
@@ -347,5 +351,6 @@ export default function DocumentDetailPage() {
         </div>
       </div>
     </div>
+    </AppShell>
   );
 }

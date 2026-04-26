@@ -69,7 +69,7 @@ export default function FileUpload({
             inputRef.current?.click();
           }
         }}
-        className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 text-center transition ${
+        className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 sm:p-8 text-center min-h-[120px] transition ${
           isDragging
             ? "border-blue-500 bg-blue-50"
             : "border-gray-300 bg-gray-50 hover:border-blue-400"

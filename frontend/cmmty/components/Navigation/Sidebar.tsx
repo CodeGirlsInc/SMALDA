@@ -13,6 +13,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
+import { ThemeToggle } from "../ThemeToggle";
 
 interface SidebarProps {
   userName?: string;
@@ -44,22 +45,25 @@ export default function Sidebar({
 
   return (
     <aside
-      className={`hidden md:flex flex-col h-screen bg-white border-r border-gray-200 transition-all duration-200 ${
+      className={`hidden md:flex flex-col h-screen bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 transition-all duration-200 ${
         collapsed ? "w-16" : "w-56"
       }`}
     >
       {/* Logo */}
-      <div className="flex items-center justify-between px-4 py-4 border-b border-gray-100">
+      <div className="flex items-center justify-between px-4 py-4 border-b border-gray-100 dark:border-gray-700">
         {!collapsed && (
-          <span className="text-lg font-bold text-indigo-600">SMALDA</span>
+          <span className="text-lg font-bold text-indigo-600 dark:text-indigo-400">SMALDA</span>
         )}
-        <button
-          onClick={() => setCollapsed((c) => !c)}
-          className="p-1 rounded hover:bg-gray-100 text-gray-500"
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-        </button>
+        <div className="flex items-center gap-1">
+          <ThemeToggle />
+          <button
+            onClick={() => setCollapsed((c) => !c)}
+            className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400"
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+          </button>
+        </div>
       </div>
 
       {/* Nav links */}
@@ -72,8 +76,8 @@ export default function Sidebar({
               href={href}
               className={`flex items-center gap-3 px-4 py-2 text-sm font-medium rounded-md mx-2 transition-colors ${
                 active
-                  ? "bg-indigo-50 text-indigo-700"
-                  : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                  ? "bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-400"
+                  : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200"
               }`}
               aria-current={active ? "page" : undefined}
             >
@@ -85,7 +89,7 @@ export default function Sidebar({
       </nav>
 
       {/* User footer */}
-      <div className="border-t border-gray-100 px-4 py-3 flex items-center gap-3">
+      <div className="border-t border-gray-100 dark:border-gray-700 px-4 py-3 flex items-center gap-3">
         {avatarUrl ? (
           <img
             src={avatarUrl}
@@ -98,7 +102,7 @@ export default function Sidebar({
           </div>
         )}
         {!collapsed && (
-          <span className="text-sm text-gray-700 truncate">{userName}</span>
+          <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{userName}</span>
         )}
       </div>
     </aside>

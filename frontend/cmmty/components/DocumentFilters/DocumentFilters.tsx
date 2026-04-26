@@ -51,16 +51,16 @@ export default function DocumentFilters({ onChange, debounceMs = 300 }: Document
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-3 p-3 bg-white border border-gray-200 rounded-lg">
+    <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3 p-3 bg-white border border-gray-200 rounded-lg">
       {/* Search input */}
-      <div className="relative flex-1 min-w-48">
+      <div className="relative flex-1 min-w-0 sm:min-w-48">
         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
         <input
           type="text"
           value={filters.search}
           onChange={(e) => update({ search: e.target.value })}
           placeholder="Search documents…"
-          className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="w-full pl-8 pr-3 py-2.5 min-h-[44px] text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
           aria-label="Search documents"
         />
       </div>
@@ -69,7 +69,7 @@ export default function DocumentFilters({ onChange, debounceMs = 300 }: Document
       <select
         value={filters.status}
         onChange={(e) => update({ status: e.target.value as DocumentStatus })}
-        className="py-2 px-3 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+        className="py-2.5 px-3 min-h-[44px] text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
         aria-label="Filter by status"
       >
         {STATUS_OPTIONS.map((s) => (
@@ -80,30 +80,32 @@ export default function DocumentFilters({ onChange, debounceMs = 300 }: Document
       </select>
 
       {/* Date range */}
-      <input
-        type="date"
-        value={filters.dateFrom}
-        onChange={(e) => update({ dateFrom: e.target.value })}
-        className="py-2 px-3 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        aria-label="From date"
-      />
-      <input
-        type="date"
-        value={filters.dateTo}
-        onChange={(e) => update({ dateTo: e.target.value })}
-        className="py-2 px-3 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        aria-label="To date"
-      />
+      <div className="flex gap-3 sm:gap-0 sm:contents">
+        <input
+          type="date"
+          value={filters.dateFrom}
+          onChange={(e) => update({ dateFrom: e.target.value })}
+          className="flex-1 py-2.5 px-3 min-h-[44px] text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          aria-label="From date"
+        />
+        <input
+          type="date"
+          value={filters.dateTo}
+          onChange={(e) => update({ dateTo: e.target.value })}
+          className="flex-1 py-2.5 px-3 min-h-[44px] text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          aria-label="To date"
+        />
+      </div>
 
       {/* Active filter badge + clear */}
       {activeCount > 0 && (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-h-[44px]">
           <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-600 text-white text-[11px] font-bold" aria-label={`${activeCount} active filters`}>
             {activeCount}
           </span>
           <button
             onClick={clearAll}
-            className="flex items-center gap-1 text-sm text-gray-500 hover:text-red-500"
+            className="flex items-center gap-1 min-h-[44px] px-2 text-sm text-gray-500 hover:text-red-500 active:text-red-600 transition-colors"
             aria-label="Clear all filters"
           >
             <X size={14} />
