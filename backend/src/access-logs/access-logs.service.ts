@@ -124,4 +124,10 @@ export class AccessLogsService {
       })),
     }
   }
+
+  async deleteOldLogs(olderThan: Date): Promise<void> {
+    await this.accessLogRepository.delete({
+      createdAt: Between(new Date("1970-01-01"), olderThan),
+    })
+  } 
 }

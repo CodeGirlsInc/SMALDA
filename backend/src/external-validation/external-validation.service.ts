@@ -275,4 +275,21 @@ export class ExternalValidationService {
       validationResults,
     }
   }
+
+  async expireOldValidations(daysToExpire = 30): Promise<number> {  
+    const cutoffDate = new Date() 
+    cutoffDate.setDate(cutoffDate.getDate() - daysToExpire)
+    
+    const result = await this.validationRequestRepository
+      .createQueryBuilder()
+      .update(ValidationRequest)
+      .set({ status: ValidationStatus.EXPIRED })
+      .where("expiresAt < :cutoffDate", { cutoffDate })
+      .andWhere("status IN (:...activeStatuses)", {
+        activeStatuses: [ValidationStatus.PENDING, ValidationStatus.IN_PROGRESS, ValidationStatus.COMPLETED],
+      })
+      .execute()  
+    return result.affected || 0
+      
+  }
 }
