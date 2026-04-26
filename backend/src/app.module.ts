@@ -24,9 +24,17 @@ import { TwoFactorAuthModule } from '../cmmty/two-factor-auth/two-factor-auth.mo
 @Module({
   imports: [
     ConfigModule.forRoot({
-      isGlobal: true,
-      envFilePath: '.env',
-    }),
+  isGlobal: true,
+  envFilePath: [
+    `.env.${process.env.NODE_ENV ?? 'development'}`,
+    '.env',
+  ],
+  validationSchema: ConfigValidationSchema,
+  validationOptions: {
+    abortEarly: false,
+    allowUnknown: true,
+  },
+}),
     WinstonModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
