@@ -57,6 +57,9 @@ export class Document {
   @Column({ name: 'risk_flags', type: 'json', nullable: true })
   riskFlags?: string[];
 
+  @Column({ name: 'archived', type: 'boolean', default: false })
+  archived: boolean;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
