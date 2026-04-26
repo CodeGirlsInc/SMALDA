@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import nodemailer, { SendMailOptions, Transporter } from 'nodemailer';
+import { UsersService } from '../users/users.service';
+import { NotificationPrefsService } from '../../cmmty/notification-prefs/notification-prefs.service';
 
 @Injectable()
 export class MailService {
@@ -8,7 +10,11 @@ export class MailService {
   private readonly transporter: Transporter | null;
   private readonly from?: string;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly usersService: UsersService,
+    private readonly notificationPrefsService: NotificationPrefsService,
+  ) {
     const host = this.configService.get<string>('MAIL_HOST');
     const port = Number(this.configService.get<string>('MAIL_PORT'));
     const user = this.configService.get<string>('MAIL_USER');
@@ -50,6 +56,18 @@ export class MailService {
   }
 
   async sendVerificationComplete(to: string, documentTitle: string, txHash: string): Promise<void> {
+    const user = await this.usersService.findByEmail(to);
+    if (!user) {
+      this.logger.warn(`User not found for email: ${to}`);
+      return;
+    }
+
+    const shouldSend = await this.notificationPrefsService.shouldSendVerificationComplete(user.id);
+    if (!shouldSend) {
+      this.logger.log(`User ${user.id} has opted out of verification complete emails`);
+      return;
+    }
+
     await this.sendMail({
       to,
       subject: 'Document Verification Complete',
@@ -62,6 +80,18 @@ export class MailService {
   }
 
   async sendRiskAlert(to: string, documentTitle: string, flags: string[]): Promise<void> {
+    const user = await this.usersService.findByEmail(to);
+    if (!user) {
+      this.logger.warn(`User not found for email: ${to}`);
+      return;
+    }
+
+    const shouldSend = await this.notificationPrefsService.shouldSendRiskAlert(user.id);
+    if (!shouldSend) {
+      this.logger.log(`User ${user.id} has opted out of risk alert emails`);
+      return;
+    }
+
     const flagList = flags.map((flag) => `<li>${flag}</li>`).join('');
     await this.sendMail({
       to,
