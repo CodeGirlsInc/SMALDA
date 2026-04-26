@@ -1,120 +1,124 @@
-import {
+﻿import {
   Body,
   Controller,
-  HttpCode,
-  HttpStatus,
   Post,
+  Get,
   Req,
+  Res,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
-import { AuthService } from './providers/auth.service';
-import { CreateUserDto } from 'src/users/dto/createUser.dto';
-import { VerifyEmailDto } from 'src/users/dto/verifyEmail.dto';
-import { GetUser } from './decorators/getUser.decorator';
-import { User } from 'src/users/entities/user.entity';
-import { LocalAuthGuard } from './guards/localAuth.guard';
-import { LoginUserDto } from './dto/loginUser.dto';
-import { Request } from 'express';
-import { IsPublic } from './decorators/public.decorator';
-import { RefreshTokenGuard } from './guards/refreshToken.guard';
-import { RefreshTokenDto } from './dto/refreshToken.dto';
-import { ForgotPasswordDto } from './dto/forgotPassword.dto';
-import { ResetPasswordDto } from './dto/resetPassword.dto';
-import { ChangePasswordDto } from './dto/changeUserPassword.dto';
+import { ConfigService } from '@nestjs/config';
+import { AuthGuard } from '@nestjs/passport';
+import { Request, Response } from 'express';
+import { Profile as GoogleProfile } from 'passport-google-oauth20';
+import { Profile as GithubProfile } from 'passport-github2';
 
-@Controller('api/v1/auth')
+import { AuthService } from './auth.service';
+import { RegisterAuthDto } from './dto/register-auth.dto';
+import { LoginAuthDto } from './dto/login-auth.dto';
+import { RefreshAuthDto } from './dto/refresh-auth.dto';
+
+@Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly configService: ConfigService,
+  ) {}
 
-  // CREATE A NEW USER
-  @IsPublic()
   @Post('register')
-  @HttpCode(HttpStatus.CREATED)
-  public async createNewUser(@Body() createUserDto: CreateUserDto) {
-    return await this.authService.createSinlgeUser(createUserDto);
+  register(@Body() dto: RegisterAuthDto) {
+    return this.authService.register(dto);
   }
 
-  // LOGIN USER
-  @IsPublic()
   @Post('login')
-  @UseGuards(LocalAuthGuard)
-  @HttpCode(HttpStatus.OK)
-  public async login(
-    @Body() loginUserDto: LoginUserDto,
-    @GetUser() user: User,
-    @Req() req: Request,
+  login(@Body() dto: LoginAuthDto) {
+    return this.authService.login(dto);
+  }
+
+  @Post('refresh')
+  refresh(@Body() dto: RefreshAuthDto) {
+    return this.authService.refreshToken(dto);
+  }
+
+  @Get('google')
+  @UseGuards(AuthGuard('google'))
+  googleAuth() {
+    return;
+  }
+
+  @Get('google/callback')
+  @UseGuards(AuthGuard('google'))
+  async googleAuthRedirect(
+    @Req() req: Request & { user?: GoogleProfile },
+    @Res() res: Response,
   ) {
-    return await this.authService.loginUser(loginUserDto, user, req);
+    const profile = req.user;
+    const email = profile?.emails?.[0]?.value;
+    if (!email) {
+      throw new BadRequestException(
+        'Google profile did not contain an email address',
+      );
+    }
+
+    const fullName = this.buildFullName([
+      profile?.displayName,
+      profile?.name?.givenName,
+      profile?.name?.familyName,
+    ]);
+
+    const { access_token } = await this.authService.handleOAuthLogin(
+      email,
+      fullName || email,
+    );
+
+    return this.redirectWithToken(access_token, res);
   }
 
-  // VERIFY EMAIL
-  @IsPublic()
-  @Post('verify-email')
-  @HttpCode(HttpStatus.OK)
-  public async verifyEmail(@Body() verifyEmailDto: VerifyEmailDto) {
-    return await this.authService.verifyEmail(verifyEmailDto);
+  @Get('github')
+  @UseGuards(AuthGuard('github'))
+  githubAuth() {
+    return;
   }
 
-  // RESEND VERIFY EMAIL
-  @Post('resend-verify-email')
-  @HttpCode(HttpStatus.OK)
-  public async resendVerifyEmail(@GetUser() user: User) {
-    return await this.authService.ResendVerifyEmail(user);
-  }
-
-  // REFRESH TOKEN
-  @IsPublic()
-  @Post('refresh-token')
-  @UseGuards(RefreshTokenGuard)
-  @HttpCode(HttpStatus.OK)
-  public async refreshToken(
-    @Body() refreshTokenDto: RefreshTokenDto,
-    @GetUser() user: User,
-    @Req() req: Request,
+  @Get('github/callback')
+  @UseGuards(AuthGuard('github'))
+  async githubAuthRedirect(
+    @Req() req: Request & { user?: GithubProfile },
+    @Res() res: Response,
   ) {
-    return await this.authService.refreshToken(refreshTokenDto, user.id, req);
+    const profile = req.user;
+    const githubId = profile?.id?.toString();
+    const email = profile?.emails?.[0]?.value;
+    const identifier = email || (githubId ? `github:${githubId}` : null);
+    if (!identifier) {
+      throw new BadRequestException('GitHub profile could not be identified');
+    }
+
+    const fullName =
+      this.buildFullName([profile?.displayName, profile?.username]) ||
+      identifier;
+
+    const { access_token } = await this.authService.handleOAuthLogin(
+      identifier,
+      fullName,
+    );
+
+    return this.redirectWithToken(access_token, res);
   }
 
-  // LOG OUT
-  @Post('logout')
-  @HttpCode(HttpStatus.OK)
-  public async logout(
-    @GetUser() user: User,
-    @Body() refreshTokenDto: RefreshTokenDto,
-  ) {
-    return await this.authService.logout(user.id, refreshTokenDto.refreshToken);
+  private redirectWithToken(accessToken: string, res: Response) {
+    const frontendUrl =
+      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3001';
+    const redirectUrl = new URL(frontendUrl);
+    redirectUrl.searchParams.set('token', accessToken);
+    return res.redirect(redirectUrl.toString());
   }
 
-  // LOG OUT ALL SESSIONS
-  @Post('logout-all-sessions')
-  @HttpCode(HttpStatus.OK)
-  public async logoutAllSessions(@GetUser() user: User) {
-    return this.authService.logoutAllSessions(user.id);
-  }
-
-  // FORGOT PASSWORD
-  @IsPublic()
-  @Post('forgot-password')
-  @HttpCode(HttpStatus.OK)
-  public async forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto) {
-    return await this.authService.forgotPassword(forgotPasswordDto);
-  }
-
-  // RESET PASSWORD
-  @IsPublic()
-  @Post('reset-password')
-  @HttpCode(HttpStatus.OK)
-  public async resetpassword(@Body() resetPasswordDto: ResetPasswordDto) {
-    return await this.authService.resetPassword(resetPasswordDto);
-  }
-
-  // CHANGE PASSWORD
-  @Post('change-password')
-  @HttpCode(HttpStatus.OK)
-  public async changePassword(
-    @GetUser() user: User,
-    @Body() changePasswordDto: ChangePasswordDto,
-  ) {
-    return await this.authService.changePassword(user.email, changePasswordDto);
+  private buildFullName(parts: (string | undefined)[]) {
+    return parts
+      .map((part) => part?.trim())
+      .filter(Boolean)
+      .join(' ');
   }
 }

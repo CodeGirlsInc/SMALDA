@@ -1,63 +1,30 @@
-import { forwardRef, Module } from '@nestjs/common';
-import { AuthController } from './auth.controller';
-import { AuthService } from './providers/auth.service';
-import { UsersModule } from 'src/users/users.module';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { RefreshTokenEntity } from './entities/refreshToken.entity';
-import { HashingProvider } from './providers/hashing.provider';
-import { BcryptProvider } from './providers/bcrypt.provider';
-import { ValidateUserProvider } from './providers/validateUser.provider';
-import { LocalStrategy } from './strategies/local.strategy';
-import { GenerateTokensProvider } from './providers/generateTokens.provider';
-import { RefreshTokenRepositoryOperations } from './providers/RefreshTokenCrud.repository';
-import { RefreshTokensProvider } from './providers/refreshTokens.provider';
-import { FindOneRefreshTokenProvider } from './providers/findOneRefreshToken.provider';
-import { PassportModule } from '@nestjs/passport';
+﻿import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import jwtConfig from './config/jwtConfig';
 import { JwtModule } from '@nestjs/jwt';
-import { RolesGuard } from './guards/roles.guard';
-import { LoginUserProvider } from './providers/loginUser.provider';
-import { EmailModule } from 'src/email/email.module';
+import { PassportModule } from '@nestjs/passport';
+
+import { AuthService } from './auth.service';
+import { AuthController } from './auth.controller';
+import { UsersModule } from '../users/users.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
-import { JwtRefreshStrategy } from './strategies/jwtRefresh.strategy';
+import { GoogleStrategy } from './strategies/google.strategy';
+import { GithubStrategy } from './strategies/github.strategy';
 
 @Module({
   imports: [
-    PassportModule,
-    ConfigModule.forFeature(jwtConfig),
+    UsersModule,
+    PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: async (configService: ConfigService) => ({
-        secret: configService.get('JWT_SECRET'),
-        signOptions: {
-          expiresIn: configService.get('JWT_ACCESS_TOKEN_TTL'),
-        },
+      useFactory: (config: ConfigService) => ({
+        secret: config.get<string>('JWT_SECRET'),
+        signOptions: { expiresIn: (config.get<string>('JWT_EXPIRATION') || '1h') as unknown as number },
       }),
     }),
-    forwardRef(() => UsersModule),
-    TypeOrmModule.forFeature([RefreshTokenEntity]),
-    EmailModule,
   ],
   controllers: [AuthController],
-  providers: [
-    AuthService,
-    {
-      provide: HashingProvider,
-      useClass: BcryptProvider,
-    },
-    ValidateUserProvider,
-    LoginUserProvider,
-    LocalStrategy,
-    JwtStrategy,
-    JwtRefreshStrategy,
-    GenerateTokensProvider,
-    RefreshTokenRepositoryOperations,
-    RefreshTokensProvider,
-    FindOneRefreshTokenProvider,
-    RolesGuard,
-  ],
-  exports: [AuthService, HashingProvider],
+  providers: [AuthService, JwtStrategy, GoogleStrategy, GithubStrategy],
+  exports: [AuthService],
 })
 export class AuthModule {}

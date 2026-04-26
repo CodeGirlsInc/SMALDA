@@ -1,56 +1,30 @@
-import { Exclude } from 'class-transformer';
-// import { RefreshTokenEntity } from 'src/auth/entities/refreshToken.entity'; // Mocked for test
-// import { UserRole } from 'src/auth/enums/roles.enum'; // Mocked for test
-// import { CloudinaryImage } from 'src/cloudinary/cloudinary.entity'; // Mocked for test
-import {
-  Column,
-  CreateDateColumn,
-  DeleteDateColumn,
+﻿import {
   Entity,
-  OneToMany,
-  OneToOne,
+  Column,
   PrimaryGeneratedColumn,
+  CreateDateColumn,
   UpdateDateColumn,
+  DeleteDateColumn,
 } from 'typeorm';
 
-// Mock UserRole enum for test
 export enum UserRole {
-  USER = 'user',
-  ARTISTE = 'artiste',
   ADMIN = 'admin',
+  USER = 'user',
 }
 
-@Entity({ name: 'users' })
+@Entity('users')
 export class User {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({
-    nullable: false,
-  })
-  firstName: string;
-
-  @Column({
-    nullable: true,
-  })
-  lastName?: string;
-
-  @Column({
-    nullable: true,
-  })
-  userName?: string;
-
-  @Column({
-    nullable: false,
-    unique: true,
-  })
+  @Column({ unique: true })
   email: string;
 
-  @Column({
-    nullable: false,
-  })
-  @Exclude()
-  password: string;
+  @Column({ name: 'password_hash', nullable: true })
+  passwordHash?: string | null;
+
+  @Column({ name: 'full_name' })
+  fullName: string;
 
   @Column({
     type: 'enum',
@@ -59,66 +33,26 @@ export class User {
   })
   role: UserRole;
 
-  // @OneToOne(() => CloudinaryImage, (profilePic) => profilePic.user)
-  // profilePic?: CloudinaryImage;
+  @Column({ name: 'is_verified', default: false })
+  isVerified: boolean;
 
-  // @OneToMany(() => RefreshTokenEntity, (token) => token.user)
-  // @Exclude()
-  // refreshToken: RefreshTokenEntity[];
+  @Column({ name: 'preferred_language', default: 'en' })
+  preferredLanguage: string;
+  @Column({ name: 'two_factor_enabled', default: false })
+  twoFactorEnabled: boolean;
 
-  @Column({
-    default: false,
-  })
-  isEmailVerified: boolean;
+  @Column({ name: 'two_factor_secret', nullable: true })
+  twoFactorSecret?: string;
 
-  @Column({
-    nullable: true,
-  })
-  @Exclude()
-  emailVerificationToken?: string;
+  @Column({ name: 'two_factor_backup_codes', type: 'text', nullable: true })
+  twoFactorBackupCodes?: string;
 
-  @Column({
-    nullable: true,
-  })
-  @Exclude()
-  emailVerificationExpiresIn?: Date;
-
-  @Column({
-    nullable: true,
-  })
-  @Exclude()
-  passwordResetToken?: string;
-
-  @Column({
-    nullable: true,
-  })
-  @Exclude()
-  passwordResetExpiresIn?: Date;
-
-  @Column({
-    type: 'boolean',
-    default: true,
-  })
-  isActive: boolean;
-
-  @Column({
-    type: 'boolean',
-    default: false,
-  })
-  isDeleted: boolean;
-
-  @Column({
-    type: 'boolean',
-    default: false,
-  })
-  isSuspended: boolean;
-
-  @CreateDateColumn()
+  @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
 
-  @DeleteDateColumn()
-  deletedAt: Date;
+  @DeleteDateColumn({ name: 'deleted_at', nullable: true })
+  deletedAt?: Date;
 }
