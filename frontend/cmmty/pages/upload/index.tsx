@@ -1,291 +1,421 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import {
+  useState,
+  useRef,
+  useCallback,
+  DragEvent,
+  ChangeEvent,
+} from "react";
 import { useRouter } from "next/navigation";
 
-type FieldErrors = {
-  email?: string;
-  password?: string;
-};
+const ALLOWED_TYPES = ["application/pdf", "image/png", "image/jpeg"];
+const ALLOWED_EXTENSIONS = [".pdf", ".png", ".jpg", ".jpeg"];
+const MAX_BYTES = 20 * 1024 * 1024; // 20 MB
 
-export default function LoginPage() {
+type UploadState =
+  | { stage: "idle" }
+  | { stage: "selected"; file: File }
+  | { stage: "uploading"; file: File; progress: number }
+  | { stage: "error"; file: File; message: string }
+  | { stage: "done"; documentId: string };
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function fileTypeLabel(type: string): string {
+  if (type === "application/pdf") return "PDF";
+  if (type === "image/png") return "PNG";
+  if (type === "image/jpeg") return "JPEG";
+  return type.split("/")[1]?.toUpperCase() ?? "File";
+}
+
+function validateFile(file: File): string | null {
+  if (!ALLOWED_TYPES.includes(file.type)) {
+    return `Only PDF, PNG, and JPEG files are accepted. You uploaded a ${file.type || "unknown"} file.`;
+  }
+  if (file.size > MAX_BYTES) {
+    return `File is too large (${formatBytes(file.size)}). Maximum allowed size is 20 MB.`;
+  }
+  return null;
+}
+
+export default function UploadPage() {
   const router = useRouter();
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [errors, setErrors] = useState<FieldErrors>({});
-  const [apiError, setApiError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [state, setState] = useState<UploadState>({ stage: "idle" });
+  const [dragging, setDragging] = useState(false);
+  const [validationError, setValidationError] = useState("");
 
-  // ── Validation ──────────────────────────────────────────────────────────────
-  function validate(): boolean {
-    const next: FieldErrors = {};
-    if (!email.trim()) {
-      next.email = "Email is required.";
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      next.email = "Enter a valid email address.";
+  // ── File selection ─────────────────────────────────────────────────────────
+  const selectFile = useCallback((file: File) => {
+    const err = validateFile(file);
+    if (err) {
+      setValidationError(err);
+      setState({ stage: "idle" });
+      return;
     }
-    if (!password) {
-      next.password = "Password is required.";
-    } else if (password.length < 8) {
-      next.password = "Password must be at least 8 characters.";
-    }
-    setErrors(next);
-    return Object.keys(next).length === 0;
+    setValidationError("");
+    setState({ stage: "selected", file });
+  }, []);
+
+  function handleInputChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) selectFile(file);
+    // Reset so the same file can be re-selected after clearing
+    e.target.value = "";
   }
 
-  // ── Email/password submit ───────────────────────────────────────────────────
-  async function handleSubmit(e: FormEvent) {
+  function handleDrop(e: DragEvent<HTMLDivElement>) {
     e.preventDefault();
-    setApiError("");
-    if (!validate()) return;
+    setDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) selectFile(file);
+  }
 
-    setLoading(true);
+  function handleDragOver(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setDragging(true);
+  }
+
+  function handleDragLeave() {
+    setDragging(false);
+  }
+
+  function clearFile() {
+    setState({ stage: "idle" });
+    setValidationError("");
+  }
+
+  // ── Upload ─────────────────────────────────────────────────────────────────
+  async function handleUpload() {
+    if (state.stage !== "selected") return;
+    const { file } = state;
+
+    setState({ stage: "uploading", file, progress: 0 });
+
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+      const formData = new FormData();
+      formData.append("file", file);
+
+      // Use XMLHttpRequest so we get real upload progress events
+      const documentId = await new Promise<string>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+
+        xhr.upload.addEventListener("progress", (ev) => {
+          if (ev.lengthComputable) {
+            const pct = Math.round((ev.loaded / ev.total) * 100);
+            setState({ stage: "uploading", file, progress: pct });
+          }
+        });
+
+        xhr.addEventListener("load", () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const data = JSON.parse(xhr.responseText);
+              resolve(data.id ?? data.documentId ?? "unknown");
+            } catch {
+              reject(new Error("Unexpected response from server."));
+            }
+          } else {
+            let message = "Upload failed. Please try again.";
+            try {
+              const data = JSON.parse(xhr.responseText);
+              if (data.message) message = data.message;
+            } catch {
+              // ignore
+            }
+            reject(new Error(message));
+          }
+        });
+
+        xhr.addEventListener("error", () => {
+          reject(new Error("Network error. Check your connection and try again."));
+        });
+
+        xhr.open("POST", "/api/documents/upload");
+        xhr.send(formData);
       });
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setApiError(data.message ?? "Invalid email or password. Please try again.");
-        return;
-      }
-
-      router.push("/dashboard");
-    } catch {
-      setApiError("Something went wrong. Please check your connection and try again.");
-    } finally {
-      setLoading(false);
+      setState({ stage: "done", documentId });
+      // Short delay so the user sees 100% before redirect
+      setTimeout(() => router.push(`/documents/${documentId}`), 800);
+    } catch (err: unknown) {
+      setState({
+        stage: "error",
+        file,
+        message: err instanceof Error ? err.message : "Upload failed.",
+      });
     }
   }
 
-  // ── OAuth ───────────────────────────────────────────────────────────────────
-  function handleOAuth(provider: "google" | "github") {
-    window.location.href = `/api/auth/${provider}`;
-  }
+  // ── Derived display values ─────────────────────────────────────────────────
+  const selectedFile =
+    state.stage === "selected" ||
+    state.stage === "uploading" ||
+    state.stage === "error"
+      ? state.file
+      : null;
+
+  const progress =
+    state.stage === "uploading"
+      ? state.progress
+      : state.stage === "done"
+      ? 100
+      : 0;
+
+  const isUploading = state.stage === "uploading";
+  const isDone = state.stage === "done";
 
   return (
-    <main className="min-h-screen bg-[#F5F3EE] flex items-center justify-center px-4 py-12">
-      <div className="w-full max-w-md">
+    <main className="min-h-screen bg-[#F5F3EE] px-4 py-12">
+      <div className="max-w-xl mx-auto">
 
-        {/* Logo / wordmark */}
-        <div className="mb-10 text-center">
-          <span className="inline-block text-[11px] font-semibold tracking-[0.25em] text-stone-400 uppercase mb-3">
-            Smart Land Document Analysis
+        {/* Header */}
+        <div className="mb-10">
+          <a
+            href="/dashboard"
+            className="inline-flex items-center gap-1.5 text-sm text-stone-500 hover:text-stone-800 transition-colors mb-6"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="M19 12H5M12 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            Back to dashboard
+          </a>
+
+          <span className="block text-[11px] font-semibold tracking-[0.2em] text-stone-400 uppercase mb-2">
+            Document verification
           </span>
           <h1
-            className="text-4xl font-bold tracking-tight text-stone-900"
+            className="text-3xl font-bold text-stone-900"
             style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}
           >
-            SMALDA
+            Upload document
           </h1>
+          <p className="mt-2 text-sm text-stone-500">
+            Upload a land ownership document for AI-powered risk analysis.
+            Accepted formats: PDF, PNG, JPEG &mdash; up to 20 MB.
+          </p>
         </div>
 
         {/* Card */}
-        <div className="bg-white rounded-2xl border border-stone-200 shadow-sm px-8 py-9">
+        <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-7">
 
-          <h2 className="text-lg font-semibold text-stone-900 mb-1">Sign in</h2>
-          <p className="text-sm text-stone-500 mb-7">
-            Access your land document workspace.
-          </p>
-
-          {/* API error */}
-          {apiError && (
+          {/* Validation error */}
+          {validationError && (
             <div
               role="alert"
               className="mb-5 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700"
             >
-              {apiError}
+              {validationError}
             </div>
           )}
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} noValidate className="space-y-5">
-
-            {/* Email */}
-            <div>
-              <label
-                htmlFor="email"
-                className="block text-sm font-medium text-stone-700 mb-1.5"
-              >
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => {
-                  setEmail(e.target.value);
-                  if (errors.email) setErrors((p) => ({ ...p, email: undefined }));
-                }}
-                placeholder="you@example.com"
-                className={`w-full rounded-lg border px-3.5 py-2.5 text-sm text-stone-900 placeholder-stone-400
-                  outline-none transition
-                  focus:ring-2 focus:ring-stone-900 focus:border-transparent
-                  ${errors.email
-                    ? "border-red-400 bg-red-50 focus:ring-red-400"
-                    : "border-stone-200 bg-stone-50 hover:border-stone-300"
-                  }`}
-                aria-describedby={errors.email ? "email-error" : undefined}
-                aria-invalid={!!errors.email}
-              />
-              {errors.email && (
-                <p id="email-error" className="mt-1.5 text-xs text-red-600">
-                  {errors.email}
-                </p>
-              )}
+          {/* Upload error */}
+          {state.stage === "error" && (
+            <div
+              role="alert"
+              className="mb-5 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700"
+            >
+              {state.message}
             </div>
+          )}
 
-            {/* Password */}
-            <div>
-              <div className="flex justify-between items-baseline mb-1.5">
-                <label
-                  htmlFor="password"
-                  className="block text-sm font-medium text-stone-700"
+          {/* Drop zone — hidden while a file is selected */}
+          {!selectedFile && (
+            <div
+              role="button"
+              tabIndex={0}
+              aria-label="Drop a file here or click to browse"
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onClick={() => inputRef.current?.click()}
+              onKeyDown={(e) => e.key === "Enter" && inputRef.current?.click()}
+              className={`
+                relative flex flex-col items-center justify-center rounded-xl border-2 border-dashed
+                px-6 py-14 cursor-pointer select-none transition-colors
+                ${dragging
+                  ? "border-stone-500 bg-stone-50"
+                  : "border-stone-200 hover:border-stone-400 hover:bg-stone-50"
+                }
+              `}
+            >
+              {/* Upload icon */}
+              <div className="mb-4 w-12 h-12 rounded-full bg-stone-100 flex items-center justify-center">
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                  className="text-stone-500"
                 >
-                  Password
-                </label>
-                <a
-                  href="/forgot-password"
-                  className="text-xs text-stone-500 hover:text-stone-800 transition-colors"
-                >
-                  Forgot password?
-                </a>
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                  <polyline points="17 8 12 3 7 8" />
+                  <line x1="12" y1="3" x2="12" y2="15" />
+                </svg>
               </div>
+
+              <p className="text-sm font-medium text-stone-800 mb-1">
+                {dragging ? "Drop to upload" : "Drag and drop your file here"}
+              </p>
+              <p className="text-xs text-stone-400 mb-4">or</p>
+
+              <span
+                className="rounded-lg border border-stone-300 bg-white px-4 py-2 text-xs
+                  font-medium text-stone-700 hover:bg-stone-50 active:bg-stone-100 transition-colors"
+              >
+                Browse files
+              </span>
+
               <input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  if (errors.password) setErrors((p) => ({ ...p, password: undefined }));
-                }}
-                placeholder="••••••••"
-                className={`w-full rounded-lg border px-3.5 py-2.5 text-sm text-stone-900 placeholder-stone-400
-                  outline-none transition
-                  focus:ring-2 focus:ring-stone-900 focus:border-transparent
-                  ${errors.password
-                    ? "border-red-400 bg-red-50 focus:ring-red-400"
-                    : "border-stone-200 bg-stone-50 hover:border-stone-300"
-                  }`}
-                aria-describedby={errors.password ? "password-error" : undefined}
-                aria-invalid={!!errors.password}
+                ref={inputRef}
+                type="file"
+                accept={ALLOWED_EXTENSIONS.join(",")}
+                onChange={handleInputChange}
+                className="sr-only"
+                aria-hidden="true"
               />
-              {errors.password && (
-                <p id="password-error" className="mt-1.5 text-xs text-red-600">
-                  {errors.password}
-                </p>
+            </div>
+          )}
+
+          {/* File preview */}
+          {selectedFile && (
+            <div className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-4">
+              <div className="flex items-start gap-3">
+                {/* File type badge */}
+                <div className="mt-0.5 rounded-md bg-stone-200 px-2 py-1 text-xs font-semibold text-stone-700 shrink-0">
+                  {fileTypeLabel(selectedFile.type)}
+                </div>
+
+                {/* File info */}
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-stone-900 truncate">
+                    {selectedFile.name}
+                  </p>
+                  <p className="text-xs text-stone-400 mt-0.5">
+                    {formatBytes(selectedFile.size)}
+                  </p>
+                </div>
+
+                {/* Remove button — hidden during upload */}
+                {!isUploading && !isDone && (
+                  <button
+                    type="button"
+                    onClick={clearFile}
+                    aria-label="Remove file"
+                    className="text-stone-400 hover:text-stone-700 transition-colors shrink-0 mt-0.5"
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      aria-hidden="true"
+                    >
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+
+              {/* Progress bar */}
+              {(isUploading || isDone) && (
+                <div className="mt-4">
+                  <div className="flex justify-between text-xs text-stone-400 mb-1.5">
+                    <span>{isDone ? "Upload complete" : "Uploading…"}</span>
+                    <span>{progress}%</span>
+                  </div>
+                  <div className="w-full h-1.5 rounded-full bg-stone-200 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-stone-800 transition-all duration-300 ease-out"
+                      style={{ width: `${progress}%` }}
+                      role="progressbar"
+                      aria-valuenow={progress}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                    />
+                  </div>
+                </div>
               )}
             </div>
+          )}
 
-            {/* Submit */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-lg bg-stone-900 text-white text-sm font-medium py-2.5
-                hover:bg-stone-800 active:bg-stone-950 transition-colors
-                disabled:opacity-60 disabled:cursor-not-allowed
-                flex items-center justify-center gap-2"
-            >
-              {loading ? (
-                <>
-                  <span
-                    className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"
-                    aria-hidden="true"
-                  />
-                  Signing in…
-                </>
-              ) : (
-                "Sign in"
-              )}
-            </button>
-          </form>
+          {/* Action buttons */}
+          <div className="mt-6 flex gap-3">
+            {/* Upload / retry button */}
+            {(state.stage === "selected" || state.stage === "error") && (
+              <button
+                type="button"
+                onClick={handleUpload}
+                className="flex-1 rounded-lg bg-stone-900 text-white text-sm font-medium py-2.5
+                  hover:bg-stone-800 active:bg-stone-950 transition-colors
+                  flex items-center justify-center gap-2"
+              >
+                {state.stage === "error" ? "Retry upload" : "Upload document"}
+              </button>
+            )}
 
-          {/* Divider */}
-          <div className="relative my-7">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-stone-200" />
-            </div>
-            <div className="relative flex justify-center">
-              <span className="bg-white px-3 text-xs text-stone-400">or continue with</span>
-            </div>
+            {/* Loading state */}
+            {isUploading && (
+              <div className="flex-1 rounded-lg bg-stone-900 text-white text-sm font-medium py-2.5
+                flex items-center justify-center gap-2 opacity-70 cursor-not-allowed">
+                <span
+                  className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"
+                  aria-hidden="true"
+                />
+                Uploading…
+              </div>
+            )}
+
+            {/* Done state */}
+            {isDone && (
+              <div className="flex-1 rounded-lg bg-green-700 text-white text-sm font-medium py-2.5
+                flex items-center justify-center gap-2">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                Upload complete
+              </div>
+            )}
+
+            {/* Change file — shown when a file is selected but not uploading */}
+            {(state.stage === "selected" || state.stage === "error") && (
+              <button
+                type="button"
+                onClick={() => { clearFile(); }}
+                className="rounded-lg border border-stone-200 bg-white px-4 py-2.5 text-sm
+                  font-medium text-stone-600 hover:bg-stone-50 transition-colors"
+              >
+                Change
+              </button>
+            )}
           </div>
 
-          {/* OAuth buttons */}
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => handleOAuth("google")}
-              className="flex items-center justify-center gap-2 rounded-lg border border-stone-200
-                bg-white py-2.5 text-sm font-medium text-stone-700
-                hover:bg-stone-50 hover:border-stone-300 active:bg-stone-100
-                transition-colors"
-            >
-              {/* Google icon */}
-              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  fill="#4285F4"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                />
-              </svg>
-              Google
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleOAuth("github")}
-              className="flex items-center justify-center gap-2 rounded-lg border border-stone-200
-                bg-white py-2.5 text-sm font-medium text-stone-700
-                hover:bg-stone-50 hover:border-stone-300 active:bg-stone-100
-                transition-colors"
-            >
-              {/* GitHub icon */}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483
-                  0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608
-                  1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338
-                  -2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65
-                  0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337
-                  1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688
-                  0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747
-                  0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
-              </svg>
-              GitHub
-            </button>
-          </div>
-
-          {/* Sign up link */}
-          <p className="mt-7 text-center text-sm text-stone-500">
-            Don&rsquo;t have an account?{" "}
-            <a
-              href="/register"
-              className="font-medium text-stone-900 hover:underline transition-colors"
-            >
-              Create one
-            </a>
-          </p>
+          {/* Constraints note */}
+          {state.stage === "idle" && (
+            <p className="mt-5 text-xs text-stone-400 text-center">
+              PDF, PNG, JPEG only &mdash; maximum 20 MB per file
+            </p>
+          )}
         </div>
 
         {/* Footer */}
         <p className="mt-8 text-center text-xs text-stone-400">
-          &copy; {new Date().getFullYear()} SMALDA &mdash; Secure land document analysis.
+          &copy; {new Date().getFullYear()} SMALDA &mdash; Your documents are encrypted in transit.
         </p>
       </div>
     </main>
