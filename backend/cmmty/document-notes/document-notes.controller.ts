@@ -9,6 +9,7 @@ import {
   UseGuards,
   BadRequestException,
 } from '@nestjs/common';
+import { Request } from 'express';
 import { DocumentNotesService } from './document-notes.service';
 import { CreateDocumentNoteDto } from './dto/create-document-note.dto';
 import { JwtAuthGuard } from '../../src/auth/guards/jwt-auth.guard';
