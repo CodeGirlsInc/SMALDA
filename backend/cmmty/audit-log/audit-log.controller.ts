@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Req, UseGuards, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { AuditLogService } from './audit-log.service';
 import { AuditLogPaginationQueryDto } from './dto/audit-log-pagination-query.dto';
 import { JwtAuthGuard } from '../../src/auth/guards/jwt-auth.guard';
@@ -19,7 +19,7 @@ export class AuditLogController {
     @Query() dto: AuditLogPaginationQueryDto,
   ) {
     if (req.user?.role !== UserRole.ADMIN) {
-      throw new Error('Access denied: Admin role required');
+      throw new ForbiddenException('Access denied: Admin role required');
     }
     return this.auditLogService.findAll(dto);
   }
@@ -31,7 +31,7 @@ export class AuditLogController {
   ) {
     const userId = req.user?.id;
     if (!userId) {
-      throw new Error('User ID not found in request');
+      throw new BadRequestException('User ID not found in request');
     }
     return this.auditLogService.findByUserId(userId, dto);
   }
