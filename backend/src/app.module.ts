@@ -15,26 +15,19 @@ import { RiskAssessmentModule } from './risk-assessment/risk-assessment.module';
 import { StellarModule } from './stellar/stellar.module';
 import { UsersModule } from './users/users.module';
 import { VerificationModule } from './verification/verification.module';
-import { NotificationPrefsModule } from '../cmmty/notification-prefs/notification-prefs.module';
-import { AnalyticsModule } from '../cmmty/analytics/analytics.module';
-import { BulkUploadModule } from '../cmmty/bulk-upload/bulk-upload.module';
-import { TwoFactorAuthModule } from '../cmmty/two-factor-auth/two-factor-auth.module';
-import { RealtimeModule } from '../cmmty/realtime/realtime.module';
+import { ConfigValidationSchema } from './config/config.validation';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
-  isGlobal: true,
-  envFilePath: [
-    `.env.${process.env.NODE_ENV ?? 'development'}`,
-    '.env',
-  ],
-  validationSchema: ConfigValidationSchema,
-  validationOptions: {
-    abortEarly: false,
-    allowUnknown: true,
-  },
-}),
+      isGlobal: true,
+      envFilePath: [`.env.${process.env.NODE_ENV ?? 'development'}`, '.env'],
+      validationSchema: ConfigValidationSchema,
+      validationOptions: {
+        abortEarly: false,
+        allowUnknown: true,
+      },
+    }),
     WinstonModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -63,11 +56,6 @@ import { RealtimeModule } from '../cmmty/realtime/realtime.module';
     VerificationModule,
     MailModule,
     QueueModule,
-    NotificationPrefsModule,
-    AnalyticsModule,
-    BulkUploadModule,
-    TwoFactorAuthModule,
-    RealtimeModule,
   ],
   controllers: [AppController],
   providers: [AppService, LoggerMiddleware],

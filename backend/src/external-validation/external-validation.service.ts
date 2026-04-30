@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from "@nestjs/common"
 import type { Repository } from "typeorm"
 import {
-  type ValidationRequest,
+  ValidationRequest,
   type ValidationProvider,
   ValidationStatus,
   ValidationResult,
