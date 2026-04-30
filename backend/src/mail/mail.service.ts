@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import nodemailer, { SendMailOptions, Transporter } from 'nodemailer';
 import { UsersService } from '../users/users.service';
-import { NotificationPrefsService } from '../../cmmty/notification-prefs/notification-prefs.service';
 
 @Injectable()
 export class MailService {
@@ -13,7 +12,6 @@ export class MailService {
   constructor(
     private readonly configService: ConfigService,
     private readonly usersService: UsersService,
-    private readonly notificationPrefsService: NotificationPrefsService,
   ) {
     const host = this.configService.get<string>('MAIL_HOST');
     const port = Number(this.configService.get<string>('MAIL_PORT'));
@@ -22,7 +20,9 @@ export class MailService {
     this.from = this.configService.get<string>('MAIL_FROM');
 
     if (!host || !port || !user || !pass || !this.from) {
-      this.logger.warn('SMTP configuration is incomplete; email delivery will be disabled');
+      this.logger.warn(
+        'SMTP configuration is incomplete; email delivery will be disabled',
+      );
       this.transporter = null;
       return;
     }
@@ -37,7 +37,9 @@ export class MailService {
 
   private async sendMail(options: SendMailOptions) {
     if (!this.transporter) {
-      this.logger.warn(`Skipping email to ${options.to} because SMTP is not configured`);
+      this.logger.warn(
+        `Skipping email to ${options.to} because SMTP is not configured`,
+      );
       return;
     }
 
@@ -55,16 +57,14 @@ export class MailService {
     });
   }
 
-  async sendVerificationComplete(to: string, documentTitle: string, txHash: string): Promise<void> {
+  async sendVerificationComplete(
+    to: string,
+    documentTitle: string,
+    txHash: string,
+  ): Promise<void> {
     const user = await this.usersService.findByEmail(to);
     if (!user) {
       this.logger.warn(`User not found for email: ${to}`);
-      return;
-    }
-
-    const shouldSend = await this.notificationPrefsService.shouldSendVerificationComplete(user.id);
-    if (!shouldSend) {
-      this.logger.log(`User ${user.id} has opted out of verification complete emails`);
       return;
     }
 
@@ -79,16 +79,14 @@ export class MailService {
     });
   }
 
-  async sendRiskAlert(to: string, documentTitle: string, flags: string[]): Promise<void> {
+  async sendRiskAlert(
+    to: string,
+    documentTitle: string,
+    flags: string[],
+  ): Promise<void> {
     const user = await this.usersService.findByEmail(to);
     if (!user) {
       this.logger.warn(`User not found for email: ${to}`);
-      return;
-    }
-
-    const shouldSend = await this.notificationPrefsService.shouldSendRiskAlert(user.id);
-    if (!shouldSend) {
-      this.logger.log(`User ${user.id} has opted out of risk alert emails`);
       return;
     }
 
