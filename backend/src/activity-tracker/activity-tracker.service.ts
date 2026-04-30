@@ -77,6 +77,6 @@ export class ActivityTrackerService {
     return this.activityRepository.find({
       where: { actionType },
       order: { timestamp: "DESC" },
-    })    
-    
+    })
+  }
 }

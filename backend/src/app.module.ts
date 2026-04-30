@@ -15,7 +15,6 @@ import { RiskAssessmentModule } from './risk-assessment/risk-assessment.module';
 import { StellarModule } from './stellar/stellar.module';
 import { UsersModule } from './users/users.module';
 import { VerificationModule } from './verification/verification.module';
-import { join } from 'path';
 import { NotificationPrefsModule } from '../cmmty/notification-prefs/notification-prefs.module';
 import { AnalyticsModule } from '../cmmty/analytics/analytics.module';
 import { BulkUploadModule } from '../cmmty/bulk-upload/bulk-upload.module';
