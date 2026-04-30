@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { IValidationProvider, ValidationDocumentParams, ValidationResponse } from '../interfaces/validation-provider.interface';
+import { IValidationProvider, ValidationResponse } from '../interfaces/validation-provider.interface';
 import { ValidationResult } from '../entities/validation-request.entity';
 
 @Injectable()
 export class GovernmentIdProvider implements IValidationProvider {
-  async validateDocument(_params: ValidationDocumentParams): Promise<ValidationResponse> {
+  async validateDocument(): Promise<ValidationResponse> {
     return {
       result: ValidationResult.VALID,
       data: {},
