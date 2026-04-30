@@ -1,5 +1,0 @@
-target/
-docker/
-.git/
-.env
-*.md
