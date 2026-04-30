@@ -84,13 +84,13 @@ describe('DocumentsService', () => {
     it('should correctly transition status field', async () => {
       mockRepository.findOne.mockResolvedValueOnce({
         ...mockDocument,
-        status: DocumentStatus.APPROVED,
+        status: DocumentStatus.VERIFIED,
       });
-      const result = await service.updateStatus('doc-123', DocumentStatus.APPROVED);
+      const result = await service.updateStatus('doc-123', DocumentStatus.VERIFIED);
       expect(mockRepository.update).toHaveBeenCalledWith('doc-123', {
-        status: DocumentStatus.APPROVED,
+        status: DocumentStatus.VERIFIED,
       });
-      expect(result?.status).toBe(DocumentStatus.APPROVED);
+      expect(result?.status).toBe(DocumentStatus.VERIFIED);
     });
   });
 
