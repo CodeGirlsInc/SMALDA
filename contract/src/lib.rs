@@ -2,6 +2,7 @@ pub mod cache;
 pub mod config;
 pub mod hash_validator;
 pub mod metrics;
+pub mod multi_party;
 pub mod rate_limit;
 pub mod stellar;
 
