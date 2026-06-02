@@ -10,6 +10,7 @@ import { buildWinstonOptions } from './common/logger.config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { DocumentsModule } from './documents/documents.module';
 import { MailModule } from './mail/mail.module';
+import { UserActivityModule } from './module/user-activity/user-activity.module';
 import { QueueModule } from './queue/queue.module';
 import { RiskAssessmentModule } from './risk-assessment/risk-assessment.module';
 import { StellarModule } from './stellar/stellar.module';
@@ -51,6 +52,7 @@ import { ConfigValidationSchema } from './config/config.validation';
     UsersModule,
     AuthModule,
     DocumentsModule,
+    UserActivityModule,
     RiskAssessmentModule,
     StellarModule,
     VerificationModule,
