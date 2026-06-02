@@ -12,6 +12,7 @@ import { DocumentsModule } from './documents/documents.module';
 import { MailModule } from './mail/mail.module';
 import { QueueModule } from './queue/queue.module';
 import { RiskAssessmentModule } from './risk-assessment/risk-assessment.module';
+import { PublicVerificationModule } from './module/public-verification/public-verification.module';
 import { StellarModule } from './stellar/stellar.module';
 import { UsersModule } from './users/users.module';
 import { VerificationModule } from './verification/verification.module';
@@ -51,6 +52,7 @@ import { ConfigValidationSchema } from './config/config.validation';
     UsersModule,
     AuthModule,
     DocumentsModule,
+    PublicVerificationModule,
     RiskAssessmentModule,
     StellarModule,
     VerificationModule,
