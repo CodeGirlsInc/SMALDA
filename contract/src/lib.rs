@@ -554,20 +554,80 @@ async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
     }
 }
 
-pub async fn submit_document(Json(req): Json<SubmitRequest>) -> impl IntoResponse {
+/// Submission record persisted in Redis under key `submit:{document_hash}`.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SubmissionRecord {
+    pub document_id: String,
+    pub submitter: String,
+    pub tx_hash: String,
+    pub anchored_at: i64,
+}
+
+pub async fn submit_document(
+    State(state): State<AppState>,
+    Json(req): Json<SubmitRequest>,
+) -> Response {
     let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);
-        return (status, Json(body));
+        return (status, Json(body)).into_response();
     }
 
-    // Endpoint behavior not yet implemented; preserve previous BAD_REQUEST semantics.
-    (
-        StatusCode::BAD_REQUEST,
-        Json(ValidationErrorResponse {
-            error: "submit endpoint not yet implemented".to_string(),
-        }),
-    )
+    let cache_key = format!("submit:{}", normalized_hash);
+
+    // 409 if already submitted
+    match state.cache.get::<SubmissionRecord>(&cache_key).await {
+        Ok(Some(_)) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(ValidationErrorResponse {
+                    error: "document hash has already been submitted".to_string(),
+                }),
+            )
+                .into_response();
+        }
+        Ok(None) => {}
+        Err(e) => {
+            warn!("Cache read error during submit: {}", e);
+            state.metrics.increment_error_count();
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    }
+
+    let tx_hash = match state.stellar.anchor_hash(&normalized_hash).await {
+        Ok(tx) => tx,
+        Err(e) => {
+            warn!("Failed to anchor hash on Stellar: {}", e);
+            state.metrics.increment_error_count();
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let anchored_at = Utc::now().timestamp();
+    let record = SubmissionRecord {
+        document_id: req.document_id.clone(),
+        submitter: req.submitter.clone(),
+        tx_hash: tx_hash.clone(),
+        anchored_at,
+    };
+
+    const TEN_YEARS: u64 = 60 * 60 * 24 * 365 * 10;
+    if let Err(e) = state.cache.set(&cache_key, &record, TEN_YEARS).await {
+        warn!("Failed to persist submission record: {}", e);
+        state.metrics.increment_error_count();
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
+    info!("Document {} anchored with tx {}", normalized_hash, tx_hash);
+    state.metrics.increment_request_count();
+
+    Json(SubmitResponse {
+        success: true,
+        transaction_id: Some(tx_hash),
+        anchored_at: Some(anchored_at),
+        error: None,
+    })
+    .into_response()
 }
 
 pub async fn revoke_document(Json(req): Json<RevokeRequest>) -> impl IntoResponse {
