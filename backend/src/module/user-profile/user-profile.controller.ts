@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { User } from '../../users/entities/user.entity';
+import { UpdateLanguageDto } from './dto/update-language.dto';
 
 @Controller('module/users')
 @UseGuards(JwtAuthGuard)
@@ -14,8 +15,11 @@ export class UserProfileController {
 
   @Get('me')
   getProfile(@Req() req: { user: User }) {
-    const { passwordHash, twoFactorSecret, twoFactorBackupCodes, ...profile } = req.user;
-    void passwordHash; void twoFactorSecret; void twoFactorBackupCodes;
+    const { passwordHash, twoFactorSecret, twoFactorBackupCodes, ...profile } =
+      req.user;
+    void passwordHash;
+    void twoFactorSecret;
+    void twoFactorBackupCodes;
     return profile;
   }
 
@@ -26,8 +30,29 @@ export class UserProfileController {
   ) {
     await this.users.update(req.user.id, body);
     const updated = await this.users.findOneByOrFail({ id: req.user.id });
-    const { passwordHash, twoFactorSecret, twoFactorBackupCodes, ...profile } = updated;
-    void passwordHash; void twoFactorSecret; void twoFactorBackupCodes;
+    const { passwordHash, twoFactorSecret, twoFactorBackupCodes, ...profile } =
+      updated;
+    void passwordHash;
+    void twoFactorSecret;
+    void twoFactorBackupCodes;
+    return profile;
+  }
+
+  @Patch('me/language')
+  async updateLanguage(
+    @Req() req: { user: User },
+    @Body() body: UpdateLanguageDto,
+  ) {
+    await this.users.update(req.user.id, {
+      preferredLanguage: body.languageCode,
+    });
+
+    const updated = await this.users.findOneByOrFail({ id: req.user.id });
+    const { passwordHash, twoFactorSecret, twoFactorBackupCodes, ...profile } =
+      updated;
+    void passwordHash;
+    void twoFactorSecret;
+    void twoFactorBackupCodes;
     return profile;
   }
 }
