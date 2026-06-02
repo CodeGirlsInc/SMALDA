@@ -59,4 +59,18 @@ impl StellarClient {
     pub async fn anchor_transfer(&self, _transfer_hash: &str, _memo: &str) -> Result<()> {
         Ok(())
     }
+
+    pub async fn anchor_hash(&self, hash: &str) -> Result<String> {
+        let url = format!(
+            "{}/transactions?memo=SUBMIT:{}",
+            self.horizon_url,
+            &hash[..hash.len().min(20)]
+        );
+        let resp = self.http_client.get(&url).send().await?;
+        if resp.status().is_success() {
+            Ok(format!("tx_{}", hash))
+        } else {
+            anyhow::bail!("stellar anchor_hash failed with status {}", resp.status())
+        }
+    }
 }
