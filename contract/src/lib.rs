@@ -4,6 +4,7 @@ pub mod event;
 pub mod expiry;
 pub mod hash_validator;
 pub mod metrics;
+pub mod module;
 pub mod multi_party;
 pub mod rate_limit;
 pub mod stellar;
@@ -27,6 +28,7 @@ use tracing::{info, warn};
 use cache::CacheBackend;
 use hash_validator::{HashValidator, ValidationError as HashValidationError};
 use metrics::MetricsRegistry;
+use module::revocation_check::is_revoked;
 use stellar::{StellarClient, TransactionRecord};
 
 // Application state
@@ -597,6 +599,24 @@ pub async fn submit_document(
         }
     }
 
+    match is_revoked(&state.cache, &normalized_hash).await {
+        Ok(true) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(ValidationErrorResponse {
+                    error: "document has been revoked".to_string(),
+                }),
+            )
+                .into_response();
+        }
+        Ok(false) => {}
+        Err(e) => {
+            warn!("Cache revocation check failed during submit: {}", e);
+            state.metrics.increment_error_count();
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    }
+
     let tx_hash = match state.stellar.anchor_hash(&normalized_hash).await {
         Ok(tx) => tx,
         Err(e) => {
@@ -649,11 +669,35 @@ pub async fn revoke_document(Json(req): Json<RevokeRequest>) -> impl IntoRespons
     )
 }
 
-pub async fn transfer_document(Json(req): Json<TransferRequest>) -> impl IntoResponse {
+pub async fn transfer_document(
+    State(state): State<AppState>,
+    Json(req): Json<TransferRequest>,
+) -> impl IntoResponse {
     let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);
         return (status, Json(body));
+    }
+
+    match is_revoked(&state.cache, &normalized_hash).await {
+        Ok(true) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(ValidationErrorResponse {
+                    error: "document has been revoked".to_string(),
+                }),
+            );
+        }
+        Ok(false) => {}
+        Err(e) => {
+            warn!("Cache revocation check failed during transfer: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ValidationErrorResponse {
+                    error: "failed to check revocation status".to_string(),
+                }),
+            );
+        }
     }
 
     // Basic date validation: expect YYYY-MM-DD
