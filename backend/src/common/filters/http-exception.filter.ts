@@ -1,4 +1,4 @@
-﻿import {
+import {
   ArgumentsHost,
   Catch,
   ExceptionFilter,
@@ -6,13 +6,19 @@
   HttpStatus,
   Logger,
 } from '@nestjs/common';
-import { Response, Request } from 'express';
+import { ConfigService } from '@nestjs/config';
+import { Request, Response } from 'express';
+
+import { MultiLanguageSupportService } from '../../module/i18n/multi-language-support.service';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
 
-  constructor(private readonly isProduction = false) {}
+  constructor(
+    private readonly languageService: MultiLanguageSupportService,
+    private readonly configService: ConfigService,
+  ) {}
 
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
@@ -26,9 +32,15 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     const errorResponse = isHttp
       ? exception.getResponse()
-      : { message: (exception as Error)?.message }; // fallback message
+      : { message: (exception as Error)?.message };
 
-    const { message, error } = this.normalizeResponse(errorResponse, exception);
+    const languageCode = this.resolveLanguage(request);
+    const { message, error } = this.normalizeResponse(
+      errorResponse,
+      exception,
+      status,
+      languageCode,
+    );
 
     const payload = {
       statusCode: status,
@@ -38,12 +50,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
       path: request.url,
     };
 
-    this.logger.error(
-      `${status}   -> `,
-      (exception as Error)?.stack,
-    );
+    this.logger.error(`${status}   -> `, (exception as Error)?.stack);
 
-    if (!this.isProduction && exception instanceof Error) {
+    if (
+      this.configService.get<string>('NODE_ENV') !== 'production' &&
+      exception instanceof Error
+    ) {
       Object.assign(payload, { stack: exception.stack });
     }
 
@@ -53,29 +65,77 @@ export class HttpExceptionFilter implements ExceptionFilter {
   private normalizeResponse(
     response: string | object | null | undefined,
     exception: unknown,
+    status: HttpStatus,
+    languageCode: string,
   ) {
-    let message = 'Internal server error';
+    let message = this.translateStatus(status, languageCode);
     let error = HttpStatus.INTERNAL_SERVER_ERROR.toString();
 
     if (typeof response === 'string') {
-      message = response;
+      message = message || response;
     } else if (response && typeof response === 'object') {
       const body = response as Record<string, any>;
-      if (body.message) {
-        message = Array.isArray(body.message)
-          ? body.message.join(', ')
-          : body.message;
-      } else if (exception instanceof Error && exception.message) {
-        message = exception.message;
+      if (!message) {
+        if (body.message) {
+          message = Array.isArray(body.message)
+            ? body.message.join(', ')
+            : body.message;
+        } else if (exception instanceof Error && exception.message) {
+          message = exception.message;
+        }
       }
 
       if (body.error) {
         error = body.error;
       }
-    } else if (exception instanceof Error) {
+    } else if (exception instanceof Error && !message) {
       message = exception.message;
     }
 
     return { message, error };
+  }
+
+  private resolveLanguage(request: Request) {
+    const user = (
+      request as Request & {
+        user?: { preferredLanguage?: string };
+      }
+    ).user;
+    const preferredLanguage = user?.preferredLanguage;
+
+    if (
+      preferredLanguage &&
+      this.languageService.isSupported(preferredLanguage)
+    ) {
+      return preferredLanguage;
+    }
+
+    return 'en';
+  }
+
+  private translateStatus(status: HttpStatus, languageCode: string) {
+    if (status === HttpStatus.BAD_REQUEST) {
+      return this.languageService.translate(
+        'errors.validationFailed',
+        languageCode,
+      );
+    }
+
+    if (status === HttpStatus.FORBIDDEN) {
+      return this.languageService.translate('errors.forbidden', languageCode);
+    }
+
+    if (status === HttpStatus.NOT_FOUND) {
+      return this.languageService.translate('errors.notFound', languageCode);
+    }
+
+    if (status === HttpStatus.INTERNAL_SERVER_ERROR) {
+      return this.languageService.translate(
+        'errors.internalServerError',
+        languageCode,
+      );
+    }
+
+    return '';
   }
 }

@@ -1,0 +1,12 @@
+{
+  "errors": {
+    "validationFailed": "Validation failed",
+    "forbidden": "Forbidden",
+    "notFound": "Not found",
+    "internalServerError": "Internal server error",
+    "unsupportedLanguage": "Unsupported language code"
+  },
+  "language": {
+    "updated": "Language preference updated"
+  }
+}
