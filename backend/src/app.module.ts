@@ -7,16 +7,11 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { buildWinstonOptions } from './common/logger.config';
-import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { DocumentsModule } from './documents/documents.module';
 import { MailModule } from './mail/mail.module';
-import { I18nModule } from './module/i18n/i18n.module';
-import { UserProfileModule } from './module/user-profile/user-profile.module';
-import { UserActivityModule } from './module/user-activity/user-activity.module';
 import { QueueModule } from './queue/queue.module';
 import { RiskAssessmentModule } from './risk-assessment/risk-assessment.module';
-import { PublicVerificationModule } from './module/public-verification/public-verification.module';
 import { StellarModule } from './stellar/stellar.module';
 import { UsersModule } from './users/users.module';
 import { VerificationModule } from './verification/verification.module';
@@ -56,10 +51,6 @@ import { ConfigValidationSchema } from './config/config.validation';
     UsersModule,
     AuthModule,
     DocumentsModule,
-    I18nModule,
-    UserProfileModule,
-    PublicVerificationModule,
-    UserActivityModule,
     RiskAssessmentModule,
     StellarModule,
     VerificationModule,
@@ -67,7 +58,7 @@ import { ConfigValidationSchema } from './config/config.validation';
     QueueModule,
   ],
   controllers: [AppController],
-  providers: [AppService, LoggerMiddleware, HttpExceptionFilter],
+  providers: [AppService, LoggerMiddleware],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

@@ -1,11 +1,7 @@
 pub mod cache;
 pub mod config;
-pub mod event;
-pub mod expiry;
 pub mod hash_validator;
 pub mod metrics;
-pub mod module;
-pub mod multi_party;
 pub mod rate_limit;
 pub mod stellar;
 
@@ -28,7 +24,6 @@ use tracing::{info, warn};
 use cache::CacheBackend;
 use hash_validator::{HashValidator, ValidationError as HashValidationError};
 use metrics::MetricsRegistry;
-use module::revocation_check::is_revoked;
 use stellar::{StellarClient, TransactionRecord};
 
 // Application state
@@ -559,98 +554,20 @@ async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
     }
 }
 
-/// Submission record persisted in Redis under key `submit:{document_hash}`.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SubmissionRecord {
-    pub document_id: String,
-    pub submitter: String,
-    pub tx_hash: String,
-    pub anchored_at: i64,
-}
-
-pub async fn submit_document(
-    State(state): State<AppState>,
-    Json(req): Json<SubmitRequest>,
-) -> Response {
+pub async fn submit_document(Json(req): Json<SubmitRequest>) -> impl IntoResponse {
     let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);
-        return (status, Json(body)).into_response();
+        return (status, Json(body));
     }
 
-    let cache_key = format!("submit:{}", normalized_hash);
-
-    // 409 if already submitted
-    match state.cache.get::<SubmissionRecord>(&cache_key).await {
-        Ok(Some(_)) => {
-            return (
-                StatusCode::CONFLICT,
-                Json(ValidationErrorResponse {
-                    error: "document hash has already been submitted".to_string(),
-                }),
-            )
-                .into_response();
-        }
-        Ok(None) => {}
-        Err(e) => {
-            warn!("Cache read error during submit: {}", e);
-            state.metrics.increment_error_count();
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    }
-
-    match is_revoked(&state.cache, &normalized_hash).await {
-        Ok(true) => {
-            return (
-                StatusCode::CONFLICT,
-                Json(ValidationErrorResponse {
-                    error: "document has been revoked".to_string(),
-                }),
-            )
-                .into_response();
-        }
-        Ok(false) => {}
-        Err(e) => {
-            warn!("Cache revocation check failed during submit: {}", e);
-            state.metrics.increment_error_count();
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    }
-
-    let tx_hash = match state.stellar.anchor_hash(&normalized_hash).await {
-        Ok(tx) => tx,
-        Err(e) => {
-            warn!("Failed to anchor hash on Stellar: {}", e);
-            state.metrics.increment_error_count();
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
-
-    let anchored_at = Utc::now().timestamp();
-    let record = SubmissionRecord {
-        document_id: req.document_id.clone(),
-        submitter: req.submitter.clone(),
-        tx_hash: tx_hash.clone(),
-        anchored_at,
-    };
-
-    const TEN_YEARS: u64 = 60 * 60 * 24 * 365 * 10;
-    if let Err(e) = state.cache.set(&cache_key, &record, TEN_YEARS).await {
-        warn!("Failed to persist submission record: {}", e);
-        state.metrics.increment_error_count();
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-    }
-
-    info!("Document {} anchored with tx {}", normalized_hash, tx_hash);
-    state.metrics.increment_request_count();
-
-    Json(SubmitResponse {
-        success: true,
-        transaction_id: Some(tx_hash),
-        anchored_at: Some(anchored_at),
-        error: None,
-    })
-    .into_response()
+    // Endpoint behavior not yet implemented; preserve previous BAD_REQUEST semantics.
+    (
+        StatusCode::BAD_REQUEST,
+        Json(ValidationErrorResponse {
+            error: "submit endpoint not yet implemented".to_string(),
+        }),
+    )
 }
 
 pub async fn revoke_document(Json(req): Json<RevokeRequest>) -> impl IntoResponse {
@@ -669,35 +586,11 @@ pub async fn revoke_document(Json(req): Json<RevokeRequest>) -> impl IntoRespons
     )
 }
 
-pub async fn transfer_document(
-    State(state): State<AppState>,
-    Json(req): Json<TransferRequest>,
-) -> impl IntoResponse {
+pub async fn transfer_document(Json(req): Json<TransferRequest>) -> impl IntoResponse {
     let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);
         return (status, Json(body));
-    }
-
-    match is_revoked(&state.cache, &normalized_hash).await {
-        Ok(true) => {
-            return (
-                StatusCode::CONFLICT,
-                Json(ValidationErrorResponse {
-                    error: "document has been revoked".to_string(),
-                }),
-            );
-        }
-        Ok(false) => {}
-        Err(e) => {
-            warn!("Cache revocation check failed during transfer: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ValidationErrorResponse {
-                    error: "failed to check revocation status".to_string(),
-                }),
-            );
-        }
     }
 
     // Basic date validation: expect YYYY-MM-DD

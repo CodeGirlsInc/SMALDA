@@ -38,7 +38,11 @@ async function bootstrap() {
     }),
   );
 
-  app.useGlobalFilters(app.get(HttpExceptionFilter));
+  app.useGlobalFilters(
+    new HttpExceptionFilter(
+      configService.get<string>('NODE_ENV') === 'production',
+    ),
+  );
 
   // Swagger documentation
   const config = new DocumentBuilder()
