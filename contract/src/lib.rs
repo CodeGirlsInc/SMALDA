@@ -266,7 +266,15 @@ pub async fn record_transfer(
     }
 
     let anchored_at = Utc::now().timestamp();
-    state.notifier.notify("document.transferred", &req.document_hash, &transfer_hash, anchored_at).await;
+    state
+        .notifier
+        .notify(
+            "document.transferred",
+            &req.document_hash,
+            &transfer_hash,
+            anchored_at,
+        )
+        .await;
 
     let record = TransferRecord {
         document_hash: req.document_hash.clone(),
@@ -570,7 +578,10 @@ pub async fn submit_document(
         return (status, Json(body)).into_response();
     }
 
-    let memo = format!("SUBMIT:{}", &normalized_hash[..19.min(normalized_hash.len())]);
+    let memo = format!(
+        "SUBMIT:{}",
+        &normalized_hash[..19.min(normalized_hash.len())]
+    );
     match state.stellar.anchor_transfer(&normalized_hash, &memo).await {
         Ok(()) => {
             let anchored_at = Utc::now().timestamp();
@@ -578,25 +589,48 @@ pub async fn submit_document(
 
             let submit_key = format!("submit:{}", normalized_hash);
             let record = serde_json::json!({ "tx_hash": tx_hash, "anchored_at": anchored_at });
-            if let Err(e) = state.cache.set_raw(&submit_key, &record.to_string(), 60 * 60 * 24 * 365).await {
+            if let Err(e) = state
+                .cache
+                .set_raw(&submit_key, &record.to_string(), 60 * 60 * 24 * 365)
+                .await
+            {
                 warn!("Failed to persist submit record: {}", e);
             }
 
-            state.notifier.notify("document.submitted", &normalized_hash, &tx_hash, anchored_at).await;
+            state
+                .notifier
+                .notify(
+                    "document.submitted",
+                    &normalized_hash,
+                    &tx_hash,
+                    anchored_at,
+                )
+                .await;
 
-            (StatusCode::OK, Json(serde_json::json!({
-                "success": true,
-                "transaction_id": tx_hash,
-                "anchored_at": anchored_at,
-                "error": null
-            }))).into_response()
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "success": true,
+                    "transaction_id": tx_hash,
+                    "anchored_at": anchored_at,
+                    "error": null
+                })),
+            )
+                .into_response()
         }
         Err(e) => {
-            warn!("Stellar anchor failed for submit {}: {}", normalized_hash, e);
+            warn!(
+                "Stellar anchor failed for submit {}: {}",
+                normalized_hash, e
+            );
             state.metrics.increment_error_count();
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(ValidationErrorResponse {
-                error: format!("stellar anchor failed: {}", e),
-            })).into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ValidationErrorResponse {
+                    error: format!("stellar anchor failed: {}", e),
+                }),
+            )
+                .into_response()
         }
     }
 }
@@ -611,7 +645,10 @@ pub async fn revoke_document(
         return (status, Json(body)).into_response();
     }
 
-    let memo = format!("REVOKE:{}", &normalized_hash[..19.min(normalized_hash.len())]);
+    let memo = format!(
+        "REVOKE:{}",
+        &normalized_hash[..19.min(normalized_hash.len())]
+    );
     match state.stellar.anchor_transfer(&normalized_hash, &memo).await {
         Ok(()) => {
             let revoked_at = Utc::now().timestamp();
@@ -622,19 +659,33 @@ pub async fn revoke_document(
                 warn!("Failed to cache revocation: {}", e);
             }
 
-            state.notifier.notify("document.revoked", &normalized_hash, &tx_hash, revoked_at).await;
+            state
+                .notifier
+                .notify("document.revoked", &normalized_hash, &tx_hash, revoked_at)
+                .await;
 
-            (StatusCode::OK, Json(RevokeResponse {
-                transaction_id: tx_hash,
-                revoked_at,
-            })).into_response()
+            (
+                StatusCode::OK,
+                Json(RevokeResponse {
+                    transaction_id: tx_hash,
+                    revoked_at,
+                }),
+            )
+                .into_response()
         }
         Err(e) => {
-            warn!("Stellar anchor failed for revoke {}: {}", normalized_hash, e);
+            warn!(
+                "Stellar anchor failed for revoke {}: {}",
+                normalized_hash, e
+            );
             state.metrics.increment_error_count();
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(ValidationErrorResponse {
-                error: format!("stellar anchor failed: {}", e),
-            })).into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ValidationErrorResponse {
+                    error: format!("stellar anchor failed: {}", e),
+                }),
+            )
+                .into_response()
         }
     }
 }

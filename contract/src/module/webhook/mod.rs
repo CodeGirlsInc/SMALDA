@@ -55,15 +55,14 @@ impl VerificationWebhookNotifier {
         }
     }
 
-    async fn send_with_retry(
-        &self,
-        url: &str,
-        payload: &serde_json::Value,
-    ) -> Result<(), String> {
+    async fn send_with_retry(&self, url: &str, payload: &serde_json::Value) -> Result<(), String> {
         match self.send(url, payload).await {
             Ok(()) => Ok(()),
             Err(e) => {
-                warn!("Webhook delivery failed (attempt 1): {} — retrying in 2s", e);
+                warn!(
+                    "Webhook delivery failed (attempt 1): {} — retrying in 2s",
+                    e
+                );
                 tokio::time::sleep(Duration::from_secs(2)).await;
                 self.send(url, payload)
                     .await
