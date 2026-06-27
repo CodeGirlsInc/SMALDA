@@ -1,10 +1,10 @@
 use axum_test::TestServer;
-use stellar_doc_verifier::{app, AppState, HistoryResponse, TransactionRecord};
+use std::sync::Arc;
 use stellar_doc_verifier::cache::{CacheBackend, InMemoryCache};
-use stellar_doc_verifier::stellar::StellarClient;
 use stellar_doc_verifier::metrics::MetricsRegistry;
 use stellar_doc_verifier::module::webhook::VerificationWebhookNotifier;
-use std::sync::Arc;
+use stellar_doc_verifier::stellar::StellarClient;
+use stellar_doc_verifier::{app, AppState, HistoryResponse, TransactionRecord};
 
 fn create_test_state() -> AppState {
     let stellar = Arc::new(StellarClient::new("https://horizon-testnet.stellar.org"));
@@ -31,7 +31,9 @@ async fn test_hash_with_no_history_returns_200_empty_array() {
     let app = app(state);
     let server = TestServer::new(app).unwrap();
 
-    let response = server.get(&format!("/verify/{}/history", valid_sha256_hash())).await;
+    let response = server
+        .get(&format!("/verify/{}/history", valid_sha256_hash()))
+        .await;
 
     response.assert_status_ok();
     let history: HistoryResponse = response.json();
@@ -50,12 +52,18 @@ async fn test_hash_with_one_record_returns_count_one() {
         timestamp: 1620000000,
         verified: true,
     }];
-    state.cache.set(&cache_key, &transactions, 3600).await.unwrap();
+    state
+        .cache
+        .set(&cache_key, &transactions, 3600)
+        .await
+        .unwrap();
 
     let app = app(state);
     let server = TestServer::new(app).unwrap();
 
-    let response = server.get(&format!("/verify/{}/history", valid_sha256_hash())).await;
+    let response = server
+        .get(&format!("/verify/{}/history", valid_sha256_hash()))
+        .await;
 
     response.assert_status_ok();
     let history: HistoryResponse = response.json();
@@ -86,12 +94,18 @@ async fn test_hash_with_multiple_transfers_returns_in_order() {
             verified: true,
         },
     ];
-    state.cache.set(&cache_key, &transactions, 3600).await.unwrap();
+    state
+        .cache
+        .set(&cache_key, &transactions, 3600)
+        .await
+        .unwrap();
 
     let app = app(state);
     let server = TestServer::new(app).unwrap();
 
-    let response = server.get(&format!("/verify/{}/history", valid_sha256_hash())).await;
+    let response = server
+        .get(&format!("/verify/{}/history", valid_sha256_hash()))
+        .await;
 
     response.assert_status_ok();
     let history: HistoryResponse = response.json();
@@ -112,12 +126,18 @@ async fn test_cache_hit_returns_cached_true() {
         timestamp: 1620000000,
         verified: true,
     }];
-    state.cache.set(&cache_key, &transactions, 3600).await.unwrap();
+    state
+        .cache
+        .set(&cache_key, &transactions, 3600)
+        .await
+        .unwrap();
 
     let app = app(state);
     let server = TestServer::new(app).unwrap();
 
-    let response = server.get(&format!("/verify/{}/history", valid_sha256_hash())).await;
+    let response = server
+        .get(&format!("/verify/{}/history", valid_sha256_hash()))
+        .await;
 
     response.assert_status_ok();
     let history: HistoryResponse = response.json();
@@ -132,7 +152,9 @@ async fn test_invalid_hash_format_returns_400() {
     let server = TestServer::new(app).unwrap();
 
     let invalid_hash = "invalid_hash"; // Not 64 hex chars
-    let response = server.get(&format!("/verify/{}/history", invalid_hash)).await;
+    let response = server
+        .get(&format!("/verify/{}/history", invalid_hash))
+        .await;
 
     response.assert_status_bad_request();
     let error: serde_json::Value = response.json();
@@ -151,5 +173,8 @@ async fn test_empty_hash_string_returns_400() {
     response.assert_status_bad_request();
     let error: serde_json::Value = response.json();
     assert!(error.get("error").is_some());
-    assert!(error["error"].as_str().unwrap().contains("must not be empty"));
+    assert!(error["error"]
+        .as_str()
+        .unwrap()
+        .contains("must not be empty"));
 }
