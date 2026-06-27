@@ -9,7 +9,8 @@ describe('StellarService', () => {
   const mockConfigService = {
     get: jest.fn((key: string) => {
       if (key === 'STELLAR_SECRET_KEY') {
-        return 'SBQWERTYUIOPASDFGHJKLZXCVBNM1234567890ABCDEF'; // Mock secret key
+        // Valid Stellar testnet secret key format (base32 encoded)
+        return 'SAC26QSNSIBA6DPBDXQWMX2GWZD4ZQ7E2QL3Q5GO5S32DWYP3H66LE3Q';
       }
       if (key === 'STELLAR_HORIZON_URL') {
         return 'https://horizon-testnet.stellar.org';
@@ -91,7 +92,7 @@ describe('StellarService', () => {
 
     it('should truncate hash to 58 characters for the key', () => {
       const dataKey = (service as any).buildDataKey(validHash);
-      expect(dataKey.length).toBe(61); // 'doc_' (4) + 58 chars
+      expect(dataKey.length).toBe(62); // 'doc_' (4) + 58 chars = 62
     });
 
     it('should reject invalid hash format', () => {
