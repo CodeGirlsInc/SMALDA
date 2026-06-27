@@ -1,13 +1,13 @@
-use axum::{
-    extract::{Request, FromRequestParts},
-    http::{StatusCode, response::IntoResponse},
-    middleware::Next,
-    response::Response,
-    body::Bytes,
-};
-use serde::{Deserialize, de::DeserializeOwned};
 use crate::hash_validator::{HashValidator, ValidationError};
 use crate::ValidationErrorResponse;
+use axum::{
+    extract::Request,
+    http::StatusCode,
+    middleware::Next,
+    response::{IntoResponse, Json, Response},
+};
+use http_body_util::BodyExt;
+use serde::Deserialize;
 
 /// Normalizes a hash string by trimming whitespace and converting to lowercase
 pub fn normalize(hash: &str) -> String {
@@ -17,7 +17,7 @@ pub fn normalize(hash: &str) -> String {
 /// Helper function to normalize hash fields in request bodies
 pub fn normalize_request_body<T>(body: &mut T)
 where
-    T: HasDocumentHash
+    T: HasDocumentHash,
 {
     if let Some(document_hash) = body.document_hash_mut() {
         *document_hash = normalize(document_hash);
@@ -32,7 +32,6 @@ pub trait HasDocumentHash {
 
 // Implement HasDocumentHash for all request types that have a document_hash field
 #[derive(Debug, Deserialize)]
-#[deserialize_any]
 struct AnyRequest;
 
 impl HasDocumentHash for crate::VerifyRequest {
@@ -72,13 +71,19 @@ impl HasDocumentHash for crate::TransferRequest {
 }
 
 /// Axum middleware that normalizes hash strings in request bodies and path parameters
-pub async fn hash_normalization_middleware(mut req: Request, next: Next) -> Result<Response, impl IntoResponse> {
+pub async fn hash_normalization_middleware(
+    mut req: Request,
+    next: Next,
+) -> Result<Response, impl IntoResponse> {
     // First, handle path parameters that might contain hashes (like /verify/:hash)
     let uri = req.uri().clone();
     let path = uri.path();
-    
+
     // Check if this is an endpoint that has a hash in the path
-    if let Some(captures) = path.strip_prefix("/verify/").and_then(|p| p.strip_suffix("/history").or_else(|| Some(p))) {
+    if let Some(captures) = path
+        .strip_prefix("/verify/")
+        .and_then(|p| p.strip_suffix("/history").or_else(|| Some(p)))
+    {
         if !captures.is_empty() && !captures.starts_with("batch") {
             // This is /verify/:hash or /verify/:hash/history
             // We'll handle the normalization in the handler itself since path params are extracted directly
@@ -89,9 +94,16 @@ pub async fn hash_normalization_middleware(mut req: Request, next: Next) -> Resu
 
     // For request bodies, we can deserialize, normalize, then re-serialize
     // This works for all JSON requests that have a document_hash field
-    let body = match hyper::body::to_bytes(req.body_mut()).await {
-        Ok(b) => b,
-        Err(_) => return Err((StatusCode::BAD_REQUEST, Json(ValidationErrorResponse { error: "Failed to read request body".to_string() }))),
+    let body = match req.body_mut().collect().await {
+        Ok(b) => b.to_bytes(),
+        Err(_) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ValidationErrorResponse {
+                    error: "Failed to read request body".to_string(),
+                }),
+            ))
+        }
     };
 
     // Try to deserialize and normalize if it's a request with document_hash

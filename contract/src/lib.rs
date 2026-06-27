@@ -25,6 +25,7 @@ use tracing::{info, warn};
 use cache::CacheBackend;
 use hash_validator::{HashValidator, ValidationError as HashValidationError};
 use metrics::MetricsRegistry;
+use module::middleware::hash_normalization::normalize;
 use module::webhook::VerificationWebhookNotifier;
 use stellar::{StellarClient, TransactionRecord};
 
@@ -39,7 +40,7 @@ pub struct AppState {
 }
 
 // Request/Response types
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct VerifyRequest {
     pub document_hash: String,
     pub transaction_id: Option<String>,
@@ -54,7 +55,7 @@ pub struct VerifyResponse {
 }
 
 /// Request type for submitting a document hash to Stellar blockchain
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SubmitRequest {
     pub document_hash: String,
     pub document_id: String,
@@ -70,7 +71,7 @@ pub struct SubmitResponse {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RevokeRequest {
     pub document_hash: String,
     pub reason: String,
@@ -104,7 +105,7 @@ pub struct ValidationErrorResponse {
     pub error: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct BatchVerifyRequest {
     pub hashes: Vec<String>,
 }
@@ -126,7 +127,7 @@ pub struct BatchVerifyItem {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TransferRequest {
     pub document_hash: String,
     pub from_owner: String,
@@ -176,8 +177,8 @@ fn map_validation_error(err: HashValidationError) -> (StatusCode, ValidationErro
 }
 
 pub fn app(state: AppState) -> Router {
-    use crate::module::middleware::hash_normalization::{hash_normalization_middleware, normalize};
-    
+    use crate::module::middleware::hash_normalization::hash_normalization_middleware;
+
     Router::new()
         .route("/health", get(health_check))
         .route("/metrics", get(metrics_handler))
