@@ -37,7 +37,9 @@ const fileFilter: multer.Options['fileFilter'] = (_req, file, callback) => {
     return callback(null, true);
   }
 
-  return callback(new BadRequestException('Only PDF, PNG, or JPEG files are allowed'));
+  return callback(
+    new BadRequestException('Only PDF, PNG, or JPEG files are allowed'),
+  );
 };
 
 @Controller('documents')
@@ -78,7 +80,8 @@ export class DocumentsController {
       return res.status(200).send(existing);
     }
 
-    const uploadDir = this.configService.get<string>('UPLOAD_DIR') || './uploads';
+    const uploadDir =
+      this.configService.get<string>('UPLOAD_DIR') || './uploads';
     await fs.mkdir(uploadDir, { recursive: true });
 
     const extension = extname(file.originalname) || '';
@@ -130,7 +133,9 @@ export class DocumentsController {
 
     const record = await this.verificationService.findLatestByDocument(id);
     if (!record) {
-      throw new NotFoundException('No verification record found for this document');
+      throw new NotFoundException(
+        'No verification record found for this document',
+      );
     }
 
     return record;
