@@ -1,6 +1,7 @@
-﻿import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+﻿import { Inject, Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Keypair, Horizon, Networks, Operation, TransactionBuilder } from 'stellar-sdk';
+import { CacheService } from '../cache/cache.service';
 
 @Injectable()
 export class StellarService {
@@ -10,7 +11,10 @@ export class StellarService {
   private readonly networkPassphrase: string;
   private readonly accountId: string;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    @Inject(CacheService) private readonly cacheService: CacheService,
+  ) {
     const secretKey = this.configService.get<string>('STELLAR_SECRET_KEY');
     const horizonUrl = this.configService.get<string>('STELLAR_HORIZON_URL') || 'https://horizon-testnet.stellar.org';
     this.networkPassphrase =
@@ -65,12 +69,21 @@ export class StellarService {
       throw new InternalServerErrorException('Hash is required to verify a document');
     }
 
+    const cacheKey = `stellar_verify_${hash}`;
+    const cached = await this.cacheService.get<boolean>(cacheKey);
+    if (cached !== undefined) {
+      return cached;
+    }
+
     try {
       const key = this.buildDataKey(hash);
       const account = await this.server.loadAccount(this.accountId);
-      return key in account.data_attr;
+      const result = key in account.data_attr;
+      await this.cacheService.set(cacheKey, result, 600);
+      return result;
     } catch (error) {
       if (error?.response?.status === 404) {
+        await this.cacheService.set(cacheKey, false, 600);
         return false;
       }
       this.logger.error('Failed to verify document hash', error);

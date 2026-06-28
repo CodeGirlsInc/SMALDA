@@ -8,8 +8,11 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { buildWinstonOptions } from './common/logger.config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
+import { CacheModule } from './cache/cache.module';
 import { DocumentsModule } from './documents/documents.module';
+import { ExportModule } from './export/export.module';
 import { MailModule } from './mail/mail.module';
+import { OrganizationModule } from './organization/organization.module';
 import { QueueModule } from './queue/queue.module';
 import { RiskAssessmentModule } from './risk-assessment/risk-assessment.module';
 import { StellarModule } from './stellar/stellar.module';
@@ -56,6 +59,9 @@ import { ConfigValidationSchema } from './config/config.validation';
     VerificationModule,
     MailModule,
     QueueModule,
+    OrganizationModule,
+    ExportModule,
+    CacheModule,
   ],
   controllers: [AppController],
   providers: [AppService, LoggerMiddleware],
