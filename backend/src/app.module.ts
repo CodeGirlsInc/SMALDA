@@ -13,7 +13,9 @@ import { I18nModule } from './i18n/i18n.module';
 import { HealthModule } from './health/health.module';
 import { buildWinstonOptions } from './common/logger.config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
+import { CacheModule } from './cache/cache.module';
 import { DocumentsModule } from './documents/documents.module';
+import { ExportModule } from './export/export.module';
 import { ExternalValidationModule } from './external-validation/external-validation.module';
 import { MailModule } from './mail/mail.module';
 import { OrganizationModule } from './organization/organization.module';
@@ -71,6 +73,8 @@ import { ConfigValidationSchema } from './config/config.validation';
     MailModule,
     QueueModule,
     OrganizationModule,
+    ExportModule,
+    CacheModule,
     SharingModule,
   ],
   controllers: [AppController],

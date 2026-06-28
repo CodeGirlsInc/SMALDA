@@ -22,7 +22,10 @@ export class StellarService {
   private readonly accountId: string;
   private readonly SHA256_HASH_REGEX = /^[a-f0-9]{64}$/i;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    @Inject(CacheService) private readonly cacheService: CacheService,
+  ) {
     const secretKey = this.configService.get<string>('STELLAR_SECRET_KEY');
     const horizonUrl =
       this.configService.get<string>('STELLAR_HORIZON_URL') ||
@@ -87,12 +90,21 @@ export class StellarService {
   async verifyHash(hash: string): Promise<boolean> {
     this.validateHash(hash);
 
+    const cacheKey = `stellar_verify_${hash}`;
+    const cached = await this.cacheService.get<boolean>(cacheKey);
+    if (cached !== undefined) {
+      return cached;
+    }
+
     try {
       const key = this.buildDataKey(hash);
       const account = await this.server.loadAccount(this.accountId);
-      return key in account.data_attr;
+      const result = key in account.data_attr;
+      await this.cacheService.set(cacheKey, result, 600);
+      return result;
     } catch (error) {
       if (error?.response?.status === 404) {
+        await this.cacheService.set(cacheKey, false, 600);
         return false;
       }
       this.logger.error('Failed to verify document hash', error);

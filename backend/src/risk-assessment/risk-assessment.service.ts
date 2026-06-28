@@ -1,7 +1,8 @@
-﻿import { Injectable, NotFoundException } from '@nestjs/common';
+﻿import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 
 import { DocumentsService } from '../documents/documents.service';
 import { Document } from '../documents/entities/document.entity';
+import { CacheService } from '../cache/cache.service';
 
 export enum RiskFlag {
   MISSING_PARCEL_ID = 'MISSING_PARCEL_ID',
@@ -28,9 +29,18 @@ const FLAG_WEIGHTS: Record<RiskFlag, number> = {
 
 @Injectable()
 export class RiskAssessmentService {
-  constructor(private readonly documentsService: DocumentsService) {}
+  constructor(
+    private readonly documentsService: DocumentsService,
+    @Inject(CacheService) private readonly cacheService: CacheService,
+  ) {}
 
   async assessDocument(documentId: string): Promise<RiskResult> {
+    const cacheKey = `risk_${documentId}`;
+    const cached = await this.cacheService.get<RiskResult>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const document = await this.documentsService.findById(documentId);
     if (!document) {
       throw new NotFoundException('Document not found');
@@ -41,7 +51,9 @@ export class RiskAssessmentService {
 
     await this.documentsService.updateRisk(documentId, score, flags);
 
-    return { score, flags };
+    const result = { score, flags };
+    await this.cacheService.set(cacheKey, result, 300);
+    return result;
   }
 
   private async detectFlags(document: Document): Promise<RiskFlag[]> {
