@@ -2,16 +2,20 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WinstonModule } from 'nest-winston';
+import { ScheduleModule } from '@nestjs/schedule';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { buildWinstonOptions } from './common/logger.config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
+import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
 import { DocumentsModule } from './documents/documents.module';
+import { GatewayModule } from './gateway/gateway.module';
 import { MailModule } from './mail/mail.module';
 import { QueueModule } from './queue/queue.module';
 import { RiskAssessmentModule } from './risk-assessment/risk-assessment.module';
+import { SchedulerModule } from './scheduler/scheduler.module';
 import { StellarModule } from './stellar/stellar.module';
 import { UsersModule } from './users/users.module';
 import { VerificationModule } from './verification/verification.module';
@@ -48,10 +52,13 @@ import { ConfigValidationSchema } from './config/config.validation';
         synchronize: true,
       }),
     }),
+    ScheduleModule.forRoot(),
     UsersModule,
     AuthModule,
     DocumentsModule,
+    GatewayModule,
     RiskAssessmentModule,
+    SchedulerModule,
     StellarModule,
     VerificationModule,
     MailModule,

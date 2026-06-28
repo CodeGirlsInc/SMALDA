@@ -8,6 +8,7 @@ import { VerificationStatus } from '../verification/entities/verification-record
 import { RiskAssessmentService } from '../risk-assessment/risk-assessment.service';
 import { StellarService } from '../stellar/stellar.service';
 import { QueueService } from './queue.service';
+import { DocumentsGateway } from '../gateway/documents.gateway';
 
 @Injectable()
 export class DocumentProcessor implements OnModuleDestroy {
@@ -20,6 +21,7 @@ export class DocumentProcessor implements OnModuleDestroy {
     private readonly documentsService: DocumentsService,
     private readonly stellarService: StellarService,
     private readonly verificationService: VerificationService,
+    private readonly documentsGateway: DocumentsGateway,
   ) {
     const connection = this.queueService.getConnectionOptions();
     this.worker = new Worker(
@@ -27,6 +29,10 @@ export class DocumentProcessor implements OnModuleDestroy {
       async (job) => {
         if (job.name === 'analyze') {
           await this.riskService.assessDocument(job.data.documentId);
+          const doc = await this.documentsService.findById(job.data.documentId);
+          if (doc) {
+            this.documentsGateway.notifyDocumentStatusChange(doc.id, doc.status);
+          }
           return;
         }
         if (job.name === 'anchor') {
@@ -36,8 +42,29 @@ export class DocumentProcessor implements OnModuleDestroy {
       { connection },
     );
 
-    this.worker.on('failed', (job, err) => {
-      this.logger.error(`Job ${job.id} (${job.name}) failed`, err?.message, err?.stack);
+    this.worker.on('failed', async (job, err) => {
+      this.logger.error(`Job ${job.id} (${job.name}) failed: ${err.message}`, err.stack);
+
+      if (job.name === 'anchor' && job.attemptsMade >= 3) {
+        try {
+          await this.verificationService.create({
+            documentId: job.data.documentId,
+            stellarTxHash: '',
+            stellarLedger: 0,
+            anchoredAt: new Date(),
+            status: VerificationStatus.FAILED,
+          });
+          await this.documentsService.updateStatus(
+            job.data.documentId,
+            DocumentStatus.FLAGGED,
+          );
+          this.documentsGateway.notifyDocumentStatusChange(job.data.documentId, DocumentStatus.FLAGGED);
+          this.documentsGateway.notifyVerificationUpdate(job.data.documentId, 'failed');
+          this.logger.warn(`Dead-letter handled for anchor job ${job.id}`);
+        } catch (e) {
+          this.logger.error(`Failed to record dead-letter for job ${job.id}`, e?.message);
+        }
+      }
     });
   }
 
@@ -58,6 +85,8 @@ export class DocumentProcessor implements OnModuleDestroy {
     });
 
     await this.documentsService.updateStatus(documentId, DocumentStatus.VERIFIED);
+    this.documentsGateway.notifyDocumentStatusChange(documentId, DocumentStatus.VERIFIED);
+    this.documentsGateway.notifyVerificationUpdate(documentId, 'confirmed', txHash);
     this.logger.log(`Document ${documentId} verified on ledger ${ledger}`);
   }
 
