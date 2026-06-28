@@ -9,6 +9,7 @@ import { UsersModule } from '../users/users.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { GithubStrategy } from './strategies/github.strategy';
+import { RedisService } from './redis.service';
 
 @Module({
   imports: [
@@ -19,12 +20,21 @@ import { GithubStrategy } from './strategies/github.strategy';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         secret: config.get<string>('JWT_SECRET'),
-        signOptions: { expiresIn: (config.get<string>('JWT_EXPIRATION') || '1h') as unknown as number },
+        signOptions: {
+          expiresIn: (config.get<string>('JWT_EXPIRATION') ||
+            '1h') as unknown as number,
+        },
       }),
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, GoogleStrategy, GithubStrategy],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    GoogleStrategy,
+    GithubStrategy,
+    RedisService,
+  ],
   exports: [AuthService],
 })
 export class AuthModule {}

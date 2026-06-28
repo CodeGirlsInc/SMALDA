@@ -1,0 +1,40 @@
+{
+  "auth": {
+    "login": {
+      "success": "Login successful",
+      "invalid": "Invalid email or password",
+      "notVerified": "Email not verified"
+    },
+    "register": {
+      "success": "Registration successful",
+      "emailTaken": "Email already in use"
+    },
+    "forgotPassword": {
+      "success": "Reset link sent to your email"
+    },
+    "resetPassword": {
+      "success": "Password reset successful"
+    }
+  },
+  "verification": {
+    "notFound": "Verification record not found",
+    "alreadyConfirmed": "Document already confirmed",
+    "qrGenerated": "QR code generated successfully"
+  },
+  "approval": {
+    "notFound": "Approval record not found",
+    "alreadyProcessed": "Request already processed",
+    "insufficientApprovals": "Insufficient approvals",
+    "approved": "Request approved",
+    "rejected": "Request rejected"
+  },
+  "document": {
+    "notFound": "Document not found",
+    "uploadSuccess": "Document uploaded successfully"
+  },
+  "errors": {
+    "internal": "An internal error occurred",
+    "notFound": "Resource not found",
+    "forbidden": "Access denied"
+  }
+}

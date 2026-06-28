@@ -63,7 +63,9 @@ export class RiskAssessmentService {
       flags.push(RiskFlag.MISSING_PARCEL_ID);
     }
 
-    const ownerDocuments = await this.documentsService.findByOwner(document.ownerId);
+    const ownerDocuments = await this.documentsService.findByOwner(
+      document.ownerId,
+    );
     if (ownerDocuments.some((doc) => doc.id !== document.id)) {
       flags.push(RiskFlag.OVERLAPPING_CLAIM);
     }
@@ -92,7 +94,10 @@ export class RiskAssessmentService {
   }
 
   private calculateScore(flags: RiskFlag[]): number {
-    const rawScore = flags.reduce((total, flag) => total + (FLAG_WEIGHTS[flag] ?? 0), 0);
+    const rawScore = flags.reduce(
+      (total, flag) => total + (FLAG_WEIGHTS[flag] ?? 0),
+      0,
+    );
     return Math.min(100, Math.max(0, rawScore));
   }
 }
