@@ -8,6 +8,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { buildWinstonOptions } from './common/logger.config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
+import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
 import { DocumentsModule } from './documents/documents.module';
 import { MailModule } from './mail/mail.module';
 import { QueueModule } from './queue/queue.module';
@@ -58,10 +59,14 @@ import { ConfigValidationSchema } from './config/config.validation';
     QueueModule,
   ],
   controllers: [AppController],
-  providers: [AppService, LoggerMiddleware],
+  providers: [AppService, LoggerMiddleware, CorrelationIdMiddleware],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(LoggerMiddleware).forRoutes('*');
+    consumer
+      .apply(CorrelationIdMiddleware)
+      .forRoutes('*')
+      .apply(LoggerMiddleware)
+      .forRoutes('*');
   }
 }

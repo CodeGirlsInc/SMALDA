@@ -6,6 +6,7 @@ import {
   NotFoundException,
   Param,
   Post,
+  Query,
   Req,
   Res,
   UploadedFile,
@@ -26,6 +27,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User } from '../users/entities/user.entity';
 import { QueueService } from '../queue/queue.service';
 import { VerificationService } from '../verification/verification.service';
+import { PaginationDto } from '../common/dto/pagination.dto';
 
 const ALLOWED_MIME_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
@@ -118,6 +120,22 @@ export class DocumentsController {
       message: 'Verification queued',
       documentId: document.id,
     });
+  }
+
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  async getMyDocuments(
+    @Query() query: PaginationDto,
+    @Req() req: Request & { user?: User },
+    @Res() res: Response,
+  ) {
+    const user = req.user;
+    if (!user) {
+      throw new BadRequestException('Authenticated user is required');
+    }
+
+    const result = await this.documentsService.findByOwnerPaginated(user.id, query);
+    return res.status(200).json(result);
   }
 
   @Get(':id/verification')

@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { Worker } from 'bullmq';
+import { JOB_NAMES } from './job.constants';
 
 import { DocumentsService } from '../documents/documents.service';
 import { DocumentStatus } from '../documents/entities/document.entity';
@@ -25,19 +26,38 @@ export class DocumentProcessor implements OnModuleDestroy {
     this.worker = new Worker(
       this.queueService.queueName,
       async (job) => {
-        if (job.name === 'analyze') {
+        if (job.name === JOB_NAMES.ANALYZE) {
           await this.riskService.assessDocument(job.data.documentId);
           return;
         }
-        if (job.name === 'anchor') {
+        if (job.name === JOB_NAMES.ANCHOR) {
           await this.handleAnchor(job.data.documentId);
         }
       },
       { connection },
     );
 
-    this.worker.on('failed', (job, err) => {
-      this.logger.error(`Job ${job.id} (${job.name}) failed`, err?.message, err?.stack);
+    this.worker.on('failed', async (job, err) => {
+      this.logger.error(`Job ${job.id} (${job.name}) failed: ${err.message}`, err.stack);
+
+      if (job.name === JOB_NAMES.ANCHOR && job.attemptsMade >= 3) {
+        try {
+          await this.verificationService.create({
+            documentId: job.data.documentId,
+            stellarTxHash: '',
+            stellarLedger: 0,
+            anchoredAt: new Date(),
+            status: VerificationStatus.FAILED,
+          });
+          await this.documentsService.updateStatus(
+            job.data.documentId,
+            DocumentStatus.FLAGGED,
+          );
+          this.logger.warn(`Dead-letter handled for anchor job ${job.id}`);
+        } catch (e) {
+          this.logger.error(`Failed to record dead-letter for job ${job.id}`, e?.message);
+        }
+      }
     });
   }
 

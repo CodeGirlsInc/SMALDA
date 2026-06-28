@@ -17,6 +17,7 @@ export class LoggerMiddleware implements NestMiddleware {
     const ip = typeof forwarded === 'string'
       ? forwarded.split(',')[0].trim()
       : forwarded?.[0] ?? req.ip;
+    const correlationId = req['correlationId'] as string | undefined;
 
     res.on('finish', () => {
       const duration = Date.now() - start;
@@ -28,6 +29,10 @@ export class LoggerMiddleware implements NestMiddleware {
         user_agent: userAgent,
         ip,
       };
+
+      if (correlationId) {
+        payload.correlation_id = correlationId;
+      }
 
       if (req.headers.authorization) {
         payload.authorization = '[REDACTED]';
