@@ -2,6 +2,7 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WinstonModule } from 'nest-winston';
+import { ScheduleModule } from '@nestjs/schedule';
 
 import { AdminModule } from './admin/admin.module';
 import { ApprovalModule } from './approval/approval.module';
@@ -14,6 +15,9 @@ import { I18nModule } from './i18n/i18n.module';
 import { HealthModule } from './health/health.module';
 import { buildWinstonOptions } from './common/logger.config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
+import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
+import { DocumentsModule } from './documents/documents.module';
+import { GatewayModule } from './gateway/gateway.module';
 import { CacheModule } from './cache/cache.module';
 import { DocumentsModule } from './documents/documents.module';
 import { ExportModule } from './export/export.module';
@@ -22,6 +26,7 @@ import { MailModule } from './mail/mail.module';
 import { OrganizationModule } from './organization/organization.module';
 import { QueueModule } from './queue/queue.module';
 import { RiskAssessmentModule } from './risk-assessment/risk-assessment.module';
+import { SchedulerModule } from './scheduler/scheduler.module';
 import { SharingModule } from './sharing/sharing.module';
 import { StellarModule } from './stellar/stellar.module';
 import { UsersModule } from './users/users.module';
@@ -59,6 +64,11 @@ import { ConfigValidationSchema } from './config/config.validation';
         synchronize: true,
       }),
     }),
+    ScheduleModule.forRoot(),
+    UsersModule,
+    AuthModule,
+    DocumentsModule,
+    GatewayModule,
     AdminModule,
     I18nModule,
     ApprovalModule,
@@ -70,6 +80,7 @@ import { ConfigValidationSchema } from './config/config.validation';
     DocumentsModule,
     ExternalValidationModule,
     RiskAssessmentModule,
+    SchedulerModule,
     StellarModule,
     VerificationModule,
     MailModule,

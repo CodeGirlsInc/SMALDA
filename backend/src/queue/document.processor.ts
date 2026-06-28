@@ -8,6 +8,7 @@ import { VerificationStatus } from '../verification/entities/verification-record
 import { RiskAssessmentService } from '../risk-assessment/risk-assessment.service';
 import { StellarService } from '../stellar/stellar.service';
 import { QueueService } from './queue.service';
+import { DocumentsGateway } from '../gateway/documents.gateway';
 
 @Injectable()
 export class DocumentProcessor implements OnModuleDestroy {
@@ -20,6 +21,7 @@ export class DocumentProcessor implements OnModuleDestroy {
     private readonly documentsService: DocumentsService,
     private readonly stellarService: StellarService,
     private readonly verificationService: VerificationService,
+    private readonly documentsGateway: DocumentsGateway,
   ) {
     const connection = this.queueService.getConnectionOptions();
     this.worker = new Worker(
