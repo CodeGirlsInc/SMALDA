@@ -7,6 +7,7 @@
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 
 import { UsersService } from '../users/users.service';
 import { RegisterAuthDto } from './dto/register-auth.dto';
@@ -14,6 +15,7 @@ import { LoginAuthDto } from './dto/login-auth.dto';
 import { RefreshAuthDto } from './dto/refresh-auth.dto';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
 import { User, UserRole } from '../users/entities/user.entity';
+import { RedisService } from './redis.service';
 
 @Injectable()
 export class AuthService {
@@ -21,6 +23,7 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly redisService: RedisService,
   ) {}
 
   async register(dto: RegisterAuthDto) {
@@ -51,7 +54,9 @@ export class AuthService {
 
   async handleOAuthLogin(email: string, fullName?: string) {
     if (!email) {
-      throw new BadRequestException('Email is required from the OAuth provider');
+      throw new BadRequestException(
+        'Email is required from the OAuth provider',
+      );
     }
 
     let user = await this.usersService.findByEmail(email);
@@ -75,10 +80,20 @@ export class AuthService {
       throw new BadRequestException('Refresh token is required');
     }
 
+    // Check if the refresh token has been revoked
+    const tokenHash = this.hashToken(refreshToken);
+    const isRevoked = await this.redisService.isTokenRevoked(tokenHash);
+    if (isRevoked) {
+      throw new UnauthorizedException('Token has been revoked');
+    }
+
     try {
-      const payload = await this.jwtService.verifyAsync<JwtPayload>(refreshToken, {
-        secret: this.getRefreshSecret(),
-      });
+      const payload = await this.jwtService.verifyAsync<JwtPayload>(
+        refreshToken,
+        {
+          secret: this.getRefreshSecret(),
+        },
+      );
 
       const user = await this.usersService.findById(payload.sub);
       if (!user) {
@@ -90,6 +105,33 @@ export class AuthService {
     } catch {
       throw new UnauthorizedException('Invalid refresh token');
     }
+  }
+
+  async logout(
+    accessToken: string,
+    refreshToken?: string,
+  ): Promise<{ message: string }> {
+    if (!accessToken) {
+      throw new BadRequestException('Access token is required');
+    }
+
+    // Add access token to blocklist
+    const accessTtl = this.redisService.getTokenRemainingTtl(accessToken);
+    const accessHash = this.hashToken(accessToken);
+    await this.redisService.addToBlocklist(accessHash, accessTtl);
+
+    // If refresh token is provided, add it to blocklist as well
+    if (refreshToken) {
+      const refreshTtl = this.redisService.getTokenRemainingTtl(refreshToken);
+      const refreshHash = this.hashToken(refreshToken);
+      await this.redisService.addToBlocklist(refreshHash, refreshTtl);
+    }
+
+    return { message: 'Successfully logged out' };
+  }
+
+  private hashToken(token: string): string {
+    return crypto.createHash('sha256').update(token).digest('hex');
   }
 
   private async validateCredentials(email: string, password: string) {
@@ -135,8 +177,10 @@ export class AuthService {
   }
 
   private getRefreshSecret() {
-    return this.configService.get<string>('JWT_REFRESH_SECRET') ??
-      this.configService.get<string>('JWT_SECRET');
+    return (
+      this.configService.get<string>('JWT_REFRESH_SECRET') ??
+      this.configService.get<string>('JWT_SECRET')
+    );
   }
 
   private getRefreshExpiration() {
