@@ -1,7 +1,8 @@
-﻿import { Injectable, NotFoundException } from '@nestjs/common';
+﻿import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 
 import { DocumentsService } from '../documents/documents.service';
 import { Document } from '../documents/entities/document.entity';
+import { CacheService } from '../cache/cache.service';
 
 export enum RiskFlag {
   MISSING_PARCEL_ID = 'MISSING_PARCEL_ID',
@@ -28,9 +29,18 @@ const FLAG_WEIGHTS: Record<RiskFlag, number> = {
 
 @Injectable()
 export class RiskAssessmentService {
-  constructor(private readonly documentsService: DocumentsService) {}
+  constructor(
+    private readonly documentsService: DocumentsService,
+    @Inject(CacheService) private readonly cacheService: CacheService,
+  ) {}
 
   async assessDocument(documentId: string): Promise<RiskResult> {
+    const cacheKey = `risk_${documentId}`;
+    const cached = await this.cacheService.get<RiskResult>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const document = await this.documentsService.findById(documentId);
     if (!document) {
       throw new NotFoundException('Document not found');
@@ -41,7 +51,9 @@ export class RiskAssessmentService {
 
     await this.documentsService.updateRisk(documentId, score, flags);
 
-    return { score, flags };
+    const result = { score, flags };
+    await this.cacheService.set(cacheKey, result, 300);
+    return result;
   }
 
   private async detectFlags(document: Document): Promise<RiskFlag[]> {
@@ -51,7 +63,9 @@ export class RiskAssessmentService {
       flags.push(RiskFlag.MISSING_PARCEL_ID);
     }
 
-    const ownerDocuments = await this.documentsService.findByOwner(document.ownerId);
+    const ownerDocuments = await this.documentsService.findByOwner(
+      document.ownerId,
+    );
     if (ownerDocuments.some((doc) => doc.id !== document.id)) {
       flags.push(RiskFlag.OVERLAPPING_CLAIM);
     }
@@ -80,7 +94,10 @@ export class RiskAssessmentService {
   }
 
   private calculateScore(flags: RiskFlag[]): number {
-    const rawScore = flags.reduce((total, flag) => total + (FLAG_WEIGHTS[flag] ?? 0), 0);
+    const rawScore = flags.reduce(
+      (total, flag) => total + (FLAG_WEIGHTS[flag] ?? 0),
+      0,
+    );
     return Math.min(100, Math.max(0, rawScore));
   }
 }

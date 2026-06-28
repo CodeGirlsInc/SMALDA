@@ -25,6 +25,7 @@ use tracing::{info, warn};
 use cache::CacheBackend;
 use hash_validator::{HashValidator, ValidationError as HashValidationError};
 use metrics::MetricsRegistry;
+use module::middleware::hash_normalization::normalize;
 use module::webhook::VerificationWebhookNotifier;
 use stellar::{StellarClient, TransactionRecord};
 
@@ -39,7 +40,7 @@ pub struct AppState {
 }
 
 // Request/Response types
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct VerifyRequest {
     pub document_hash: String,
     pub transaction_id: Option<String>,
@@ -54,7 +55,7 @@ pub struct VerifyResponse {
 }
 
 /// Request type for submitting a document hash to Stellar blockchain
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SubmitRequest {
     pub document_hash: String,
     pub document_id: String,
@@ -70,7 +71,7 @@ pub struct SubmitResponse {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RevokeRequest {
     pub document_hash: String,
     pub reason: String,
@@ -104,7 +105,7 @@ pub struct ValidationErrorResponse {
     pub error: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct BatchVerifyRequest {
     pub hashes: Vec<String>,
 }
@@ -126,7 +127,7 @@ pub struct BatchVerifyItem {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TransferRequest {
     pub document_hash: String,
     pub from_owner: String,
@@ -176,6 +177,8 @@ fn map_validation_error(err: HashValidationError) -> (StatusCode, ValidationErro
 }
 
 pub fn app(state: AppState) -> Router {
+    use crate::module::middleware::hash_normalization::hash_normalization_middleware;
+
     Router::new()
         .route("/health", get(health_check))
         .route("/metrics", get(metrics_handler))
@@ -186,6 +189,7 @@ pub fn app(state: AppState) -> Router {
         .route("/submit", post(submit_document))
         .route("/revoke", post(revoke_document))
         .route("/transfer", post(record_transfer))
+        .layer(axum::middleware::from_fn(hash_normalization_middleware))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -337,7 +341,7 @@ pub async fn verify_document(
     State(state): State<AppState>,
     Json(req): Json<VerifyRequest>,
 ) -> Response {
-    let normalized_hash = HashValidator::normalize(&req.document_hash);
+    let normalized_hash = normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);
         return (status, Json(body)).into_response();
@@ -397,7 +401,7 @@ pub async fn verify_document_history(
     State(state): State<AppState>,
     Path(hash): Path<String>,
 ) -> Response {
-    let normalized_hash = HashValidator::normalize(&hash);
+    let normalized_hash = normalize(&hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);
         return (status, Json(body)).into_response();
@@ -483,8 +487,7 @@ pub async fn batch_verify_documents(
 
 // Helper function to verify a single hash
 async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
-    let normalized_hash = HashValidator::normalize(&hash);
-
+    let normalized_hash = normalize(&hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let error_msg = match err {
             HashValidationError::EmptyHash => "hash must not be empty".to_string(),
@@ -572,7 +575,7 @@ pub async fn submit_document(
     State(state): State<AppState>,
     Json(req): Json<SubmitRequest>,
 ) -> impl IntoResponse {
-    let normalized_hash = HashValidator::normalize(&req.document_hash);
+    let normalized_hash = normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);
         return (status, Json(body)).into_response();
@@ -639,7 +642,7 @@ pub async fn revoke_document(
     State(state): State<AppState>,
     Json(req): Json<RevokeRequest>,
 ) -> impl IntoResponse {
-    let normalized_hash = HashValidator::normalize(&req.document_hash);
+    let normalized_hash = normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);
         return (status, Json(body)).into_response();
@@ -691,7 +694,7 @@ pub async fn revoke_document(
 }
 
 pub async fn transfer_document(Json(req): Json<TransferRequest>) -> impl IntoResponse {
-    let normalized_hash = HashValidator::normalize(&req.document_hash);
+    let normalized_hash = normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);
         return (status, Json(body));

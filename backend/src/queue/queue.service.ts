@@ -24,7 +24,8 @@ export class QueueService implements OnModuleDestroy {
   private buildConnection(): RedisConnectionOptions {
     const host = this.configService.get<string>('REDIS_HOST') || '127.0.0.1';
     const port = Number(this.configService.get<string>('REDIS_PORT') || '6379');
-    const password = this.configService.get<string>('REDIS_PASSWORD') || undefined;
+    const password =
+      this.configService.get<string>('REDIS_PASSWORD') || undefined;
     return { host, port, password };
   }
 
@@ -38,6 +39,17 @@ export class QueueService implements OnModuleDestroy {
 
   async enqueueAnchor(documentId: string) {
     return this.queue.add('anchor', { documentId });
+  }
+
+  async getQueueStats() {
+    const counts = await this.queue.getJobCounts();
+    return {
+      waiting: counts.waiting || 0,
+      active: counts.active || 0,
+      completed: counts.completed || 0,
+      failed: counts.failed || 0,
+      delayed: counts.delayed || 0,
+    };
   }
 
   async onModuleDestroy(): Promise<void> {
