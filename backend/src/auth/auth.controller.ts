@@ -7,6 +7,7 @@
   Res,
   UseGuards,
   BadRequestException,
+  Headers,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '@nestjs/passport';
@@ -18,6 +19,7 @@ import { AuthService } from './auth.service';
 import { RegisterAuthDto } from './dto/register-auth.dto';
 import { LoginAuthDto } from './dto/login-auth.dto';
 import { RefreshAuthDto } from './dto/refresh-auth.dto';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -39,6 +41,21 @@ export class AuthController {
   @Post('refresh')
   refresh(@Body() dto: RefreshAuthDto) {
     return this.authService.refreshToken(dto);
+  }
+
+  @Post('logout')
+  @UseGuards(JwtAuthGuard)
+  async logout(
+    @Req() req: Request & { user?: any },
+    @Headers('authorization') authorization: string,
+    @Body() body?: { refreshToken?: string },
+  ) {
+    // Extract access token from Authorization header
+    const accessToken = authorization?.startsWith('Bearer ')
+      ? authorization.slice(7)
+      : null;
+
+    return this.authService.logout(accessToken, body?.refreshToken);
   }
 
   @Get('google')

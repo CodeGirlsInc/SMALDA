@@ -9,6 +9,7 @@ import { AuthModule } from './auth/auth.module';
 import { buildWinstonOptions } from './common/logger.config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { DocumentsModule } from './documents/documents.module';
+import { ExternalValidationModule } from './external-validation/external-validation.module';
 import { MailModule } from './mail/mail.module';
 import { QueueModule } from './queue/queue.module';
 import { RiskAssessmentModule } from './risk-assessment/risk-assessment.module';
@@ -51,6 +52,7 @@ import { ConfigValidationSchema } from './config/config.validation';
     UsersModule,
     AuthModule,
     DocumentsModule,
+    ExternalValidationModule,
     RiskAssessmentModule,
     StellarModule,
     VerificationModule,
