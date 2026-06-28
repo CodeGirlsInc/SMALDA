@@ -91,10 +91,14 @@ import { ConfigValidationSchema } from './config/config.validation';
     SharingModule,
   ],
   controllers: [AppController],
-  providers: [AppService, LoggerMiddleware],
+  providers: [AppService, LoggerMiddleware, CorrelationIdMiddleware],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(LoggerMiddleware).forRoutes('*');
+    consumer
+      .apply(CorrelationIdMiddleware)
+      .forRoutes('*')
+      .apply(LoggerMiddleware)
+      .forRoutes('*');
   }
 }

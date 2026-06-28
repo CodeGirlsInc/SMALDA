@@ -30,6 +30,10 @@ export class LoggerMiddleware implements NestMiddleware {
         ip,
       };
 
+      if (correlationId) {
+        payload.correlation_id = correlationId;
+      }
+
       if (req.headers.authorization) {
         payload.authorization = '[REDACTED]';
       }

@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { Worker } from 'bullmq';
+import { JOB_NAMES } from './job.constants';
 
 import { DocumentsService } from '../documents/documents.service';
 import { DocumentStatus } from '../documents/entities/document.entity';

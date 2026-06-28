@@ -129,6 +129,22 @@ export class DocumentsController {
     });
   }
 
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  async getMyDocuments(
+    @Query() query: PaginationDto,
+    @Req() req: Request & { user?: User },
+    @Res() res: Response,
+  ) {
+    const user = req.user;
+    if (!user) {
+      throw new BadRequestException('Authenticated user is required');
+    }
+
+    const result = await this.documentsService.findByOwnerPaginated(user.id, query);
+    return res.status(200).json(result);
+  }
+
   @Get(':id/verification')
   @UseGuards(JwtAuthGuard)
   async getVerification(@Param('id') id: string) {

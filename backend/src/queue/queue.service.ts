@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Queue, ConnectionOptions as RedisConnectionOptions } from 'bullmq';
+import { JOB_NAMES, DEDUP_KEY_PREFIX } from './job.constants';
 
 @Injectable()
 export class QueueService implements OnModuleDestroy {
@@ -17,6 +18,7 @@ export class QueueService implements OnModuleDestroy {
         attempts: 3,
         backoff: { type: 'exponential', delay: 1000 },
         removeOnComplete: true,
+        removeOnFail: false,
       },
     });
   }
@@ -34,11 +36,15 @@ export class QueueService implements OnModuleDestroy {
   }
 
   async enqueueAnalyze(documentId: string) {
-    return this.queue.add('analyze', { documentId });
+    return this.queue.add(JOB_NAMES.ANALYZE, { documentId });
   }
 
   async enqueueAnchor(documentId: string) {
-    return this.queue.add('anchor', { documentId });
+    return this.queue.add(
+      JOB_NAMES.ANCHOR,
+      { documentId },
+      { jobId: `${DEDUP_KEY_PREFIX.ANCHOR}:${documentId}` },
+    );
   }
 
   async getQueueStats() {
