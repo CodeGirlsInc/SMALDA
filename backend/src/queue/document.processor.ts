@@ -26,18 +26,41 @@ export class DocumentProcessor implements OnModuleDestroy {
       this.queueService.queueName,
       async (job) => {
         if (job.name === 'analyze') {
+          await job.updateProgress(10);
           await this.riskService.assessDocument(job.data.documentId);
+          await job.updateProgress(50);
+          await this.documentsService.updateStatus(job.data.documentId, DocumentStatus.ANALYZING);
+          await job.updateProgress(100);
+          await this.documentsService.updateStatus(
+            job.data.documentId,
+            DocumentStatus.ANALYZING,
+          );
+          const result = await this.riskService.assessDocument(
+            job.data.documentId,
+          );
+          if (result.flags.length > 0) {
+            await this.documentsService.updateStatus(
+              job.data.documentId,
+              DocumentStatus.FLAGGED,
+            );
+          }
           return;
         }
         if (job.name === 'anchor') {
+          await job.updateProgress(10);
           await this.handleAnchor(job.data.documentId);
+          await job.updateProgress(100);
         }
       },
       { connection },
     );
 
     this.worker.on('failed', (job, err) => {
-      this.logger.error(`Job ${job.id} (${job.name}) failed`, err?.message, err?.stack);
+      this.logger.error(
+        `Job ${job.id} (${job.name}) failed`,
+        err?.message,
+        err?.stack,
+      );
     });
   }
 
@@ -48,7 +71,9 @@ export class DocumentProcessor implements OnModuleDestroy {
       return;
     }
 
-    const { txHash, ledger } = await this.stellarService.anchorHash(document.fileHash);
+    const { txHash, ledger } = await this.stellarService.anchorHash(
+      document.fileHash,
+    );
     await this.verificationService.create({
       documentId,
       stellarTxHash: txHash,
@@ -57,7 +82,10 @@ export class DocumentProcessor implements OnModuleDestroy {
       status: VerificationStatus.CONFIRMED,
     });
 
-    await this.documentsService.updateStatus(documentId, DocumentStatus.VERIFIED);
+    await this.documentsService.updateStatus(
+      documentId,
+      DocumentStatus.VERIFIED,
+    );
     this.logger.log(`Document ${documentId} verified on ledger ${ledger}`);
   }
 

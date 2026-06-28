@@ -30,7 +30,10 @@ export class DocumentsService {
     return this.documentRepository.findOne({ where: { fileHash } });
   }
 
-  async updateStatus(id: string, status: DocumentStatus): Promise<Document | null> {
+  async updateStatus(
+    id: string,
+    status: DocumentStatus,
+  ): Promise<Document | null> {
     await this.documentRepository.update(id, { status });
     return this.findById(id);
   }

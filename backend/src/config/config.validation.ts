@@ -46,6 +46,10 @@ export const ConfigValidationSchema = Joi.object({
     'string.min': 'JWT_SECRET must be at least 32 characters.',
     'any.required': 'JWT_SECRET is required.',
   }),
+  JWT_REFRESH_SECRET: Joi.string().min(32).required().messages({
+    'string.min': 'JWT_REFRESH_SECRET must be at least 32 characters.',
+    'any.required': 'JWT_REFRESH_SECRET is required.',
+  }),
 
   // ── Logging ────────────────────────────────────────────────────────────────
   // Defaults to "debug" in development and "warn" in production.
