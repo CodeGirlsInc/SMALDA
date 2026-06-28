@@ -26,11 +26,17 @@ export class DocumentProcessor implements OnModuleDestroy {
       this.queueService.queueName,
       async (job) => {
         if (job.name === 'analyze') {
+          await job.updateProgress(10);
           await this.riskService.assessDocument(job.data.documentId);
+          await job.updateProgress(50);
+          await this.documentsService.updateStatus(job.data.documentId, DocumentStatus.ANALYZING);
+          await job.updateProgress(100);
           return;
         }
         if (job.name === 'anchor') {
+          await job.updateProgress(10);
           await this.handleAnchor(job.data.documentId);
+          await job.updateProgress(100);
         }
       },
       { connection },

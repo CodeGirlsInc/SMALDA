@@ -40,6 +40,17 @@ export class QueueService implements OnModuleDestroy {
     return this.queue.add('anchor', { documentId });
   }
 
+  async getQueueStats() {
+    const counts = await this.queue.getJobCounts();
+    return {
+      waiting: counts.waiting || 0,
+      active: counts.active || 0,
+      completed: counts.completed || 0,
+      failed: counts.failed || 0,
+      delayed: counts.delayed || 0,
+    };
+  }
+
   async onModuleDestroy(): Promise<void> {
     await this.queue.close();
   }
