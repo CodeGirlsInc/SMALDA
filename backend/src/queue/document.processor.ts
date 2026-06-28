@@ -9,6 +9,7 @@ import { VerificationStatus } from '../verification/entities/verification-record
 import { RiskAssessmentService } from '../risk-assessment/risk-assessment.service';
 import { StellarService } from '../stellar/stellar.service';
 import { QueueService } from './queue.service';
+import { DocumentsGateway } from '../gateway/documents.gateway';
 
 @Injectable()
 export class DocumentProcessor implements OnModuleDestroy {
@@ -21,43 +22,48 @@ export class DocumentProcessor implements OnModuleDestroy {
     private readonly documentsService: DocumentsService,
     private readonly stellarService: StellarService,
     private readonly verificationService: VerificationService,
+    private readonly documentsGateway: DocumentsGateway,
   ) {
     const connection = this.queueService.getConnectionOptions();
     this.worker = new Worker(
       this.queueService.queueName,
       async (job) => {
-        if (job.name === JOB_NAMES.ANALYZE) {
+        if (job.name === 'analyze') {
+          await job.updateProgress(10);
           await this.riskService.assessDocument(job.data.documentId);
+          await job.updateProgress(50);
+          await this.documentsService.updateStatus(job.data.documentId, DocumentStatus.ANALYZING);
+          await job.updateProgress(100);
+          await this.documentsService.updateStatus(
+            job.data.documentId,
+            DocumentStatus.ANALYZING,
+          );
+          const result = await this.riskService.assessDocument(
+            job.data.documentId,
+          );
+          if (result.flags.length > 0) {
+            await this.documentsService.updateStatus(
+              job.data.documentId,
+              DocumentStatus.FLAGGED,
+            );
+          }
           return;
         }
-        if (job.name === JOB_NAMES.ANCHOR) {
+        if (job.name === 'anchor') {
+          await job.updateProgress(10);
           await this.handleAnchor(job.data.documentId);
+          await job.updateProgress(100);
         }
       },
       { connection },
     );
 
-    this.worker.on('failed', async (job, err) => {
-      this.logger.error(`Job ${job.id} (${job.name}) failed: ${err.message}`, err.stack);
-
-      if (job.name === JOB_NAMES.ANCHOR && job.attemptsMade >= 3) {
-        try {
-          await this.verificationService.create({
-            documentId: job.data.documentId,
-            stellarTxHash: '',
-            stellarLedger: 0,
-            anchoredAt: new Date(),
-            status: VerificationStatus.FAILED,
-          });
-          await this.documentsService.updateStatus(
-            job.data.documentId,
-            DocumentStatus.FLAGGED,
-          );
-          this.logger.warn(`Dead-letter handled for anchor job ${job.id}`);
-        } catch (e) {
-          this.logger.error(`Failed to record dead-letter for job ${job.id}`, e?.message);
-        }
-      }
+    this.worker.on('failed', (job, err) => {
+      this.logger.error(
+        `Job ${job.id} (${job.name}) failed`,
+        err?.message,
+        err?.stack,
+      );
     });
   }
 
@@ -68,7 +74,9 @@ export class DocumentProcessor implements OnModuleDestroy {
       return;
     }
 
-    const { txHash, ledger } = await this.stellarService.anchorHash(document.fileHash);
+    const { txHash, ledger } = await this.stellarService.anchorHash(
+      document.fileHash,
+    );
     await this.verificationService.create({
       documentId,
       stellarTxHash: txHash,
@@ -77,7 +85,10 @@ export class DocumentProcessor implements OnModuleDestroy {
       status: VerificationStatus.CONFIRMED,
     });
 
-    await this.documentsService.updateStatus(documentId, DocumentStatus.VERIFIED);
+    await this.documentsService.updateStatus(
+      documentId,
+      DocumentStatus.VERIFIED,
+    );
     this.logger.log(`Document ${documentId} verified on ledger ${ledger}`);
   }
 

@@ -1,19 +1,22 @@
 import {
   BadRequestException,
+  Body,
   ConflictException,
   Controller,
   Get,
   NotFoundException,
   Param,
+  Patch,
   Post,
   Query,
   Req,
   Res,
   UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
 import { createHash } from 'crypto';
@@ -27,7 +30,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User } from '../users/entities/user.entity';
 import { QueueService } from '../queue/queue.service';
 import { VerificationService } from '../verification/verification.service';
-import { PaginationDto } from '../common/dto/pagination.dto';
+import { SearchDocumentsDto } from './dto/search-documents.dto';
+import { UpdateDocumentStatusDto } from './dto/update-document-status.dto';
 
 const ALLOWED_MIME_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
@@ -39,7 +43,9 @@ const fileFilter: multer.Options['fileFilter'] = (_req, file, callback) => {
     return callback(null, true);
   }
 
-  return callback(new BadRequestException('Only PDF, PNG, or JPEG files are allowed'));
+  return callback(
+    new BadRequestException('Only PDF, PNG, or JPEG files are allowed'),
+  );
 };
 
 @Controller('documents')
@@ -80,7 +86,8 @@ export class DocumentsController {
       return res.status(200).send(existing);
     }
 
-    const uploadDir = this.configService.get<string>('UPLOAD_DIR') || './uploads';
+    const uploadDir =
+      this.configService.get<string>('UPLOAD_DIR') || './uploads';
     await fs.mkdir(uploadDir, { recursive: true });
 
     const extension = extname(file.originalname) || '';
@@ -148,9 +155,57 @@ export class DocumentsController {
 
     const record = await this.verificationService.findLatestByDocument(id);
     if (!record) {
-      throw new NotFoundException('No verification record found for this document');
+      throw new NotFoundException(
+        'No verification record found for this document',
+      );
     }
 
     return record;
+  }
+
+  @Get()
+  @UseGuards(JwtAuthGuard)
+  async search(@Query() query: SearchDocumentsDto, @Res() res: Response) {
+    const result = await this.documentsService.search(query);
+    return res.status(200).json(result);
+  }
+
+  @Post('bulk')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FilesInterceptor('files', 10))
+  async uploadBulk(
+    @UploadedFiles() files: Express.Multer.File[],
+    @Req() req: Request & { user?: User },
+    @Res() res: Response,
+  ) {
+    if (!files || files.length === 0) {
+      throw new BadRequestException('At least one file is required');
+    }
+
+    const user = req.user;
+    if (!user) {
+      throw new BadRequestException('Authenticated user is required');
+    }
+
+    const created = await this.documentsService.bulkCreate(files, user.id);
+    return res.status(201).json(created);
+  }
+
+  @Patch(':id/status')
+  @UseGuards(JwtAuthGuard)
+  async updateStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateDocumentStatusDto,
+    @Res() res: Response,
+  ) {
+    const document = await this.documentsService.updateStatus(
+      id,
+      dto.status as DocumentStatus,
+    );
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+
+    return res.status(200).json(document);
   }
 }
