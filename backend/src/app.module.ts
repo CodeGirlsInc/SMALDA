@@ -3,9 +3,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WinstonModule } from 'nest-winston';
 
+import { AdminVerificationsModule } from './admin-verifications/admin-verifications.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
+import { HealthModule } from './health/health.module';
 import { buildWinstonOptions } from './common/logger.config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { DocumentsModule } from './documents/documents.module';
@@ -51,6 +54,9 @@ import { ConfigValidationSchema } from './config/config.validation';
         synchronize: true,
       }),
     }),
+    AuditModule,
+    AdminVerificationsModule,
+    HealthModule,
     UsersModule,
     AuthModule,
     DocumentsModule,
