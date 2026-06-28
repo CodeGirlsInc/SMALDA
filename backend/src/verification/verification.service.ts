@@ -19,6 +19,10 @@ export class VerificationService {
     return this.verificationRepository.save(record);
   }
 
+  findOne(id: string): Promise<VerificationRecord | null> {
+    return this.verificationRepository.findOne({ where: { id } });
+  }
+
   findByDocument(documentId: string): Promise<VerificationRecord[]> {
     return this.verificationRepository.find({ where: { documentId } });
   }
