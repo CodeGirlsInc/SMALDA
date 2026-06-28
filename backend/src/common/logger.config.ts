@@ -1,7 +1,11 @@
 ﻿import { WinstonModuleOptions } from 'nest-winston';
 import { format, transports } from 'winston';
 
-const baseFormat = format.combine(format.timestamp(), format.errors({ stack: true }), format.json());
+const baseFormat = format.combine(
+  format.timestamp(),
+  format.errors({ stack: true }),
+  format.json(),
+);
 
 export function buildWinstonOptions(level?: string): WinstonModuleOptions {
   return {
