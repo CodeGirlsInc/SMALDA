@@ -11,8 +11,10 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { DocumentsModule } from './documents/documents.module';
 import { ExternalValidationModule } from './external-validation/external-validation.module';
 import { MailModule } from './mail/mail.module';
+import { OrganizationModule } from './organization/organization.module';
 import { QueueModule } from './queue/queue.module';
 import { RiskAssessmentModule } from './risk-assessment/risk-assessment.module';
+import { SharingModule } from './sharing/sharing.module';
 import { StellarModule } from './stellar/stellar.module';
 import { UsersModule } from './users/users.module';
 import { VerificationModule } from './verification/verification.module';
@@ -58,6 +60,8 @@ import { ConfigValidationSchema } from './config/config.validation';
     VerificationModule,
     MailModule,
     QueueModule,
+    OrganizationModule,
+    SharingModule,
   ],
   controllers: [AppController],
   providers: [AppService, LoggerMiddleware],
