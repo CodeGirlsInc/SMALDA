@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { IValidationProvider, ValidationResponse } from '../interfaces/validation-provider.interface';
+import {
+  IValidationProvider,
+  ValidationResponse,
+} from '../interfaces/validation-provider.interface';
 import { ValidationResult } from '../entities/validation-request.entity';
 
 @Injectable()

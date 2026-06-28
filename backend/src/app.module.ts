@@ -4,16 +4,22 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { WinstonModule } from 'nest-winston';
 
 import { ApprovalModule } from './approval/approval.module';
+import { AdminVerificationsModule } from './admin-verifications/admin-verifications.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { I18nModule } from './i18n/i18n.module';
+import { HealthModule } from './health/health.module';
 import { buildWinstonOptions } from './common/logger.config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { DocumentsModule } from './documents/documents.module';
+import { ExternalValidationModule } from './external-validation/external-validation.module';
 import { MailModule } from './mail/mail.module';
+import { OrganizationModule } from './organization/organization.module';
 import { QueueModule } from './queue/queue.module';
 import { RiskAssessmentModule } from './risk-assessment/risk-assessment.module';
+import { SharingModule } from './sharing/sharing.module';
 import { StellarModule } from './stellar/stellar.module';
 import { UsersModule } from './users/users.module';
 import { VerificationModule } from './verification/verification.module';
@@ -52,14 +58,20 @@ import { ConfigValidationSchema } from './config/config.validation';
     }),
     I18nModule,
     ApprovalModule,
+    AuditModule,
+    AdminVerificationsModule,
+    HealthModule,
     UsersModule,
     AuthModule,
     DocumentsModule,
+    ExternalValidationModule,
     RiskAssessmentModule,
     StellarModule,
     VerificationModule,
     MailModule,
     QueueModule,
+    OrganizationModule,
+    SharingModule,
   ],
   controllers: [AppController],
   providers: [AppService, LoggerMiddleware],
