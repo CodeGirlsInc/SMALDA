@@ -25,6 +25,7 @@ import { extname, join } from 'path';
 import * as multer from 'multer';
 
 import { DocumentsService } from './documents.service';
+import { Throttle } from '@nestjs/throttler';
 import { DocumentStatus } from './entities/document.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User } from '../users/entities/user.entity';
@@ -57,6 +58,7 @@ export class DocumentsController {
     private readonly verificationService: VerificationService,
   ) {}
 
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('upload')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(
