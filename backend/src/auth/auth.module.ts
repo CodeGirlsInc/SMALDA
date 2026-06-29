@@ -10,9 +10,11 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { GithubStrategy } from './strategies/github.strategy';
 import { RedisService } from './redis.service';
+import { MailModule } from '../mail/mail.module';
 
 @Module({
   imports: [
+    MailModule,
     UsersModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({

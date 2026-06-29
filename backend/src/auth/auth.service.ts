@@ -1,6 +1,7 @@
 ﻿import {
   ConflictException,
   Injectable,
+  Logger,
   UnauthorizedException,
   BadRequestException,
 } from '@nestjs/common';
@@ -10,6 +11,7 @@ import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 
 import { UsersService } from '../users/users.service';
+import { MailService } from '../mail/mail.service';
 import { RegisterAuthDto } from './dto/register-auth.dto';
 import { LoginAuthDto } from './dto/login-auth.dto';
 import { RefreshAuthDto } from './dto/refresh-auth.dto';
@@ -19,11 +21,14 @@ import { RedisService } from './redis.service';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly redisService: RedisService,
+    private readonly mailService: MailService,
   ) {}
 
   async register(dto: RegisterAuthDto) {
@@ -40,6 +45,17 @@ export class AuthService {
       role: UserRole.USER,
       isVerified: false,
     });
+
+    // Fire-and-forget welcome email. SMTP is optional in this stack, so a
+    // delivery failure must not block registration. MailService logs (but does
+    // not throw) when the transport is unavailable.
+    try {
+      await this.mailService.sendWelcome(user.email, user.fullName);
+    } catch (err) {
+      this.logger.warn(
+        `welcome email failed for ${user.email}: ${(err as Error).message}`,
+      );
+    }
 
     const access_token = await this.generateAccessToken(user);
     return { access_token };
