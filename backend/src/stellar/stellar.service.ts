@@ -1,4 +1,5 @@
 ﻿import {
+  Inject,
   Injectable,
   BadRequestException,
   InternalServerErrorException,
@@ -12,6 +13,7 @@ import {
   Operation,
   TransactionBuilder,
 } from 'stellar-sdk';
+import { CacheService } from '../cache/cache.service';
 
 @Injectable()
 export class StellarService {
@@ -55,6 +57,9 @@ export class StellarService {
   private buildDataKey(hash: string) {
     this.validateHash(hash);
     const payload = hash.slice(0, 58);
+    if (!payload) {
+      throw new BadRequestException('Hash produced empty data key payload');
+    }
     return `doc_${payload}`;
   }
 
