@@ -1,5 +1,7 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WinstonModule } from 'nest-winston';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -89,9 +91,28 @@ import { ConfigValidationSchema } from './config/config.validation';
     ExportModule,
     CacheModule,
     SharingModule,
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        throttlers: [
+          {
+            // THROTTLE_TTL is interpreted as seconds (matches .env.example);
+            // @nestjs/throttler v6 expects ttl in milliseconds, so multiply by 1000.
+            ttl: (config.get<number>('THROTTLE_TTL') ?? 60) * 1000,
+            limit: config.get<number>('THROTTLE_LIMIT') ?? 10,
+          },
+        ],
+      }),
+    }),
   ],
   controllers: [AppController],
-  providers: [AppService, LoggerMiddleware, CorrelationIdMiddleware],
+  providers: [
+    AppService,
+    LoggerMiddleware,
+    CorrelationIdMiddleware,
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
