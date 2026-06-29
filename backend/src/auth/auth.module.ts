@@ -27,6 +27,7 @@ import { MailModule } from '../mail/mail.module';
             '1h') as unknown as number,
         },
       }),
+      global: true,
     }),
   ],
   controllers: [AuthController],

@@ -19,7 +19,7 @@ import {
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { promises as fs } from 'fs';
 import { extname, join } from 'path';
 import * as multer from 'multer';
@@ -36,6 +36,20 @@ import { UpdateDocumentStatusDto } from './dto/update-document-status.dto';
 
 const ALLOWED_MIME_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
+
+const MAGIC_BYTES: Record<string, number[][]> = {
+  'application/pdf': [[0x25, 0x50, 0x44, 0x46]],
+  'image/png': [[0x89, 0x50, 0x4e, 0x47]],
+  'image/jpeg': [[0xff, 0xd8, 0xff]],
+};
+
+function validateMagicBytes(mimeType: string, buffer: Buffer): boolean {
+  const signatures = MAGIC_BYTES[mimeType];
+  if (!signatures) return false;
+  return signatures.some((sig) =>
+    sig.every((byte, i) => buffer[i] === byte),
+  );
+}
 
 const multerStorage = multer.memoryStorage();
 
@@ -82,6 +96,10 @@ export class DocumentsController {
       throw new BadRequestException('Authenticated user is required');
     }
 
+    if (!validateMagicBytes(file.mimetype, file.buffer)) {
+      throw new BadRequestException('File content does not match claimed type');
+    }
+
     const fileHash = createHash('sha256').update(file.buffer).digest('hex');
     const existing = await this.documentsService.findByFileHash(fileHash);
     if (existing) {
@@ -93,7 +111,7 @@ export class DocumentsController {
     await fs.mkdir(uploadDir, { recursive: true });
 
     const extension = extname(file.originalname) || '';
-    const filename = `${fileHash}${extension}`;
+    const filename = `${randomUUID()}${extension}`;
     const targetPath = join(uploadDir, filename);
     await fs.writeFile(targetPath, file.buffer);
 
