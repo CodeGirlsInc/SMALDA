@@ -6,6 +6,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { WinstonModule } from 'nest-winston';
 import { ScheduleModule } from '@nestjs/schedule';
 
+import { AccessLogsModule } from './access-logs/access-logs.module';
+import { ActivityTrackerModule } from './activity-tracker/activity-tracker.module';
 import { AdminModule } from './admin/admin.module';
 import { ApprovalModule } from './approval/approval.module';
 import { AdminVerificationsModule } from './admin-verifications/admin-verifications.module';
@@ -18,6 +20,7 @@ import { HealthModule } from './health/health.module';
 import { buildWinstonOptions } from './common/logger.config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
+import { DisputeModule } from './dispute/dispute.module';
 import { DocumentsModule } from './documents/documents.module';
 import { GatewayModule } from './gateway/gateway.module';
 import { CacheModule } from './cache/cache.module';
@@ -91,6 +94,9 @@ import { ConfigValidationSchema } from './config/config.validation';
     ExportModule,
     CacheModule,
     SharingModule,
+    AccessLogsModule,
+    ActivityTrackerModule,
+    DisputeModule,
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
