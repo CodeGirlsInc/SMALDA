@@ -4,6 +4,7 @@
   Logger,
   UnauthorizedException,
   BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -144,6 +145,57 @@ export class AuthService {
     }
 
     return { message: 'Successfully logged out' };
+  }
+
+  private readonly verificationTokens = new Map<string, { token: string; expires: Date }>();
+  private readonly resetTokens = new Map<string, { token: string; expires: Date }>();
+
+  async sendVerification(email: string) {
+    const user = await this.usersService.findByEmail(email);
+    if (!user) throw new NotFoundException('User not found');
+    if (user.isVerified) throw new BadRequestException('Email already verified');
+
+    const token = crypto.randomBytes(32).toString('hex');
+    this.verificationTokens.set(email, { token, expires: new Date(Date.now() + 3600_000) });
+
+    this.logger.log(`Verification token for ${email}: ${token}`);
+    return { message: 'Verification email sent' };
+  }
+
+  async verifyEmail(email: string, token: string) {
+    const stored = this.verificationTokens.get(email);
+    if (!stored || stored.token !== token) throw new BadRequestException('Invalid token');
+    if (stored.expires < new Date()) throw new BadRequestException('Token expired');
+
+    const user = await this.usersService.findByEmail(email);
+    if (!user) throw new NotFoundException('User not found');
+    await this.usersService.update(user.id, { isVerified: true } as any);
+    this.verificationTokens.delete(email);
+    return { message: 'Email verified successfully' };
+  }
+
+  async forgotPassword(email: string) {
+    const user = await this.usersService.findByEmail(email);
+    if (!user) throw new NotFoundException('User not found');
+
+    const token = crypto.randomBytes(32).toString('hex');
+    this.resetTokens.set(email, { token, expires: new Date(Date.now() + 3600_000) });
+
+    this.logger.log(`Password reset token for ${email}: ${token}`);
+    return { message: 'Password reset email sent' };
+  }
+
+  async resetPassword(email: string, token: string, newPassword: string) {
+    const stored = this.resetTokens.get(email);
+    if (!stored || stored.token !== token) throw new BadRequestException('Invalid token');
+    if (stored.expires < new Date()) throw new BadRequestException('Token expired');
+
+    const user = await this.usersService.findByEmail(email);
+    if (!user) throw new NotFoundException('User not found');
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await this.usersService.update(user.id, { passwordHash } as any);
+    this.resetTokens.delete(email);
+    return { message: 'Password reset successfully' };
   }
 
   private hashToken(token: string): string {

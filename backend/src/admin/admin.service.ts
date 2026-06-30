@@ -1,7 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like } from 'typeorm';
-import { User } from '../users/entities/user.entity';
+import { User, UserRole } from '../users/entities/user.entity';
 import { Document, DocumentStatus } from '../documents/entities/document.entity';
 import { QueueService } from '../queue/queue.service';
 
@@ -61,5 +61,31 @@ export class AdminService {
 
   async getQueueStats() {
     return this.queueService.getQueueStats();
+  }
+
+  async listUsers(page = 1, limit = 20) {
+    const [data, total] = await this.userRepository.findAndCount({
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  async getUser(id: string) {
+    const user = await this.userRepository.findOne({ where: { id } });
+    if (!user) throw new NotFoundException('User not found');
+    return user;
+  }
+
+  async changeUserRole(id: string, role: UserRole) {
+    const user = await this.getUser(id);
+    user.role = role;
+    return this.userRepository.save(user);
+  }
+
+  async deleteUser(id: string) {
+    const user = await this.getUser(id);
+    await this.userRepository.softDelete(user.id);
   }
 }
