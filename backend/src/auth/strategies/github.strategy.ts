@@ -13,12 +13,15 @@ export class GithubStrategy extends PassportStrategy(Strategy, 'github') {
       throw new Error('GitHub OAuth client credentials are not configured');
     }
 
+    const appUrl = (configService.get<string>('APP_URL') || 'http://localhost:6004').replace(/\/+$/, '');
+    const callbackURL =
+      configService.get<string>('GITHUB_CALLBACK_URL') ??
+      `${appUrl}/api/auth/github/callback`;
+
     super({
       clientID,
       clientSecret,
-      callbackURL:
-        configService.get<string>('GITHUB_CALLBACK_URL') ||
-        `${configService.get<string>('APP_URL') || 'http://localhost:6004'}/api/auth/github/callback`,
+      callbackURL,
       scope: ['user:email'],
     });
   }

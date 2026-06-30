@@ -13,12 +13,15 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       throw new Error('Google OAuth client credentials are not configured');
     }
 
+    const appUrl = (configService.get<string>('APP_URL') || 'http://localhost:6004').replace(/\/+$/, '');
+    const callbackURL =
+      configService.get<string>('GOOGLE_CALLBACK_URL') ??
+      `${appUrl}/api/auth/google/callback`;
+
     super({
       clientID,
       clientSecret,
-      callbackURL:
-        configService.get<string>('GOOGLE_CALLBACK_URL') ||
-        `${configService.get<string>('APP_URL') || 'http://localhost:6004'}/api/auth/google/callback`,
+      callbackURL,
       scope: ['email', 'profile'],
     });
   }

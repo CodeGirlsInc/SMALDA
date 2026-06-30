@@ -38,7 +38,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       path: request.url,
     };
 
-    this.logger.error(`${status}   -> `, (exception as Error)?.stack);
+    this.logger.error(`HTTP ${status} Error -> ${request.method} ${request.url}`, (exception as Error)?.stack);
 
     if (!this.isProduction && exception instanceof Error) {
       Object.assign(payload, { stack: exception.stack });
