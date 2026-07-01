@@ -9,6 +9,7 @@ import { VerificationModule } from '../verification/verification.module';
 import { QueueModule } from '../queue/queue.module';
 
 @Module({
+  
   imports: [
     ConfigModule,
     TypeOrmModule.forFeature([Document]),

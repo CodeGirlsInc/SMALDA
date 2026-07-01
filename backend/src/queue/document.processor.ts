@@ -1,6 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { Worker } from 'bullmq';
-import { JOB_NAMES } from './job.constants';
 
 import { DocumentsService } from '../documents/documents.service';
 import { DocumentStatus } from '../documents/entities/document.entity';
@@ -9,7 +8,6 @@ import { VerificationStatus } from '../verification/entities/verification-record
 import { RiskAssessmentService } from '../risk-assessment/risk-assessment.service';
 import { StellarService } from '../stellar/stellar.service';
 import { QueueService } from './queue.service';
-import { DocumentsGateway } from '../gateway/documents.gateway';
 
 @Injectable()
 export class DocumentProcessor implements OnModuleDestroy {
@@ -22,48 +20,24 @@ export class DocumentProcessor implements OnModuleDestroy {
     private readonly documentsService: DocumentsService,
     private readonly stellarService: StellarService,
     private readonly verificationService: VerificationService,
-    private readonly documentsGateway: DocumentsGateway,
   ) {
     const connection = this.queueService.getConnectionOptions();
     this.worker = new Worker(
       this.queueService.queueName,
       async (job) => {
         if (job.name === 'analyze') {
-          await job.updateProgress(10);
           await this.riskService.assessDocument(job.data.documentId);
-          await job.updateProgress(50);
-          await this.documentsService.updateStatus(job.data.documentId, DocumentStatus.ANALYZING);
-          await job.updateProgress(100);
-          await this.documentsService.updateStatus(
-            job.data.documentId,
-            DocumentStatus.ANALYZING,
-          );
-          const result = await this.riskService.assessDocument(
-            job.data.documentId,
-          );
-          if (result.flags.length > 0) {
-            await this.documentsService.updateStatus(
-              job.data.documentId,
-              DocumentStatus.FLAGGED,
-            );
-          }
           return;
         }
         if (job.name === 'anchor') {
-          await job.updateProgress(10);
           await this.handleAnchor(job.data.documentId);
-          await job.updateProgress(100);
         }
       },
       { connection },
     );
 
     this.worker.on('failed', (job, err) => {
-      this.logger.error(
-        `Job ${job.id} (${job.name}) failed`,
-        err?.message,
-        err?.stack,
-      );
+      this.logger.error(`Job ${job.id} (${job.name}) failed`, err?.message, err?.stack);
     });
   }
 
@@ -74,9 +48,7 @@ export class DocumentProcessor implements OnModuleDestroy {
       return;
     }
 
-    const { txHash, ledger } = await this.stellarService.anchorHash(
-      document.fileHash,
-    );
+    const { txHash, ledger } = await this.stellarService.anchorHash(document.fileHash);
     await this.verificationService.create({
       documentId,
       stellarTxHash: txHash,
@@ -85,10 +57,7 @@ export class DocumentProcessor implements OnModuleDestroy {
       status: VerificationStatus.CONFIRMED,
     });
 
-    await this.documentsService.updateStatus(
-      documentId,
-      DocumentStatus.VERIFIED,
-    );
+    await this.documentsService.updateStatus(documentId, DocumentStatus.VERIFIED);
     this.logger.log(`Document ${documentId} verified on ledger ${ledger}`);
   }
 

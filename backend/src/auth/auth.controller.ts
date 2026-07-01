@@ -7,7 +7,6 @@
   Res,
   UseGuards,
   BadRequestException,
-  Headers,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '@nestjs/passport';
@@ -19,11 +18,6 @@ import { AuthService } from './auth.service';
 import { RegisterAuthDto } from './dto/register-auth.dto';
 import { LoginAuthDto } from './dto/login-auth.dto';
 import { RefreshAuthDto } from './dto/refresh-auth.dto';
-import { SendVerificationDto } from './dto/send-verification.dto';
-import { VerifyEmailDto } from './dto/verify-email.dto';
-import { ForgotPasswordDto } from './dto/forgot-password.dto';
-import { ResetPasswordDto } from './dto/reset-password.dto';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -45,41 +39,6 @@ export class AuthController {
   @Post('refresh')
   refresh(@Body() dto: RefreshAuthDto) {
     return this.authService.refreshToken(dto);
-  }
-
-  @Post('send-verification')
-  sendVerification(@Body() dto: SendVerificationDto) {
-    return this.authService.sendVerification(dto.email);
-  }
-
-  @Post('verify-email')
-  verifyEmail(@Body() dto: VerifyEmailDto) {
-    return this.authService.verifyEmail(dto.email, dto.token);
-  }
-
-  @Post('forgot-password')
-  forgotPassword(@Body() dto: ForgotPasswordDto) {
-    return this.authService.forgotPassword(dto.email);
-  }
-
-  @Post('reset-password')
-  resetPassword(@Body() dto: ResetPasswordDto) {
-    return this.authService.resetPassword(dto.email, dto.token, dto.newPassword);
-  }
-
-  @Post('logout')
-  @UseGuards(JwtAuthGuard)
-  async logout(
-    @Req() req: Request & { user?: any },
-    @Headers('authorization') authorization: string,
-    @Body() body?: { refreshToken?: string },
-  ) {
-    // Extract access token from Authorization header
-    const accessToken = authorization?.startsWith('Bearer ')
-      ? authorization.slice(7)
-      : null;
-
-    return this.authService.logout(accessToken, body?.refreshToken);
   }
 
   @Get('google')

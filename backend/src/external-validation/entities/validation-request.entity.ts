@@ -1,9 +1,4 @@
-import {
-  Column,
-  CreateDateColumn,
-  Entity,
-  PrimaryGeneratedColumn,
-} from 'typeorm';
+import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 export enum ValidationStatus {
   PENDING = 'PENDING',
@@ -45,11 +40,7 @@ export class ValidationRequest {
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, any>;
 
-  @Column({
-    type: 'enum',
-    enum: ValidationStatus,
-    default: ValidationStatus.PENDING,
-  })
+  @Column({ type: 'enum', enum: ValidationStatus, default: ValidationStatus.PENDING })
   status: ValidationStatus;
 
   @Column({ type: 'enum', enum: ValidationResult, nullable: true })

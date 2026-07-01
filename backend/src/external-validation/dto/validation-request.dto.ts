@@ -1,8 +1,4 @@
-import {
-  ValidationType,
-  ValidationStatus,
-  ValidationResult,
-} from '../entities/validation-request.entity';
+import { ValidationType, ValidationStatus, ValidationResult } from '../entities/validation-request.entity';
 
 export class CreateValidationRequestDto {
   documentId: string;

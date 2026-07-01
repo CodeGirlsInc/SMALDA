@@ -19,10 +19,6 @@ export class VerificationService {
     return this.verificationRepository.save(record);
   }
 
-  findOne(id: string): Promise<VerificationRecord | null> {
-    return this.verificationRepository.findOne({ where: { id } });
-  }
-
   findByDocument(documentId: string): Promise<VerificationRecord[]> {
     return this.verificationRepository.find({ where: { documentId } });
   }
@@ -34,10 +30,7 @@ export class VerificationService {
     });
   }
 
-  async updateStatus(
-    id: string,
-    status: VerificationStatus,
-  ): Promise<VerificationRecord | null> {
+  async updateStatus(id: string, status: VerificationStatus): Promise<VerificationRecord | null> {
     await this.verificationRepository.update(id, { status });
     return this.verificationRepository.findOne({ where: { id } });
   }

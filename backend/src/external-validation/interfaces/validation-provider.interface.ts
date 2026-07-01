@@ -1,7 +1,4 @@
-import {
-  ValidationType,
-  ValidationResult,
-} from '../entities/validation-request.entity';
+import { ValidationType, ValidationResult } from '../entities/validation-request.entity';
 
 export interface ValidationDocumentParams {
   documentId: string;
@@ -23,8 +20,6 @@ export interface ValidationResponse {
 }
 
 export interface IValidationProvider {
-  validateDocument(
-    params: ValidationDocumentParams,
-  ): Promise<ValidationResponse>;
+  validateDocument(params: ValidationDocumentParams): Promise<ValidationResponse>;
   healthCheck(): Promise<boolean>;
 }

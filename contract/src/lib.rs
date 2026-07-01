@@ -2,7 +2,6 @@ pub mod cache;
 pub mod config;
 pub mod hash_validator;
 pub mod metrics;
-pub mod module;
 pub mod rate_limit;
 pub mod stellar;
 
@@ -25,8 +24,6 @@ use tracing::{info, warn};
 use cache::CacheBackend;
 use hash_validator::{HashValidator, ValidationError as HashValidationError};
 use metrics::MetricsRegistry;
-use module::middleware::hash_normalization::normalize;
-use module::webhook::VerificationWebhookNotifier;
 use stellar::{StellarClient, TransactionRecord};
 
 // Application state
@@ -36,11 +33,10 @@ pub struct AppState {
     pub cache: Arc<CacheBackend>,
     pub metrics: Arc<MetricsRegistry>,
     pub stellar_secret_key: String,
-    pub notifier: Arc<VerificationWebhookNotifier>,
 }
 
 // Request/Response types
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct VerifyRequest {
     pub document_hash: String,
     pub transaction_id: Option<String>,
@@ -55,7 +51,7 @@ pub struct VerifyResponse {
 }
 
 /// Request type for submitting a document hash to Stellar blockchain
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct SubmitRequest {
     pub document_hash: String,
     pub document_id: String,
@@ -71,7 +67,7 @@ pub struct SubmitResponse {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct RevokeRequest {
     pub document_hash: String,
     pub reason: String,
@@ -105,7 +101,7 @@ pub struct ValidationErrorResponse {
     pub error: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct BatchVerifyRequest {
     pub hashes: Vec<String>,
 }
@@ -127,7 +123,7 @@ pub struct BatchVerifyItem {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct TransferRequest {
     pub document_hash: String,
     pub from_owner: String,
@@ -177,8 +173,6 @@ fn map_validation_error(err: HashValidationError) -> (StatusCode, ValidationErro
 }
 
 pub fn app(state: AppState) -> Router {
-    use crate::module::middleware::hash_normalization::hash_normalization_middleware;
-
     Router::new()
         .route("/health", get(health_check))
         .route("/metrics", get(metrics_handler))
@@ -189,7 +183,6 @@ pub fn app(state: AppState) -> Router {
         .route("/submit", post(submit_document))
         .route("/revoke", post(revoke_document))
         .route("/transfer", post(record_transfer))
-        .layer(axum::middleware::from_fn(hash_normalization_middleware))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -269,17 +262,6 @@ pub async fn record_transfer(
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
 
-    let anchored_at = Utc::now().timestamp();
-    state
-        .notifier
-        .notify(
-            "document.transferred",
-            &req.document_hash,
-            &transfer_hash,
-            anchored_at,
-        )
-        .await;
-
     let record = TransferRecord {
         document_hash: req.document_hash.clone(),
         from_owner: req.from_owner.clone(),
@@ -341,7 +323,7 @@ pub async fn verify_document(
     State(state): State<AppState>,
     Json(req): Json<VerifyRequest>,
 ) -> Response {
-    let normalized_hash = normalize(&req.document_hash);
+    let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);
         return (status, Json(body)).into_response();
@@ -401,7 +383,7 @@ pub async fn verify_document_history(
     State(state): State<AppState>,
     Path(hash): Path<String>,
 ) -> Response {
-    let normalized_hash = normalize(&hash);
+    let normalized_hash = HashValidator::normalize(&hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);
         return (status, Json(body)).into_response();
@@ -487,7 +469,8 @@ pub async fn batch_verify_documents(
 
 // Helper function to verify a single hash
 async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
-    let normalized_hash = normalize(&hash);
+    let normalized_hash = HashValidator::normalize(&hash);
+
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let error_msg = match err {
             HashValidationError::EmptyHash => "hash must not be empty".to_string(),
@@ -571,130 +554,40 @@ async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
     }
 }
 
-pub async fn submit_document(
-    State(state): State<AppState>,
-    Json(req): Json<SubmitRequest>,
-) -> impl IntoResponse {
-    let normalized_hash = normalize(&req.document_hash);
+pub async fn submit_document(Json(req): Json<SubmitRequest>) -> impl IntoResponse {
+    let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);
-        return (status, Json(body)).into_response();
+        return (status, Json(body));
     }
 
-    let memo = format!(
-        "SUBMIT:{}",
-        &normalized_hash[..19.min(normalized_hash.len())]
-    );
-    match state.stellar.anchor_transfer(&normalized_hash, &memo).await {
-        Ok(()) => {
-            let anchored_at = Utc::now().timestamp();
-            let tx_hash = format!("0x{}", &normalized_hash[..16]);
-
-            let submit_key = format!("submit:{}", normalized_hash);
-            let record = serde_json::json!({ "tx_hash": tx_hash, "anchored_at": anchored_at });
-            if let Err(e) = state
-                .cache
-                .set_raw(&submit_key, &record.to_string(), 60 * 60 * 24 * 365)
-                .await
-            {
-                warn!("Failed to persist submit record: {}", e);
-            }
-
-            state
-                .notifier
-                .notify(
-                    "document.submitted",
-                    &normalized_hash,
-                    &tx_hash,
-                    anchored_at,
-                )
-                .await;
-
-            (
-                StatusCode::OK,
-                Json(serde_json::json!({
-                    "success": true,
-                    "transaction_id": tx_hash,
-                    "anchored_at": anchored_at,
-                    "error": null
-                })),
-            )
-                .into_response()
-        }
-        Err(e) => {
-            warn!(
-                "Stellar anchor failed for submit {}: {}",
-                normalized_hash, e
-            );
-            state.metrics.increment_error_count();
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ValidationErrorResponse {
-                    error: format!("stellar anchor failed: {}", e),
-                }),
-            )
-                .into_response()
-        }
-    }
+    // Endpoint behavior not yet implemented; preserve previous BAD_REQUEST semantics.
+    (
+        StatusCode::BAD_REQUEST,
+        Json(ValidationErrorResponse {
+            error: "submit endpoint not yet implemented".to_string(),
+        }),
+    )
 }
 
-pub async fn revoke_document(
-    State(state): State<AppState>,
-    Json(req): Json<RevokeRequest>,
-) -> impl IntoResponse {
-    let normalized_hash = normalize(&req.document_hash);
+pub async fn revoke_document(Json(req): Json<RevokeRequest>) -> impl IntoResponse {
+    let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);
-        return (status, Json(body)).into_response();
+        return (status, Json(body));
     }
 
-    let memo = format!(
-        "REVOKE:{}",
-        &normalized_hash[..19.min(normalized_hash.len())]
-    );
-    match state.stellar.anchor_transfer(&normalized_hash, &memo).await {
-        Ok(()) => {
-            let revoked_at = Utc::now().timestamp();
-            let tx_hash = format!("0x{}", &normalized_hash[..16]);
-
-            let revoked_key = format!("revoked:{}", normalized_hash);
-            if let Err(e) = state.cache.set(&revoked_key, &true, u64::MAX / 2).await {
-                warn!("Failed to cache revocation: {}", e);
-            }
-
-            state
-                .notifier
-                .notify("document.revoked", &normalized_hash, &tx_hash, revoked_at)
-                .await;
-
-            (
-                StatusCode::OK,
-                Json(RevokeResponse {
-                    transaction_id: tx_hash,
-                    revoked_at,
-                }),
-            )
-                .into_response()
-        }
-        Err(e) => {
-            warn!(
-                "Stellar anchor failed for revoke {}: {}",
-                normalized_hash, e
-            );
-            state.metrics.increment_error_count();
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ValidationErrorResponse {
-                    error: format!("stellar anchor failed: {}", e),
-                }),
-            )
-                .into_response()
-        }
-    }
+    // Endpoint behavior not yet implemented; preserve previous NOT_FOUND semantics.
+    (
+        StatusCode::NOT_FOUND,
+        Json(ValidationErrorResponse {
+            error: "revoke endpoint not yet implemented".to_string(),
+        }),
+    )
 }
 
 pub async fn transfer_document(Json(req): Json<TransferRequest>) -> impl IntoResponse {
-    let normalized_hash = normalize(&req.document_hash);
+    let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);
         return (status, Json(body));

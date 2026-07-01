@@ -10,12 +10,6 @@ import { config as loadEnv } from 'dotenv';
 
 loadEnv({ path: '.env' });
 
-const REQUIRED_ENV_VARS = ['DATABASE_HOST', 'DATABASE_USER', 'DATABASE_PASSWORD', 'DATABASE_NAME', 'JWT_SECRET', 'JWT_REFRESH_SECRET'];
-const missing = REQUIRED_ENV_VARS.filter((v) => !process.env[v]);
-if (missing.length > 0) {
-  throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
-}
-
 async function bootstrap() {
   const logger = WinstonModule.createLogger(buildWinstonOptions());
   const app = await NestFactory.create(AppModule, { logger });

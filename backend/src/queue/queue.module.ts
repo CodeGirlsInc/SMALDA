@@ -2,7 +2,6 @@ import { forwardRef, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
 import { DocumentsModule } from '../documents/documents.module';
-import { GatewayModule } from '../gateway/gateway.module';
 import { RiskAssessmentModule } from '../risk-assessment/risk-assessment.module';
 import { StellarModule } from '../stellar/stellar.module';
 import { VerificationModule } from '../verification/verification.module';
@@ -13,7 +12,6 @@ import { QueueService } from './queue.service';
   imports: [
     ConfigModule,
     forwardRef(() => DocumentsModule),
-    GatewayModule,
     RiskAssessmentModule,
     StellarModule,
     VerificationModule,
