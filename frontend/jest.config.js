@@ -12,4 +12,16 @@ const config = {
   },
 };
 
-module.exports = createJestConfig(config);
+// next/jest sets a blanket `/node_modules/` transformIgnorePattern, which stops
+// next-intl (shipped as ES modules) from being transformed. Override the
+// generated config so those packages are transpiled for Jest.
+module.exports = async () => {
+  const jestConfig = await createJestConfig(config)();
+  return {
+    ...jestConfig,
+    transformIgnorePatterns: [
+      "/node_modules/(?!(?:\\.pnpm/)?(?:next-intl|use-intl|intl-messageformat|@formatjs)/)",
+      "^.+\\.module\\.(css|sass|scss)$",
+    ],
+  };
+};

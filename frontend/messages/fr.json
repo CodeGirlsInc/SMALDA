@@ -1,0 +1,113 @@
+{
+  "common": {
+    "appName": "SMALDA",
+    "loading": "Chargement…",
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "previous": "Précédent",
+    "next": "Suivant"
+  },
+  "nav": {
+    "dashboard": "Tableau de bord",
+    "documents": "Documents",
+    "users": "Utilisateurs",
+    "settings": "Paramètres",
+    "signOut": "Se déconnecter"
+  },
+  "languageSwitcher": {
+    "label": "Langue",
+    "en": "English",
+    "fr": "Français",
+    "es": "Español",
+    "saved": "Préférence de langue enregistrée",
+    "saveError": "Impossible d'enregistrer votre préférence de langue"
+  },
+  "auth": {
+    "login": {
+      "title": "Connexion à SMALDA",
+      "subtitle": "Vérification sécurisée des documents fonciers",
+      "emailLabel": "Adresse e-mail",
+      "emailPlaceholder": "vous@exemple.com",
+      "passwordLabel": "Mot de passe",
+      "passwordPlaceholder": "Saisissez votre mot de passe",
+      "rememberMe": "Se souvenir de moi",
+      "forgotPassword": "Mot de passe oublié ?",
+      "submit": "Se connecter",
+      "submitting": "Connexion…",
+      "noAccount": "Vous n'avez pas de compte ?",
+      "signUp": "Créer un compte",
+      "errorRequired": "Veuillez saisir votre e-mail et votre mot de passe.",
+      "errorInvalid": "E-mail ou mot de passe invalide.",
+      "errorGeneric": "Une erreur est survenue. Veuillez réessayer."
+    }
+  },
+  "dashboard": {
+    "title": "Tableau de bord",
+    "welcome": "Bon retour",
+    "subtitle": "Voici un aperçu de vos documents fonciers.",
+    "stats": {
+      "total": "Total des documents",
+      "verified": "Vérifiés",
+      "flagged": "Signalés",
+      "pending": "En attente de vérification"
+    },
+    "quickActions": "Actions rapides",
+    "uploadDocument": "Téléverser un document",
+    "viewDocuments": "Voir tous les documents"
+  },
+  "documents": {
+    "title": "Tous les documents",
+    "filters": {
+      "legend": "Filtres de documents",
+      "status": "Statut",
+      "allStatuses": "Tous les statuts",
+      "ownerEmail": "E-mail du propriétaire",
+      "ownerEmailPlaceholder": "Rechercher par e-mail…",
+      "uploadedFrom": "Téléversé à partir du",
+      "uploadedTo": "Téléversé jusqu'au",
+      "riskRange": "Plage de score de risque",
+      "apply": "Appliquer les filtres",
+      "reset": "Réinitialiser"
+    },
+    "status": {
+      "pending": "En attente",
+      "analyzing": "Analyse en cours",
+      "verified": "Vérifié",
+      "flagged": "Signalé",
+      "rejected": "Rejeté"
+    },
+    "table": {
+      "name": "Nom du document",
+      "owner": "Propriétaire",
+      "status": "Statut",
+      "riskScore": "Score de risque",
+      "uploaded": "Téléversé",
+      "flags": "Signalements",
+      "noFlags": "Aucun",
+      "moreFlags": "+{count} de plus",
+      "download": "Télécharger",
+      "downloadLabel": "Télécharger {title}"
+    },
+    "loading": "Chargement des documents…",
+    "empty": "Aucun document ne correspond aux filtres actuels.",
+    "emptyHint": "Essayez d'ajuster vos filtres ou de les réinitialiser.",
+    "loadError": "Échec du chargement des documents",
+    "downloadError": "Échec du téléchargement du document.",
+    "pagination": {
+      "summary": "Affichage de {from} à {to} sur {total}"
+    }
+  },
+  "settings": {
+    "title": "Paramètres",
+    "sections": {
+      "security": "Sécurité",
+      "notifications": "Notifications",
+      "data": "Données et confidentialité",
+      "language": "Langue"
+    },
+    "language": {
+      "title": "Langue",
+      "description": "Choisissez la langue utilisée dans l'interface et dans les e-mails que nous vous envoyons."
+    }
+  }
+}

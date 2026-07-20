@@ -1,0 +1,113 @@
+{
+  "common": {
+    "appName": "SMALDA",
+    "loading": "Loading…",
+    "save": "Save",
+    "cancel": "Cancel",
+    "previous": "Previous",
+    "next": "Next"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "documents": "Documents",
+    "users": "Users",
+    "settings": "Settings",
+    "signOut": "Sign out"
+  },
+  "languageSwitcher": {
+    "label": "Language",
+    "en": "English",
+    "fr": "Français",
+    "es": "Español",
+    "saved": "Language preference saved",
+    "saveError": "Could not save your language preference"
+  },
+  "auth": {
+    "login": {
+      "title": "Sign in to SMALDA",
+      "subtitle": "Secure land document verification",
+      "emailLabel": "Email address",
+      "emailPlaceholder": "you@example.com",
+      "passwordLabel": "Password",
+      "passwordPlaceholder": "Enter your password",
+      "rememberMe": "Remember me",
+      "forgotPassword": "Forgot password?",
+      "submit": "Sign in",
+      "submitting": "Signing in…",
+      "noAccount": "Don't have an account?",
+      "signUp": "Create one",
+      "errorRequired": "Please enter your email and password.",
+      "errorInvalid": "Invalid email or password.",
+      "errorGeneric": "Something went wrong. Please try again."
+    }
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "welcome": "Welcome back",
+    "subtitle": "Here's an overview of your land documents.",
+    "stats": {
+      "total": "Total documents",
+      "verified": "Verified",
+      "flagged": "Flagged",
+      "pending": "Pending review"
+    },
+    "quickActions": "Quick actions",
+    "uploadDocument": "Upload a document",
+    "viewDocuments": "View all documents"
+  },
+  "documents": {
+    "title": "All Documents",
+    "filters": {
+      "legend": "Document filters",
+      "status": "Status",
+      "allStatuses": "All statuses",
+      "ownerEmail": "Owner email",
+      "ownerEmailPlaceholder": "Search by email…",
+      "uploadedFrom": "Uploaded from",
+      "uploadedTo": "Uploaded to",
+      "riskRange": "Risk score range",
+      "apply": "Apply filters",
+      "reset": "Reset"
+    },
+    "status": {
+      "pending": "Pending",
+      "analyzing": "Analyzing",
+      "verified": "Verified",
+      "flagged": "Flagged",
+      "rejected": "Rejected"
+    },
+    "table": {
+      "name": "Document name",
+      "owner": "Owner",
+      "status": "Status",
+      "riskScore": "Risk score",
+      "uploaded": "Uploaded",
+      "flags": "Flags",
+      "noFlags": "None",
+      "moreFlags": "+{count} more",
+      "download": "Download",
+      "downloadLabel": "Download {title}"
+    },
+    "loading": "Loading documents…",
+    "empty": "No documents match the current filters.",
+    "emptyHint": "Try adjusting your filters or reset them.",
+    "loadError": "Failed to load documents",
+    "downloadError": "Failed to download document.",
+    "pagination": {
+      "summary": "Showing {from}–{to} of {total}"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "sections": {
+      "security": "Security",
+      "notifications": "Notifications",
+      "data": "Data & privacy",
+      "language": "Language"
+    },
+    "language": {
+      "title": "Language",
+      "description": "Choose the language used across the interface and in the emails we send you."
+    }
+  }
+}
