@@ -222,6 +222,118 @@ impl StellarClient {
             Err(anyhow!("Horizon {} — {}", status_code, detail))
         }
     }
+
+    /// Record a document revocation on Stellar using a `ManageData` operation.
+    ///
+    /// Key: `"revoked_" + &hash[..56]`  (max 64 bytes).
+    /// Value: the revocation JSON payload (truncated to 64 bytes).
+    pub async fn anchor_revocation(
+        &self,
+        hash: &str,
+        revocation_json: &str,
+        public_key: &str,
+        secret_key: &str,
+    ) -> Result<AnchorResult> {
+        info!(
+            "Recording revocation for {} (account: {})",
+            &hash[..hash.len().min(16)],
+            public_key
+        );
+
+        // Fetch account sequence number.
+        let account_url = format!("{}/accounts/{}", self.horizon_url, public_key);
+        let acct_resp = self
+            .http_client
+            .get(&account_url)
+            .send()
+            .await
+            .map_err(|e| anyhow!("Failed to fetch account info: {}", e))?;
+
+        if !acct_resp.status().is_success() {
+            return Err(anyhow!(
+                "Horizon {} when fetching account {}",
+                acct_resp.status().as_u16(),
+                public_key
+            ));
+        }
+        let acct: HorizonAccount = acct_resp.json().await?;
+        let sequence: i64 = acct
+            .sequence
+            .parse()
+            .map_err(|_| anyhow!("Could not parse account sequence"))?;
+
+        let revocation_key = build_revocation_key(hash);
+
+        // Stellar ManageData values are max 64 bytes.
+        let raw = revocation_json.as_bytes();
+        let value_bytes = &raw[..raw.len().min(64)];
+        let data_value =
+            DataValue::from_slice(value_bytes).map_err(|e| anyhow!("DataValue error: {:?}", e))?;
+
+        let op = Operation::new_manage_data()
+            .with_data_name(revocation_key)
+            .with_data_value(Some(data_value))
+            .build()
+            .map_err(|e| anyhow!("Failed to build ManageData operation: {:?}", e))?;
+
+        let keypair = KeyPair::from_secret_seed(secret_key)
+            .map_err(|e| anyhow!("Invalid secret key: {:?}", e))?;
+
+        let network = if self.horizon_url.contains("testnet") {
+            Network::new_test()
+        } else {
+            Network::new_public()
+        };
+
+        let mut tx = Transaction::builder(keypair.public_key().clone(), sequence, MIN_BASE_FEE)
+            .add_operation(op)
+            .into_transaction()
+            .map_err(|e| anyhow!("Failed to build transaction: {:?}", e))?;
+
+        tx.sign(&keypair, &network)
+            .map_err(|e| anyhow!("Failed to sign transaction: {:?}", e))?;
+
+        let envelope: TransactionEnvelope = tx.into_envelope();
+        let xdr_bytes = envelope
+            .xdr_bytes()
+            .map_err(|e| anyhow!("XDR serialization failed: {:?}", e))?;
+        let xdr_b64 = base64::engine::general_purpose::STANDARD.encode(&xdr_bytes);
+
+        let submit_url = format!("{}/transactions", self.horizon_url);
+        let form_body = format!("tx={}", urlencoding::encode(&xdr_b64));
+
+        let submit_resp = self
+            .http_client
+            .post(&submit_url)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(form_body)
+            .send()
+            .await
+            .map_err(|e| anyhow!("Transaction submission failed: {}", e))?;
+
+        if submit_resp.status().is_success() {
+            let tx_resp: HorizonTxResponse = submit_resp.json().await?;
+            let anchored_at = tx_resp
+                .created_at
+                .as_deref()
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| dt.timestamp())
+                .unwrap_or_else(|| Utc::now().timestamp());
+            Ok(AnchorResult {
+                tx_hash: tx_resp.hash,
+                ledger: tx_resp.ledger,
+                anchored_at,
+            })
+        } else {
+            let status_code = submit_resp.status().as_u16();
+            let err_text = submit_resp.text().await.unwrap_or_default();
+            let detail = serde_json::from_str::<HorizonError>(&err_text)
+                .ok()
+                .and_then(|e| e.detail.or(e.title))
+                .unwrap_or(err_text);
+            Err(anyhow!("Horizon revocation {} — {}", status_code, detail))
+        }
+    }
 }
 
 /// Build the ManageData key: `"doc_" + &hash[..58]`  (max 62 bytes ≤ 64-byte limit).
