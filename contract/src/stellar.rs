@@ -170,11 +170,10 @@ impl StellarClient {
             Network::new_public()
         };
 
-        let mut tx =
-            Transaction::builder(keypair.public_key().clone(), sequence, MIN_BASE_FEE)
-                .add_operation(op)
-                .into_transaction()
-                .map_err(|e| anyhow!("Failed to build transaction: {:?}", e))?;
+        let mut tx = Transaction::builder(keypair.public_key().clone(), sequence, MIN_BASE_FEE)
+            .add_operation(op)
+            .into_transaction()
+            .map_err(|e| anyhow!("Failed to build transaction: {:?}", e))?;
 
         tx.sign(&keypair, &network)
             .map_err(|e| anyhow!("Failed to sign transaction: {:?}", e))?;

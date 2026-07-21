@@ -574,7 +574,10 @@ pub async fn submit_document(
 
     // Idempotency check — return cached anchor result if it exists.
     if let Ok(Some(cached)) = state.cache.get::<SubmitResponse>(&cache_key).await {
-        info!("Cache hit for submit: returning existing anchor for {}", normalized_hash);
+        info!(
+            "Cache hit for submit: returning existing anchor for {}",
+            normalized_hash
+        );
         return Json(cached).into_response();
     }
 
@@ -599,8 +602,15 @@ pub async fn submit_document(
 
             // Cache the result so duplicate submissions get a fast 200.
             const ANCHOR_CACHE_TTL: u64 = 60 * 60 * 24 * 365; // 1 year
-            if let Err(e) = state.cache.set(&cache_key, &response, ANCHOR_CACHE_TTL).await {
-                warn!("Failed to cache anchor result for {}: {}", normalized_hash, e);
+            if let Err(e) = state
+                .cache
+                .set(&cache_key, &response, ANCHOR_CACHE_TTL)
+                .await
+            {
+                warn!(
+                    "Failed to cache anchor result for {}: {}",
+                    normalized_hash, e
+                );
             }
 
             info!(
