@@ -1,0 +1,113 @@
+{
+  "common": {
+    "appName": "SMALDA",
+    "loading": "Cargando…",
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "previous": "Anterior",
+    "next": "Siguiente"
+  },
+  "nav": {
+    "dashboard": "Panel",
+    "documents": "Documentos",
+    "users": "Usuarios",
+    "settings": "Configuración",
+    "signOut": "Cerrar sesión"
+  },
+  "languageSwitcher": {
+    "label": "Idioma",
+    "en": "English",
+    "fr": "Français",
+    "es": "Español",
+    "saved": "Preferencia de idioma guardada",
+    "saveError": "No se pudo guardar tu preferencia de idioma"
+  },
+  "auth": {
+    "login": {
+      "title": "Iniciar sesión en SMALDA",
+      "subtitle": "Verificación segura de documentos de tierras",
+      "emailLabel": "Correo electrónico",
+      "emailPlaceholder": "tu@ejemplo.com",
+      "passwordLabel": "Contraseña",
+      "passwordPlaceholder": "Introduce tu contraseña",
+      "rememberMe": "Recordarme",
+      "forgotPassword": "¿Olvidaste tu contraseña?",
+      "submit": "Iniciar sesión",
+      "submitting": "Iniciando sesión…",
+      "noAccount": "¿No tienes una cuenta?",
+      "signUp": "Crea una",
+      "errorRequired": "Introduce tu correo electrónico y contraseña.",
+      "errorInvalid": "Correo electrónico o contraseña no válidos.",
+      "errorGeneric": "Algo salió mal. Inténtalo de nuevo."
+    }
+  },
+  "dashboard": {
+    "title": "Panel",
+    "welcome": "Bienvenido de nuevo",
+    "subtitle": "Aquí tienes un resumen de tus documentos de tierras.",
+    "stats": {
+      "total": "Documentos totales",
+      "verified": "Verificados",
+      "flagged": "Marcados",
+      "pending": "Pendientes de revisión"
+    },
+    "quickActions": "Acciones rápidas",
+    "uploadDocument": "Subir un documento",
+    "viewDocuments": "Ver todos los documentos"
+  },
+  "documents": {
+    "title": "Todos los documentos",
+    "filters": {
+      "legend": "Filtros de documentos",
+      "status": "Estado",
+      "allStatuses": "Todos los estados",
+      "ownerEmail": "Correo del propietario",
+      "ownerEmailPlaceholder": "Buscar por correo…",
+      "uploadedFrom": "Subido desde",
+      "uploadedTo": "Subido hasta",
+      "riskRange": "Rango de puntuación de riesgo",
+      "apply": "Aplicar filtros",
+      "reset": "Restablecer"
+    },
+    "status": {
+      "pending": "Pendiente",
+      "analyzing": "Analizando",
+      "verified": "Verificado",
+      "flagged": "Marcado",
+      "rejected": "Rechazado"
+    },
+    "table": {
+      "name": "Nombre del documento",
+      "owner": "Propietario",
+      "status": "Estado",
+      "riskScore": "Puntuación de riesgo",
+      "uploaded": "Subido",
+      "flags": "Alertas",
+      "noFlags": "Ninguna",
+      "moreFlags": "+{count} más",
+      "download": "Descargar",
+      "downloadLabel": "Descargar {title}"
+    },
+    "loading": "Cargando documentos…",
+    "empty": "Ningún documento coincide con los filtros actuales.",
+    "emptyHint": "Intenta ajustar los filtros o restablecerlos.",
+    "loadError": "Error al cargar los documentos",
+    "downloadError": "Error al descargar el documento.",
+    "pagination": {
+      "summary": "Mostrando {from}–{to} de {total}"
+    }
+  },
+  "settings": {
+    "title": "Configuración",
+    "sections": {
+      "security": "Seguridad",
+      "notifications": "Notificaciones",
+      "data": "Datos y privacidad",
+      "language": "Idioma"
+    },
+    "language": {
+      "title": "Idioma",
+      "description": "Elige el idioma utilizado en la interfaz y en los correos que te enviamos."
+    }
+  }
+}

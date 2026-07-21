@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
+import { useRouter } from "@/i18n/navigation";
 
 // ---------------------------------------------------------------------------
 // Types matching the backend Document entity + User owner
@@ -92,6 +93,8 @@ const DEFAULT_FILTERS: Filters = {
 
 export default function AdminDocumentsPage() {
   const router = useRouter();
+  const t = useTranslations("documents");
+  const tCommon = useTranslations("common");
   const [documents, setDocuments] = useState<AdminDocument[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -145,14 +148,12 @@ export default function AdminDocumentsPage() {
         setDocuments(json.data);
         setTotal(json.total);
       } catch (err: unknown) {
-        setError(
-          err instanceof Error ? err.message : "Failed to load documents"
-        );
+        setError(err instanceof Error ? err.message : t("loadError"));
       } finally {
         setLoading(false);
       }
     },
-    []
+    [t]
   );
 
   useEffect(() => {
@@ -190,7 +191,7 @@ export default function AdminDocumentsPage() {
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      alert("Failed to download document.");
+      alert(t("downloadError"));
     }
   };
 
@@ -198,11 +199,11 @@ export default function AdminDocumentsPage() {
 
   return (
     <main className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold">All Documents</h1>
+      <h1 className="text-2xl font-bold">{t("title")}</h1>
 
       {/* ── Filters ─────────────────────────────────────────────────────── */}
       <section
-        aria-label="Document filters"
+        aria-label={t("filters.legend")}
         className="bg-white border rounded-lg p-4 space-y-4"
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -212,7 +213,7 @@ export default function AdminDocumentsPage() {
               htmlFor="status-filter"
               className="block text-sm font-medium text-gray-700 mb-1"
             >
-              Status
+              {t("filters.status")}
             </label>
             <select
               id="status-filter"
@@ -222,12 +223,12 @@ export default function AdminDocumentsPage() {
               }
               className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="">All statuses</option>
-              <option value="pending">Pending</option>
-              <option value="analyzing">Analyzing</option>
-              <option value="verified">Verified</option>
-              <option value="flagged">Flagged</option>
-              <option value="rejected">Rejected</option>
+              <option value="">{t("filters.allStatuses")}</option>
+              <option value="pending">{t("status.pending")}</option>
+              <option value="analyzing">{t("status.analyzing")}</option>
+              <option value="verified">{t("status.verified")}</option>
+              <option value="flagged">{t("status.flagged")}</option>
+              <option value="rejected">{t("status.rejected")}</option>
             </select>
           </div>
 
@@ -237,12 +238,12 @@ export default function AdminDocumentsPage() {
               htmlFor="owner-filter"
               className="block text-sm font-medium text-gray-700 mb-1"
             >
-              Owner email
+              {t("filters.ownerEmail")}
             </label>
             <input
               id="owner-filter"
               type="text"
-              placeholder="Search by email…"
+              placeholder={t("filters.ownerEmailPlaceholder")}
               value={filters.ownerEmail}
               onChange={(e) =>
                 setFilters((f) => ({ ...f, ownerEmail: e.target.value }))
@@ -257,7 +258,7 @@ export default function AdminDocumentsPage() {
               htmlFor="date-from"
               className="block text-sm font-medium text-gray-700 mb-1"
             >
-              Uploaded from
+              {t("filters.uploadedFrom")}
             </label>
             <input
               id="date-from"
@@ -276,7 +277,7 @@ export default function AdminDocumentsPage() {
               htmlFor="date-to"
               className="block text-sm font-medium text-gray-700 mb-1"
             >
-              Uploaded to
+              {t("filters.uploadedTo")}
             </label>
             <input
               id="date-to"
@@ -292,7 +293,7 @@ export default function AdminDocumentsPage() {
           {/* Risk score range */}
           <div className="sm:col-span-2">
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Risk score range:{" "}
+              {t("filters.riskRange")}:{" "}
               <span className="text-blue-600">
                 {filters.riskMin.toFixed(1)} – {filters.riskMax.toFixed(1)}
               </span>
@@ -339,13 +340,13 @@ export default function AdminDocumentsPage() {
             onClick={handleApplyFilters}
             className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            Apply filters
+            {t("filters.apply")}
           </button>
           <button
             onClick={handleResetFilters}
             className="border border-gray-300 text-gray-700 px-4 py-2 rounded text-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-400"
           >
-            Reset
+            {t("filters.reset")}
           </button>
         </div>
       </section>
@@ -353,7 +354,7 @@ export default function AdminDocumentsPage() {
       {/* ── Table ───────────────────────────────────────────────────────── */}
       {loading && (
         <p className="text-sm text-gray-500" role="status">
-          Loading documents…
+          {t("loading")}
         </p>
       )}
 
@@ -365,10 +366,8 @@ export default function AdminDocumentsPage() {
 
       {!loading && !error && documents.length === 0 && (
         <div className="text-center py-16 text-gray-500">
-          <p className="text-lg">No documents match the current filters.</p>
-          <p className="text-sm mt-1">
-            Try adjusting your filters or reset them.
-          </p>
+          <p className="text-lg">{t("empty")}</p>
+          <p className="text-sm mt-1">{t("emptyHint")}</p>
         </div>
       )}
 
@@ -381,37 +380,37 @@ export default function AdminDocumentsPage() {
                   scope="col"
                   className="px-4 py-3 text-left font-medium text-gray-600"
                 >
-                  Document name
+                  {t("table.name")}
                 </th>
                 <th
                   scope="col"
                   className="px-4 py-3 text-left font-medium text-gray-600"
                 >
-                  Owner
+                  {t("table.owner")}
                 </th>
                 <th
                   scope="col"
                   className="px-4 py-3 text-left font-medium text-gray-600"
                 >
-                  Status
+                  {t("table.status")}
                 </th>
                 <th
                   scope="col"
                   className="px-4 py-3 text-left font-medium text-gray-600"
                 >
-                  Risk score
+                  {t("table.riskScore")}
                 </th>
                 <th
                   scope="col"
                   className="px-4 py-3 text-left font-medium text-gray-600"
                 >
-                  Uploaded
+                  {t("table.uploaded")}
                 </th>
                 <th
                   scope="col"
                   className="px-4 py-3 text-left font-medium text-gray-600"
                 >
-                  Flags
+                  {t("table.flags")}
                 </th>
                 <th scope="col" className="px-4 py-3" />
               </tr>
@@ -434,7 +433,7 @@ export default function AdminDocumentsPage() {
                   </td>
                   <td className="px-4 py-3">
                     <span className={statusBadge(doc.status)}>
-                      {doc.status}
+                      {t(`status.${doc.status}`)}
                     </span>
                   </td>
                   <td className="px-4 py-3">
@@ -455,21 +454,25 @@ export default function AdminDocumentsPage() {
                         ))}
                         {doc.riskFlags.length > 3 && (
                           <li className="text-gray-400">
-                            +{doc.riskFlags.length - 3} more
+                            {t("table.moreFlags", {
+                              count: doc.riskFlags.length - 3,
+                            })}
                           </li>
                         )}
                       </ul>
                     ) : (
-                      <span className="text-gray-400 text-xs">None</span>
+                      <span className="text-gray-400 text-xs">
+                        {t("table.noFlags")}
+                      </span>
                     )}
                   </td>
                   <td className="px-4 py-3">
                     <button
                       onClick={(e) => handleDownload(doc.id, e)}
                       className="text-xs text-blue-600 hover:text-blue-800 underline focus:outline-none focus:ring-1 focus:ring-blue-500 rounded"
-                      aria-label={`Download ${doc.title}`}
+                      aria-label={t("table.downloadLabel", { title: doc.title })}
                     >
-                      Download
+                      {t("table.download")}
                     </button>
                   </td>
                 </tr>
@@ -486,8 +489,11 @@ export default function AdminDocumentsPage() {
           className="flex items-center justify-between text-sm"
         >
           <p className="text-gray-600">
-            Showing {(page - 1) * PAGE_SIZE + 1}–
-            {Math.min(page * PAGE_SIZE, total)} of {total}
+            {t("pagination.summary", {
+              from: (page - 1) * PAGE_SIZE + 1,
+              to: Math.min(page * PAGE_SIZE, total),
+              total,
+            })}
           </p>
           <div className="flex gap-2">
             <button
@@ -495,7 +501,7 @@ export default function AdminDocumentsPage() {
               disabled={page === 1}
               className="px-3 py-1 border rounded disabled:opacity-40 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              Previous
+              {tCommon("previous")}
             </button>
             <span className="px-3 py-1 text-gray-700">
               {page} / {totalPages}
@@ -505,7 +511,7 @@ export default function AdminDocumentsPage() {
               disabled={page === totalPages}
               className="px-3 py-1 border rounded disabled:opacity-40 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              Next
+              {tCommon("next")}
             </button>
           </div>
         </nav>
