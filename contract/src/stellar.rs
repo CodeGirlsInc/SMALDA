@@ -170,11 +170,10 @@ impl StellarClient {
             Network::new_public()
         };
 
-        let mut tx =
-            Transaction::builder(keypair.public_key().clone(), sequence, MIN_BASE_FEE)
-                .add_operation(op)
-                .into_transaction()
-                .map_err(|e| anyhow!("Failed to build transaction: {:?}", e))?;
+        let mut tx = Transaction::builder(keypair.public_key().clone(), sequence, MIN_BASE_FEE)
+            .add_operation(op)
+            .into_transaction()
+            .map_err(|e| anyhow!("Failed to build transaction: {:?}", e))?;
 
         tx.sign(&keypair, &network)
             .map_err(|e| anyhow!("Failed to sign transaction: {:?}", e))?;
@@ -268,8 +267,8 @@ impl StellarClient {
         // Stellar ManageData values are max 64 bytes.
         let raw = revocation_json.as_bytes();
         let value_bytes = &raw[..raw.len().min(64)];
-        let data_value = DataValue::from_slice(value_bytes)
-            .map_err(|e| anyhow!("DataValue error: {:?}", e))?;
+        let data_value =
+            DataValue::from_slice(value_bytes).map_err(|e| anyhow!("DataValue error: {:?}", e))?;
 
         let op = Operation::new_manage_data()
             .with_data_name(revocation_key)
@@ -286,11 +285,10 @@ impl StellarClient {
             Network::new_public()
         };
 
-        let mut tx =
-            Transaction::builder(keypair.public_key().clone(), sequence, MIN_BASE_FEE)
-                .add_operation(op)
-                .into_transaction()
-                .map_err(|e| anyhow!("Failed to build transaction: {:?}", e))?;
+        let mut tx = Transaction::builder(keypair.public_key().clone(), sequence, MIN_BASE_FEE)
+            .add_operation(op)
+            .into_transaction()
+            .map_err(|e| anyhow!("Failed to build transaction: {:?}", e))?;
 
         tx.sign(&keypair, &network)
             .map_err(|e| anyhow!("Failed to sign transaction: {:?}", e))?;
