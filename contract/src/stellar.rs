@@ -347,6 +347,7 @@ pub fn build_revocation_key(hash: &str) -> String {
     let suffix_len = hash.len().min(56);
     format!("revoked_{}", &hash[..suffix_len])
 }
+
 /// Minimal percent-encoding for the `tx=` form field.
 mod urlencoding {
     pub fn encode(s: &str) -> String {
