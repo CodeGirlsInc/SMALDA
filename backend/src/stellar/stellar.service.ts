@@ -1,6 +1,16 @@
-﻿import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+﻿import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Keypair, Horizon, Networks, Operation, TransactionBuilder } from 'stellar-sdk';
+import {
+  Keypair,
+  Horizon,
+  Networks,
+  Operation,
+  TransactionBuilder,
+} from 'stellar-sdk';
 
 @Injectable()
 export class StellarService {
@@ -12,12 +22,16 @@ export class StellarService {
 
   constructor(private readonly configService: ConfigService) {
     const secretKey = this.configService.get<string>('STELLAR_SECRET_KEY');
-    const horizonUrl = this.configService.get<string>('STELLAR_HORIZON_URL') || 'https://horizon-testnet.stellar.org';
+    const horizonUrl =
+      this.configService.get<string>('STELLAR_HORIZON_URL') ||
+      'https://horizon-testnet.stellar.org';
     this.networkPassphrase =
       this.configService.get<string>('STELLAR_NETWORK') || Networks.TESTNET;
 
     if (!secretKey) {
-      throw new InternalServerErrorException('Stellar secret key is not configured');
+      throw new InternalServerErrorException(
+        'Stellar secret key is not configured',
+      );
     }
 
     this.anchorKeypair = Keypair.fromSecret(secretKey);
@@ -33,7 +47,9 @@ export class StellarService {
 
   async anchorHash(hash: string): Promise<{ txHash: string; ledger: number }> {
     if (!hash) {
-      throw new InternalServerErrorException('Hash is required to anchor a document');
+      throw new InternalServerErrorException(
+        'Hash is required to anchor a document',
+      );
     }
 
     try {
@@ -56,13 +72,17 @@ export class StellarService {
       return { txHash: result.hash, ledger: result.ledger };
     } catch (error) {
       this.logger.error('Failed to anchor document hash', error);
-      throw new InternalServerErrorException('Unable to anchor document hash on Stellar');
+      throw new InternalServerErrorException(
+        'Unable to anchor document hash on Stellar',
+      );
     }
   }
 
   async verifyHash(hash: string): Promise<boolean> {
     if (!hash) {
-      throw new InternalServerErrorException('Hash is required to verify a document');
+      throw new InternalServerErrorException(
+        'Hash is required to verify a document',
+      );
     }
 
     try {
@@ -74,7 +94,9 @@ export class StellarService {
         return false;
       }
       this.logger.error('Failed to verify document hash', error);
-      throw new InternalServerErrorException('Unable to verify document hash on Stellar');
+      throw new InternalServerErrorException(
+        'Unable to verify document hash on Stellar',
+      );
     }
   }
 }

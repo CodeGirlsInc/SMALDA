@@ -15,6 +15,8 @@ import { RiskAssessmentModule } from './risk-assessment/risk-assessment.module';
 import { StellarModule } from './stellar/stellar.module';
 import { UsersModule } from './users/users.module';
 import { VerificationModule } from './verification/verification.module';
+import { DisputeModule } from './dispute/dispute.module';
+import { ExternalValidationModule } from './external-validation/external-validation.module';
 import { ConfigValidationSchema } from './config/config.validation';
 
 @Module({
@@ -56,6 +58,8 @@ import { ConfigValidationSchema } from './config/config.validation';
     VerificationModule,
     MailModule,
     QueueModule,
+    DisputeModule,
+    ExternalValidationModule,
   ],
   controllers: [AppController],
   providers: [AppService, LoggerMiddleware],
