@@ -5,7 +5,9 @@ import { User } from './entities/user.entity';
 
 @Injectable()
 export class UsersService {
-  constructor(@InjectRepository(User) private readonly userRepository: Repository<User>) {}
+  constructor(
+    @InjectRepository(User) private readonly userRepository: Repository<User>,
+  ) {}
 
   async create(data: Partial<User>): Promise<User> {
     const user = this.userRepository.create(data);
