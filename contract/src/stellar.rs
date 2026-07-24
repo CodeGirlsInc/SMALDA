@@ -2,6 +2,7 @@ use anyhow::{anyhow, Result};
 use base64::Engine as _;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use stellar_base::{
     account::DataValue,
     crypto::KeyPair,
@@ -25,10 +26,37 @@ pub struct TransactionRecord {
     pub verified: bool,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VerificationResult {
     pub verified: bool,
     pub transaction_id: Option<String>,
     pub timestamp: Option<i64>,
+    pub data_key: Option<String>,
+    pub raw_value: Option<String>,
+    pub decoded_value: Option<String>,
+}
+
+/// Verification details matching NestJS verification response payload format.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VerificationRecord {
+    pub hash: String,
+    pub anchored: bool,
+    pub data_key: String,
+    pub transaction_id: Option<String>,
+    pub timestamp: Option<i64>,
+    pub raw_value_base64: Option<String>,
+    pub decoded_value: Option<String>,
+}
+
+/// History entry for GET /verify/:hash/history (CT-03 / CT-04 compatibility).
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct HistoryEntry {
+    pub id: String,
+    pub transaction_hash: String,
+    pub created_at: String,
+    pub data_name: String,
+    pub data_value_base64: Option<String>,
+    pub decoded_value: Option<String>,
 }
 
 /// Successful result returned by [`StellarClient::anchor_hash`].
@@ -46,6 +74,8 @@ pub struct AnchorResult {
 #[derive(Debug, Deserialize)]
 struct HorizonAccount {
     sequence: String,
+    #[serde(default)]
+    data: HashMap<String, String>,
 }
 
 /// Horizon transaction submission response (subset of fields).
@@ -61,6 +91,28 @@ struct HorizonTxResponse {
 struct HorizonError {
     detail: Option<String>,
     title: Option<String>,
+}
+
+/// Horizon operation list response.
+#[derive(Debug, Deserialize)]
+struct OperationsResponse {
+    _embedded: OperationsEmbedded,
+}
+
+#[derive(Debug, Deserialize)]
+struct OperationsEmbedded {
+    records: Vec<OperationRecord>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OperationRecord {
+    id: String,
+    transaction_hash: String,
+    created_at: String,
+    #[serde(rename = "type")]
+    op_type: String,
+    name: Option<String>,
+    value: Option<String>,
 }
 
 impl StellarClient {
@@ -80,40 +132,223 @@ impl StellarClient {
             .unwrap_or(false)
     }
 
-    pub async fn verify_hash(&self, hash: &str) -> Result<VerificationResult> {
-        let url = format!("{}/transactions?memo={}", self.horizon_url, hash);
-        let resp = self.http_client.get(&url).send().await?;
+    /// Verifies a document hash against Horizon using the `ManageData` approach.
+    ///
+    /// Reads `account.data_attr` for key `"doc_" + &hash[..58]`.
+    pub async fn verify_hash(
+        &self,
+        hash: &str,
+        anchor_account_id: &str,
+    ) -> Result<VerificationRecord> {
+        let account_url = format!("{}/accounts/{}", self.horizon_url, anchor_account_id);
+        let resp = self
+            .http_client
+            .get(&account_url)
+            .send()
+            .await
+            .map_err(|e| anyhow!("Failed to fetch account info from Horizon: {}", e))?;
 
-        if resp.status().is_success() {
-            Ok(VerificationResult {
-                verified: true,
-                transaction_id: Some(String::new()),
-                timestamp: Some(0),
-            })
-        } else {
-            Ok(VerificationResult {
-                verified: false,
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            return Err(anyhow!("Horizon account fetch failed with status {}", status));
+        }
+
+        let account: HorizonAccount = resp.json().await?;
+        let data_key = build_data_key(hash);
+
+        if let Some(b64_val) = account.data.get(&data_key) {
+            let decoded_bytes = base64::engine::general_purpose::STANDARD
+                .decode(b64_val)
+                .unwrap_or_else(|_| b64_val.as_bytes().to_vec());
+            let decoded_str = String::from_utf8_lossy(&decoded_bytes).to_string();
+
+            Ok(VerificationRecord {
+                hash: hash.to_string(),
+                anchored: true,
+                data_key,
                 transaction_id: None,
                 timestamp: None,
+                raw_value_base64: Some(b64_val.clone()),
+                decoded_value: Some(decoded_str),
+            })
+        } else {
+            Ok(VerificationRecord {
+                hash: hash.to_string(),
+                anchored: false,
+                data_key,
+                transaction_id: None,
+                timestamp: None,
+                raw_value_base64: None,
+                decoded_value: None,
             })
         }
     }
 
-    pub async fn anchor_transfer(&self, _transfer_hash: &str, _memo: &str) -> Result<()> {
-        Ok(())
+    /// Fetches all ManageData history entries for a given document hash (anchors, updates, transfers).
+    pub async fn get_hash_history(
+        &self,
+        hash: &str,
+        anchor_account_id: &str,
+    ) -> Result<Vec<HistoryEntry>> {
+        let data_key = build_data_key(hash);
+        let transfer_key = build_transfer_key(hash);
+        let revocation_key = build_revocation_key(hash);
+
+        let url = format!(
+            "{}/accounts/{}/operations?order=desc&limit=200",
+            self.horizon_url, anchor_account_id
+        );
+
+        let resp = self
+            .http_client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| anyhow!("Failed to fetch account operations: {}", e))?;
+
+        if !resp.status().is_success() {
+            return Err(anyhow!("Horizon operations fetch failed with status {}", resp.status()));
+        }
+
+        let ops: OperationsResponse = resp.json().await?;
+        let mut history = Vec::new();
+
+        for op in ops._embedded.records {
+            if op.op_type == "manage_data" {
+                if let Some(ref name) = op.name {
+                    if name == &data_key || name == &transfer_key || name == &revocation_key {
+                        let decoded_value = op.value.as_ref().map(|v| {
+                            base64::engine::general_purpose::STANDARD
+                                .decode(v)
+                                .map(|bytes| String::from_utf8_lossy(&bytes).to_string())
+                                .unwrap_or_else(|_| v.clone())
+                        });
+
+                        history.push(HistoryEntry {
+                            id: op.id,
+                            transaction_hash: op.transaction_hash,
+                            created_at: op.created_at,
+                            data_name: name.clone(),
+                            data_value_base64: op.value,
+                            decoded_value,
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(history)
+    }
+
+    /// Anchor a transfer record on Stellar using a `ManageData` operation.
+    pub async fn anchor_transfer(
+        &self,
+        transfer_hash: &str,
+        public_key: &str,
+        secret_key: &str,
+    ) -> Result<AnchorResult> {
+        info!(
+            "Anchoring transfer record {} via ManageData (account: {})",
+            &transfer_hash[..transfer_hash.len().min(16)],
+            public_key
+        );
+
+        let account_url = format!("{}/accounts/{}", self.horizon_url, public_key);
+        let acct_resp = self
+            .http_client
+            .get(&account_url)
+            .send()
+            .await
+            .map_err(|e| anyhow!("Failed to fetch account info: {}", e))?;
+
+        if !acct_resp.status().is_success() {
+            return Err(anyhow!(
+                "Horizon {} when fetching account {}",
+                acct_resp.status().as_u16(),
+                public_key
+            ));
+        }
+
+        let acct: HorizonAccount = acct_resp.json().await?;
+        let sequence: i64 = acct
+            .sequence
+            .parse()
+            .map_err(|_| anyhow!("Could not parse account sequence"))?;
+
+        let transfer_key = build_transfer_key(transfer_hash);
+        let data_value = DataValue::from_slice(transfer_hash.as_bytes())
+            .map_err(|e| anyhow!("DataValue error: {:?}", e))?;
+
+        let op = Operation::new_manage_data()
+            .with_data_name(transfer_key)
+            .with_data_value(Some(data_value))
+            .build()
+            .map_err(|e| anyhow!("Failed to build ManageData operation: {:?}", e))?;
+
+        let keypair = KeyPair::from_secret_seed(secret_key)
+            .map_err(|e| anyhow!("Invalid secret key: {:?}", e))?;
+
+        let network = if self.horizon_url.contains("testnet") {
+            Network::new_test()
+        } else {
+            Network::new_public()
+        };
+
+        let mut tx = Transaction::builder(keypair.public_key().clone(), sequence, MIN_BASE_FEE)
+            .add_operation(op)
+            .into_transaction()
+            .map_err(|e| anyhow!("Failed to build transaction: {:?}", e))?;
+
+        tx.sign(&keypair, &network)
+            .map_err(|e| anyhow!("Failed to sign transaction: {:?}", e))?;
+
+        let envelope: TransactionEnvelope = tx.into_envelope();
+        let xdr_bytes = envelope
+            .xdr_bytes()
+            .map_err(|e| anyhow!("XDR serialization failed: {:?}", e))?;
+        let xdr_b64 = base64::engine::general_purpose::STANDARD.encode(&xdr_bytes);
+
+        let submit_url = format!("{}/transactions", self.horizon_url);
+        let form_body = format!("tx={}", urlencoding::encode(&xdr_b64));
+
+        let submit_resp = self
+            .http_client
+            .post(&submit_url)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(form_body)
+            .send()
+            .await
+            .map_err(|e| anyhow!("Transaction submission failed: {}", e))?;
+
+        if submit_resp.status().is_success() {
+            let tx_resp: HorizonTxResponse = submit_resp.json().await?;
+            let anchored_at = tx_resp
+                .created_at
+                .as_deref()
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| dt.timestamp())
+                .unwrap_or_else(|| Utc::now().timestamp());
+
+            Ok(AnchorResult {
+                tx_hash: tx_resp.hash,
+                ledger: tx_resp.ledger,
+                anchored_at,
+            })
+        } else {
+            let status_code = submit_resp.status().as_u16();
+            let err_text = submit_resp.text().await.unwrap_or_default();
+            let detail = serde_json::from_str::<HorizonError>(&err_text)
+                .ok()
+                .and_then(|e| e.detail.or(e.title))
+                .unwrap_or(err_text);
+            Err(anyhow!("Horizon transfer anchor {} — {}", status_code, detail))
+        }
     }
 
     /// Anchor a document hash to Stellar using a `ManageData` operation.
     ///
     /// # Key format
-    /// `"doc_" + &hash[..58]`  — matches NestJS `buildDataKey()`.
-    ///
-    /// # Steps
-    /// 1. Fetch the signing account's current sequence number from Horizon.
-    /// 2. Build a `Transaction` with a single `ManageData` operation.
-    /// 3. Sign with `secret_key`.
-    /// 4. Encode as XDR base64 and submit to Horizon.
-    /// 5. Return the transaction hash, ledger, and timestamp.
+    /// `"doc_" + &hash[..58]` — matches NestJS `buildDataKey()`.
     pub async fn anchor_hash(
         &self,
         hash: &str,
@@ -126,7 +361,6 @@ impl StellarClient {
             public_key
         );
 
-        // 1. Fetch account sequence number.
         let account_url = format!("{}/accounts/{}", self.horizon_url, public_key);
         let acct_resp = self
             .http_client
@@ -149,7 +383,6 @@ impl StellarClient {
             .parse()
             .map_err(|_| anyhow!("Could not parse account sequence"))?;
 
-        // 2. Build the ManageData operation.
         let data_key = build_data_key(hash);
         let data_value = DataValue::from_slice(hash.as_bytes())
             .map_err(|e| anyhow!("DataValue error: {:?}", e))?;
@@ -160,7 +393,6 @@ impl StellarClient {
             .build()
             .map_err(|e| anyhow!("Failed to build ManageData operation: {:?}", e))?;
 
-        // 3. Build and sign the transaction.
         let keypair = KeyPair::from_secret_seed(secret_key)
             .map_err(|e| anyhow!("Invalid secret key: {:?}", e))?;
 
@@ -178,14 +410,12 @@ impl StellarClient {
         tx.sign(&keypair, &network)
             .map_err(|e| anyhow!("Failed to sign transaction: {:?}", e))?;
 
-        // 4. Encode to XDR base64.
         let envelope: TransactionEnvelope = tx.into_envelope();
         let xdr_bytes = envelope
             .xdr_bytes()
             .map_err(|e| anyhow!("XDR serialization failed: {:?}", e))?;
         let xdr_b64 = base64::engine::general_purpose::STANDARD.encode(&xdr_bytes);
 
-        // 5. Submit.
         let submit_url = format!("{}/transactions", self.horizon_url);
         let form_body = format!("tx={}", urlencoding::encode(&xdr_b64));
 
@@ -225,7 +455,7 @@ impl StellarClient {
 
     /// Record a document revocation on Stellar using a `ManageData` operation.
     ///
-    /// Key: `"revoked_" + &hash[..56]`  (max 64 bytes).
+    /// Key: `"revoked_" + &hash[..56]` (max 64 bytes).
     /// Value: the revocation JSON payload (truncated to 64 bytes).
     pub async fn anchor_revocation(
         &self,
@@ -240,7 +470,6 @@ impl StellarClient {
             public_key
         );
 
-        // Fetch account sequence number.
         let account_url = format!("{}/accounts/{}", self.horizon_url, public_key);
         let acct_resp = self
             .http_client
@@ -264,7 +493,6 @@ impl StellarClient {
 
         let revocation_key = build_revocation_key(hash);
 
-        // Stellar ManageData values are max 64 bytes.
         let raw = revocation_json.as_bytes();
         let value_bytes = &raw[..raw.len().min(64)];
         let data_value =
@@ -336,13 +564,19 @@ impl StellarClient {
     }
 }
 
-/// Build the ManageData key: `"doc_" + &hash[..58]`  (max 62 bytes ≤ 64-byte limit).
+/// Build the ManageData key: `"doc_" + &hash[..58]` (max 62 bytes ≤ 64-byte limit).
 pub fn build_data_key(hash: &str) -> String {
     let suffix_len = hash.len().min(58);
     format!("doc_{}", &hash[..suffix_len])
 }
 
-/// Build the revocation ManageData key: `"revoked_" + &hash[..56]`  (max 64 bytes).
+/// Build the transfer ManageData key: `"trf_" + &hash[..58]` (max 62 bytes).
+pub fn build_transfer_key(hash: &str) -> String {
+    let suffix_len = hash.len().min(58);
+    format!("trf_{}", &hash[..suffix_len])
+}
+
+/// Build the revocation ManageData key: `"revoked_" + &hash[..56]` (max 64 bytes).
 pub fn build_revocation_key(hash: &str) -> String {
     let suffix_len = hash.len().min(56);
     format!("revoked_{}", &hash[..suffix_len])
