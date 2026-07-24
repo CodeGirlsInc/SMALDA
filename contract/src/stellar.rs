@@ -592,6 +592,16 @@ pub fn build_revocation_key(hash: &str) -> String {
     format!("revoked_{}", &hash[..suffix_len])
 }
 
+/// Derive the Stellar account ID (public key) that reads/writes go through,
+/// given the service's configured secret key. All `ManageData` entries are
+/// anchored under this single account, so verification and history lookups
+/// query it directly rather than requiring a caller-supplied account.
+pub fn derive_account_id(secret_key: &str) -> Result<String> {
+    let keypair = KeyPair::from_secret_seed(secret_key)
+        .map_err(|e| anyhow!("Invalid secret key: {:?}", e))?;
+    Ok(keypair.public_key().account_id())
+}
+
 /// Minimal percent-encoding for the `tx=` form field.
 mod urlencoding {
     pub fn encode(s: &str) -> String {

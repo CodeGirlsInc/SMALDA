@@ -24,7 +24,7 @@ use tracing::{info, warn};
 use cache::CacheBackend;
 use hash_validator::{HashValidator, ValidationError as HashValidationError};
 use metrics::MetricsRegistry;
-use stellar::{StellarClient, TransactionRecord};
+use stellar::{derive_account_id, StellarClient, TransactionRecord};
 
 // Application state
 #[derive(Clone)]
@@ -261,7 +261,17 @@ pub async fn record_transfer(
     let transfer_hash = compute_transfer_hash(&req);
     let memo = build_transfer_memo(&transfer_hash);
 
-    if let Err(e) = state.stellar.anchor_transfer(&transfer_hash, &memo).await {
+    let anchor_account_id = derive_account_id(&state.stellar_secret_key).map_err(|e| {
+        warn!("Failed to derive anchor account id: {}", e);
+        state.metrics.increment_error_count();
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    if let Err(e) = state
+        .stellar
+        .anchor_transfer(&transfer_hash, &anchor_account_id, &state.stellar_secret_key)
+        .await
+    {
         warn!("Failed to anchor transfer on Stellar: {}", e);
         state.metrics.increment_error_count();
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
@@ -346,8 +356,21 @@ pub async fn verify_document(
 
     state.metrics.increment_cache_misses();
 
+    let anchor_account_id = match derive_account_id(&state.stellar_secret_key) {
+        Ok(id) => id,
+        Err(e) => {
+            warn!("Failed to derive anchor account id: {}", e);
+            state.metrics.increment_error_count();
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
     // Query Stellar blockchain
-    let result = match state.stellar.verify_hash(&normalized_hash).await {
+    let result = match state
+        .stellar
+        .verify_hash(&normalized_hash, &anchor_account_id)
+        .await
+    {
         Ok(verification) => verification,
         Err(e) => {
             warn!("Stellar query failed: {}", e);
@@ -357,7 +380,7 @@ pub async fn verify_document(
     };
 
     let response = VerifyResponse {
-        verified: result.verified,
+        verified: result.anchored,
         transaction_id: result.transaction_id,
         timestamp: result.timestamp,
         cached: false,
@@ -514,8 +537,28 @@ async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
 
     state.metrics.increment_cache_misses();
 
+    let anchor_account_id = match derive_account_id(&state.stellar_secret_key) {
+        Ok(id) => id,
+        Err(e) => {
+            warn!("Failed to derive anchor account id: {}", e);
+            state.metrics.increment_error_count();
+
+            return BatchVerifyItem {
+                hash,
+                verified: false,
+                transaction_id: None,
+                timestamp: None,
+                error: Some(format!("failed to derive anchor account id: {}", e)),
+            };
+        }
+    };
+
     // Query Stellar blockchain
-    let result = match state.stellar.verify_hash(&normalized_hash).await {
+    let result = match state
+        .stellar
+        .verify_hash(&normalized_hash, &anchor_account_id)
+        .await
+    {
         Ok(verification) => verification,
         Err(e) => {
             warn!("Stellar query failed for hash {}: {}", normalized_hash, e);
@@ -533,7 +576,7 @@ async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
 
     // Cache the result
     let cache_response = VerifyResponse {
-        verified: result.verified,
+        verified: result.anchored,
         transaction_id: result.transaction_id.clone(),
         timestamp: result.timestamp,
         cached: false,
@@ -551,7 +594,7 @@ async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
 
     BatchVerifyItem {
         hash,
-        verified: result.verified,
+        verified: result.anchored,
         transaction_id: result.transaction_id,
         timestamp: result.timestamp,
         error: None,
