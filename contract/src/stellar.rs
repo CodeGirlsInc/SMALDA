@@ -150,7 +150,10 @@ impl StellarClient {
 
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
-            return Err(anyhow!("Horizon account fetch failed with status {}", status));
+            return Err(anyhow!(
+                "Horizon account fetch failed with status {}",
+                status
+            ));
         }
 
         let account: HorizonAccount = resp.json().await?;
@@ -207,7 +210,10 @@ impl StellarClient {
             .map_err(|e| anyhow!("Failed to fetch account operations: {}", e))?;
 
         if !resp.status().is_success() {
-            return Err(anyhow!("Horizon operations fetch failed with status {}", resp.status()));
+            return Err(anyhow!(
+                "Horizon operations fetch failed with status {}",
+                resp.status()
+            ));
         }
 
         let ops: OperationsResponse = resp.json().await?;
@@ -341,7 +347,11 @@ impl StellarClient {
                 .ok()
                 .and_then(|e| e.detail.or(e.title))
                 .unwrap_or(err_text);
-            Err(anyhow!("Horizon transfer anchor {} — {}", status_code, detail))
+            Err(anyhow!(
+                "Horizon transfer anchor {} — {}",
+                status_code,
+                detail
+            ))
         }
     }
 
