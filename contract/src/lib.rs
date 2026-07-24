@@ -54,23 +54,6 @@ pub struct VerifyResponse {
     pub revoked_at: Option<i64>,
 }
 
-use actix_web::web;
-mod handlers;
-mod models;
-mod errors;
-mod stellar;
-
-pub fn configure_routes(cfg: &mut web::ServiceConfig) {
-    cfg.service(
-        web::resource("/transfer")
-            .route(web::post().to(handlers::transfer::transfer_handler)),
-    )
-    .service(
-        web::resource("/verify/{hash}/history")
-            .route(web::get().to(handlers::transfer::transfer_history_handler)),
-    );
-}
-
 /// Request type for submitting a document hash to Stellar blockchain
 #[derive(Debug, Deserialize)]
 pub struct SubmitRequest {
@@ -1142,5 +1125,3 @@ mod tests {
         assert_eq!(item.error, Some("invalid hash format".to_string()));
     }
 }
-
-
