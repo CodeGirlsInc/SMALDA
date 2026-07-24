@@ -1,6 +1,20 @@
+import { IsNumber, IsOptional, IsString } from 'class-validator';
+
 export class CreateAccessLogDto {
-  userId?: string;
+  @IsOptional()
+  @IsString()
+  userId?: string | null;
+
+  @IsString()
   routePath: string;
+
+  @IsString()
   httpMethod: string;
-  ipAddress?: string;
+
+  @IsString()
+  ipAddress: string;
+
+  @IsOptional()
+  @IsNumber()
+  statusCode?: number;
 }
