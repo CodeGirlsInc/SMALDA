@@ -24,7 +24,8 @@ export class QueueService implements OnModuleDestroy {
   private buildConnection(): RedisConnectionOptions {
     const host = this.configService.get<string>('REDIS_HOST') || '127.0.0.1';
     const port = Number(this.configService.get<string>('REDIS_PORT') || '6379');
-    const password = this.configService.get<string>('REDIS_PASSWORD') || undefined;
+    const password =
+      this.configService.get<string>('REDIS_PASSWORD') || undefined;
     return { host, port, password };
   }
 
