@@ -269,7 +269,11 @@ pub async fn record_transfer(
 
     if let Err(e) = state
         .stellar
-        .anchor_transfer(&transfer_hash, &anchor_account_id, &state.stellar_secret_key)
+        .anchor_transfer(
+            &transfer_hash,
+            &anchor_account_id,
+            &state.stellar_secret_key,
+        )
         .await
     {
         warn!("Failed to anchor transfer on Stellar: {}", e);
