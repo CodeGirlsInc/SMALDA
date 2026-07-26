@@ -86,7 +86,10 @@ describe('DocumentsService', () => {
         ...mockDocument,
         status: DocumentStatus.VERIFIED,
       });
-      const result = await service.updateStatus('doc-123', DocumentStatus.VERIFIED);
+      const result = await service.updateStatus(
+        'doc-123',
+        DocumentStatus.VERIFIED,
+      );
       expect(mockRepository.update).toHaveBeenCalledWith('doc-123', {
         status: DocumentStatus.VERIFIED,
       });

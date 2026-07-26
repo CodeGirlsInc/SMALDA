@@ -37,7 +37,11 @@ export class DocumentProcessor implements OnModuleDestroy {
     );
 
     this.worker.on('failed', (job, err) => {
-      this.logger.error(`Job ${job.id} (${job.name}) failed`, err?.message, err?.stack);
+      this.logger.error(
+        `Job ${job.id} (${job.name}) failed`,
+        err?.message,
+        err?.stack,
+      );
     });
   }
 
@@ -48,7 +52,9 @@ export class DocumentProcessor implements OnModuleDestroy {
       return;
     }
 
-    const { txHash, ledger } = await this.stellarService.anchorHash(document.fileHash);
+    const { txHash, ledger } = await this.stellarService.anchorHash(
+      document.fileHash,
+    );
     await this.verificationService.create({
       documentId,
       stellarTxHash: txHash,
@@ -57,7 +63,10 @@ export class DocumentProcessor implements OnModuleDestroy {
       status: VerificationStatus.CONFIRMED,
     });
 
-    await this.documentsService.updateStatus(documentId, DocumentStatus.VERIFIED);
+    await this.documentsService.updateStatus(
+      documentId,
+      DocumentStatus.VERIFIED,
+    );
     this.logger.log(`Document ${documentId} verified on ledger ${ledger}`);
   }
 

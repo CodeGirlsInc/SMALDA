@@ -30,7 +30,10 @@ export class VerificationService {
     });
   }
 
-  async updateStatus(id: string, status: VerificationStatus): Promise<VerificationRecord | null> {
+  async updateStatus(
+    id: string,
+    status: VerificationStatus,
+  ): Promise<VerificationRecord | null> {
     await this.verificationRepository.update(id, { status });
     return this.verificationRepository.findOne({ where: { id } });
   }
