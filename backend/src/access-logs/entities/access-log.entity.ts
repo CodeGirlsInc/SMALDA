@@ -24,4 +24,7 @@ export class AccessLog {
 
   @CreateDateColumn()
   createdAt: Date;
+
+  @Column({ type: 'int', nullable: true })
+  statusCode: number;
 }
