@@ -1,9 +1,14 @@
 pub mod cache;
 pub mod config;
+pub mod error;
 pub mod hash_validator;
+pub mod health;
 pub mod metrics;
 pub mod rate_limit;
 pub mod stellar;
+
+#[cfg(test)]
+pub mod tests;
 
 use axum::{
     extract::{Path, State},
@@ -18,13 +23,18 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::Semaphore;
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
 use cache::CacheBackend;
+use error::{new_request_id, ApiError, ERR_BAD_REQUEST, ERR_BATCH_EMPTY, ERR_BATCH_TOO_LARGE};
 use hash_validator::{HashValidator, ValidationError as HashValidationError};
 use metrics::MetricsRegistry;
 use stellar::{derive_account_id, StellarClient, TransactionRecord};
+
+/// Maximum number of concurrent outbound Horizon calls for a single batch request.
+const BATCH_CONCURRENCY_LIMIT: usize = 8;
 
 // Application state
 #[derive(Clone)]
@@ -86,24 +96,11 @@ pub struct RevokeResponse {
 }
 
 #[derive(Debug, Serialize)]
-pub struct HealthResponse {
-    pub status: String,
-    pub stellar_connected: bool,
-    pub redis_connected: bool,
-}
-
-/// Response type for document verification history
-#[derive(Debug, Serialize)]
 pub struct HistoryResponse {
     pub document_hash: String,
     pub transactions: Vec<TransactionRecord>,
     pub count: usize,
     pub cached: bool,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ValidationErrorResponse {
-    pub error: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -155,30 +152,41 @@ pub struct TransferResponse {
     pub memo: String,
 }
 
-fn map_validation_error(err: HashValidationError) -> (StatusCode, ValidationErrorResponse) {
-    let message = match err {
-        HashValidationError::EmptyHash => "hash must not be empty".to_string(),
-        HashValidationError::WrongLength { expected, actual } => format!(
-            "hash has wrong length: expected {} characters, got {}",
-            expected, actual
+fn map_validation_error(err: HashValidationError, request_id: &str) -> ApiError {
+    match err {
+        HashValidationError::EmptyHash => {
+            ApiError::bad_request(error::ERR_HASH_EMPTY, "hash must not be empty", request_id)
+        }
+        HashValidationError::WrongLength { expected, actual } => ApiError::bad_request(
+            error::ERR_HASH_WRONG_LENGTH,
+            format!(
+                "hash has wrong length: expected {} characters, got {}",
+                expected, actual
+            ),
+            request_id,
         ),
         HashValidationError::InvalidCharacter {
             position,
             character,
-        } => format!(
-            "hash contains invalid character '{}' at position {}",
-            character, position
+        } => ApiError::bad_request(
+            error::ERR_HASH_INVALID_CHAR,
+            format!(
+                "hash contains invalid character '{}' at position {}",
+                character, position
+            ),
+            request_id,
         ),
-    };
-
-    (
-        StatusCode::BAD_REQUEST,
-        ValidationErrorResponse { error: message },
-    )
+    }
 }
 
 pub fn app(state: AppState) -> Router {
-    Router::new()
+    // Health routes are intentionally outside the rate-limited group so that
+    // orchestrator polling never consumes quota or appears in access logs.
+    let health_routes = Router::new()
+        .route("/health/live", get(health::health_live))
+        .route("/health/ready", get(health::health_ready));
+
+    let api_routes = Router::new()
         .route("/health", get(health_check))
         .route("/metrics", get(metrics_handler))
         .route("/verify", post(verify_document))
@@ -188,11 +196,15 @@ pub fn app(state: AppState) -> Router {
         .route("/submit", post(submit_document))
         .route("/revoke", post(revoke_document))
         .route("/transfer", post(record_transfer))
-        .layer(TraceLayer::new_for_http())
+        .layer(TraceLayer::new_for_http());
+
+    Router::new()
+        .merge(health_routes)
+        .merge(api_routes)
         .with_state(state)
 }
 
-// Health check endpoint
+// Legacy health check endpoint (kept for backwards compat; prefer /health/live and /health/ready)
 pub async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
     let stellar_ok = state.stellar.check_connection().await;
     let redis_ok = state.cache.check_connection().await;
@@ -203,11 +215,11 @@ pub async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
         "degraded"
     };
 
-    Json(HealthResponse {
-        status: status.to_string(),
-        stellar_connected: stellar_ok,
-        redis_connected: redis_ok,
-    })
+    Json(serde_json::json!({
+        "status": status,
+        "stellar_connected": stellar_ok,
+        "redis_connected": redis_ok,
+    }))
 }
 
 // Metrics endpoint
@@ -258,11 +270,12 @@ pub async fn record_transfer(
         return Err(StatusCode::BAD_REQUEST);
     }
 
+    let request_id = new_request_id();
     let transfer_hash = compute_transfer_hash(&req);
     let memo = build_transfer_memo(&transfer_hash);
 
     let anchor_account_id = derive_account_id(&state.stellar_secret_key).map_err(|e| {
-        warn!("Failed to derive anchor account id: {}", e);
+        warn!(request_id = %request_id, error = %e, "Failed to derive anchor account id");
         state.metrics.increment_error_count();
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -276,7 +289,7 @@ pub async fn record_transfer(
         )
         .await
     {
-        warn!("Failed to anchor transfer on Stellar: {}", e);
+        warn!(request_id = %request_id, error = %e, "Failed to anchor transfer on Stellar");
         state.metrics.increment_error_count();
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
@@ -298,7 +311,7 @@ pub async fn record_transfer(
         Ok(Some(existing)) => existing,
         Ok(None) => Vec::new(),
         Err(e) => {
-            warn!("Failed to read transfer history from cache: {}", e);
+            warn!(request_id = %request_id, error = %e, "Failed to read transfer history from cache");
             state.metrics.increment_error_count();
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
@@ -306,10 +319,9 @@ pub async fn record_transfer(
 
     history.push(record);
 
-    // Set a long but finite TTL (10 years) to keep an auditable history
     const TEN_YEARS_SECONDS: u64 = 60 * 60 * 24 * 365 * 10;
     if let Err(e) = state.cache.set(&key, &history, TEN_YEARS_SECONDS).await {
-        warn!("Failed to persist transfer history: {}", e);
+        warn!(request_id = %request_id, error = %e, "Failed to persist transfer history");
         state.metrics.increment_error_count();
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
@@ -342,19 +354,20 @@ pub async fn verify_document(
     State(state): State<AppState>,
     Json(req): Json<VerifyRequest>,
 ) -> Response {
+    let request_id = new_request_id();
     let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
-        let (status, body) = map_validation_error(err);
-        return (status, Json(body)).into_response();
+        return map_validation_error(err, &request_id).into_response();
     }
 
-    info!("Verifying document hash: {}", normalized_hash);
+    info!(request_id = %request_id, hash = %normalized_hash, "Verifying document hash");
     state.metrics.increment_request_count();
 
     // Check cache first
-    if let Ok(Some(cached)) = state.cache.get::<VerifyResponse>(&normalized_hash).await {
-        info!("Cache hit for hash: {}", normalized_hash);
+    if let Ok(Some(mut cached)) = state.cache.get::<VerifyResponse>(&normalized_hash).await {
+        info!(request_id = %request_id, hash = %normalized_hash, "Cache hit");
         state.metrics.increment_cache_hits();
+        cached.cached = true;
         return Json(cached).into_response();
     }
 
@@ -363,23 +376,22 @@ pub async fn verify_document(
     let anchor_account_id = match derive_account_id(&state.stellar_secret_key) {
         Ok(id) => id,
         Err(e) => {
-            warn!("Failed to derive anchor account id: {}", e);
+            warn!(request_id = %request_id, error = %e, "Failed to derive anchor account id");
             state.metrics.increment_error_count();
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            return ApiError::internal(&request_id).into_response();
         }
     };
 
-    // Query Stellar blockchain
     let result = match state
         .stellar
         .verify_hash(&normalized_hash, &anchor_account_id)
         .await
     {
-        Ok(verification) => verification,
+        Ok(v) => v,
         Err(e) => {
-            warn!("Stellar query failed: {}", e);
+            warn!(request_id = %request_id, error = %e, "Stellar query failed");
             state.metrics.increment_error_count();
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            return ApiError::upstream(&request_id).into_response();
         }
     };
 
@@ -412,10 +424,10 @@ pub async fn verify_document_history(
     State(state): State<AppState>,
     Path(hash): Path<String>,
 ) -> Response {
+    let request_id = new_request_id();
     let normalized_hash = HashValidator::normalize(&hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
-        let (status, body) = map_validation_error(err);
-        return (status, Json(body)).into_response();
+        return map_validation_error(err, &request_id).into_response();
     }
 
     let cache_key = format!("history:{}", normalized_hash);
@@ -423,8 +435,8 @@ pub async fn verify_document_history(
         Ok(Some(records)) => records,
         Ok(None) => Vec::new(),
         Err(e) => {
-            warn!("Failed to fetch history from cache: {}", e);
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            warn!(request_id = %request_id, error = %e, "Failed to fetch history from cache");
+            return ApiError::internal(&request_id).into_response();
         }
     };
 
@@ -445,39 +457,45 @@ pub async fn batch_verify_documents(
     State(state): State<AppState>,
     Json(req): Json<BatchVerifyRequest>,
 ) -> Response {
-    // Validate batch size
+    let request_id = new_request_id();
+
     if req.hashes.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ValidationErrorResponse {
-                error: "hashes array cannot be empty".to_string(),
-            }),
-        )
+        return ApiError::bad_request(ERR_BATCH_EMPTY, "hashes array cannot be empty", &request_id)
             .into_response();
     }
 
     if req.hashes.len() > 50 {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ValidationErrorResponse {
-                error: "batch size exceeds maximum of 50 hashes".to_string(),
-            }),
+        return ApiError::bad_request(
+            ERR_BATCH_TOO_LARGE,
+            "batch size exceeds maximum of 50 hashes",
+            &request_id,
         )
-            .into_response();
+        .into_response();
     }
 
-    info!("Batch verifying {} document hashes", req.hashes.len());
+    info!(
+        request_id = %request_id,
+        count = req.hashes.len(),
+        "Batch verifying document hashes"
+    );
     state.metrics.increment_request_count();
 
-    // Process all hashes concurrently
+    // Bound concurrent outbound Horizon calls to BATCH_CONCURRENCY_LIMIT.
+    let semaphore = Arc::new(Semaphore::new(BATCH_CONCURRENCY_LIMIT));
+
     let verification_futures: Vec<_> = req
         .hashes
         .iter()
         .map(|hash| {
             let state = state.clone();
             let hash = hash.clone();
+            let sem = semaphore.clone();
+            let rid = request_id.clone();
 
-            async move { verify_single_hash(&state, hash).await }
+            async move {
+                let _permit = sem.acquire().await.expect("semaphore closed");
+                verify_single_hash(&state, hash, &rid).await
+            }
         })
         .collect();
 
@@ -486,48 +504,33 @@ pub async fn batch_verify_documents(
     let verified_count = results.iter().filter(|item| item.verified).count();
     let failed_count = results.len() - verified_count;
 
-    let response = BatchVerifyResponse {
+    Json(BatchVerifyResponse {
         results,
         total: req.hashes.len(),
         verified_count,
         failed_count,
-    };
-
-    Json(response).into_response()
+    })
+    .into_response()
 }
 
 // Helper function to verify a single hash
-async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
+async fn verify_single_hash(state: &AppState, hash: String, request_id: &str) -> BatchVerifyItem {
     let normalized_hash = HashValidator::normalize(&hash);
 
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
-        let error_msg = match err {
-            HashValidationError::EmptyHash => "hash must not be empty".to_string(),
-            HashValidationError::WrongLength { expected, actual } => format!(
-                "hash has wrong length: expected {} characters, got {}",
-                expected, actual
-            ),
-            HashValidationError::InvalidCharacter {
-                position,
-                character,
-            } => format!(
-                "hash contains invalid character '{}' at position {}",
-                character, position
-            ),
-        };
-
+        let api_err = map_validation_error(err, request_id);
         return BatchVerifyItem {
             hash,
             verified: false,
             transaction_id: None,
             timestamp: None,
-            error: Some(error_msg),
+            error: Some(api_err.body.message),
         };
     }
 
     // Check cache first
     if let Ok(Some(cached)) = state.cache.get::<VerifyResponse>(&normalized_hash).await {
-        info!("Cache hit for hash: {}", normalized_hash);
+        info!(request_id = %request_id, hash = %normalized_hash, "Cache hit");
         state.metrics.increment_cache_hits();
 
         return BatchVerifyItem {
@@ -544,36 +547,34 @@ async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
     let anchor_account_id = match derive_account_id(&state.stellar_secret_key) {
         Ok(id) => id,
         Err(e) => {
-            warn!("Failed to derive anchor account id: {}", e);
+            warn!(request_id = %request_id, error = %e, "Failed to derive anchor account id");
             state.metrics.increment_error_count();
-
             return BatchVerifyItem {
                 hash,
                 verified: false,
                 transaction_id: None,
                 timestamp: None,
-                error: Some(format!("failed to derive anchor account id: {}", e)),
+                // Safe message — no internal detail
+                error: Some("internal configuration error".to_string()),
             };
         }
     };
 
-    // Query Stellar blockchain
     let result = match state
         .stellar
         .verify_hash(&normalized_hash, &anchor_account_id)
         .await
     {
-        Ok(verification) => verification,
+        Ok(v) => v,
         Err(e) => {
-            warn!("Stellar query failed for hash {}: {}", normalized_hash, e);
+            warn!(request_id = %request_id, hash = %normalized_hash, error = %e, "Stellar query failed");
             state.metrics.increment_error_count();
-
             return BatchVerifyItem {
                 hash,
                 verified: false,
                 transaction_id: None,
                 timestamp: None,
-                error: Some(format!("stellar query failed: {}", e)),
+                error: Some("upstream verification service unavailable".to_string()),
             };
         }
     };
@@ -593,7 +594,7 @@ async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
         .set(&normalized_hash, &cache_response, 3600)
         .await
     {
-        warn!("Failed to cache result for hash {}: {}", normalized_hash, e);
+        warn!(request_id = %request_id, hash = %normalized_hash, error = %e, "Failed to cache result");
     }
 
     BatchVerifyItem {
@@ -615,10 +616,10 @@ pub async fn submit_document(
     State(state): State<AppState>,
     Json(req): Json<SubmitRequest>,
 ) -> Response {
+    let request_id = new_request_id();
     let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
-        let (status, body) = map_validation_error(err);
-        return (status, Json(body)).into_response();
+        return map_validation_error(err, &request_id).into_response();
     }
 
     let cache_key = format!("stellar:verify:{}", normalized_hash);
@@ -626,15 +627,18 @@ pub async fn submit_document(
     // Idempotency check — return cached anchor result if it exists.
     if let Ok(Some(cached)) = state.cache.get::<SubmitResponse>(&cache_key).await {
         info!(
-            "Cache hit for submit: returning existing anchor for {}",
-            normalized_hash
+            request_id = %request_id,
+            hash = %normalized_hash,
+            "Cache hit for submit: returning existing anchor"
         );
         return Json(cached).into_response();
     }
 
     info!(
-        "Anchoring document hash {} submitted by {}",
-        normalized_hash, req.submitter
+        request_id = %request_id,
+        hash = %normalized_hash,
+        submitter = %req.submitter,
+        "Anchoring document hash"
     );
     state.metrics.increment_request_count();
 
@@ -651,38 +655,34 @@ pub async fn submit_document(
                 error: None,
             };
 
-            // Cache the result so duplicate submissions get a fast 200.
-            const ANCHOR_CACHE_TTL: u64 = 60 * 60 * 24 * 365; // 1 year
+            const ANCHOR_CACHE_TTL: u64 = 60 * 60 * 24 * 365;
             if let Err(e) = state
                 .cache
                 .set(&cache_key, &response, ANCHOR_CACHE_TTL)
                 .await
             {
                 warn!(
-                    "Failed to cache anchor result for {}: {}",
-                    normalized_hash, e
+                    request_id = %request_id,
+                    hash = %normalized_hash,
+                    error = %e,
+                    "Failed to cache anchor result"
                 );
             }
 
             info!(
-                "Document hash {} anchored in ledger {} (tx: {})",
-                normalized_hash, result.ledger, result.tx_hash
+                request_id = %request_id,
+                hash = %normalized_hash,
+                ledger = result.ledger,
+                tx = %result.tx_hash,
+                "Document hash anchored"
             );
             Json(response).into_response()
         }
         Err(e) => {
-            warn!("Stellar anchor failed for {}: {}", normalized_hash, e);
+            warn!(request_id = %request_id, hash = %normalized_hash, error = %e, "Stellar anchor failed");
             state.metrics.increment_error_count();
-            (
-                StatusCode::BAD_GATEWAY,
-                Json(SubmitResponse {
-                    success: false,
-                    transaction_id: None,
-                    anchored_at: None,
-                    error: Some(e.to_string()),
-                }),
-            )
-                .into_response()
+            // Return a safe error — never proxy the Horizon body
+            ApiError::upstream(&request_id).into_response()
         }
     }
 }
@@ -702,15 +702,14 @@ pub async fn revoke_document(
     State(state): State<AppState>,
     Json(req): Json<RevokeRequest>,
 ) -> Response {
+    let request_id = new_request_id();
     let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
-        let (status, body) = map_validation_error(err);
-        return (status, Json(body)).into_response();
+        return map_validation_error(err, &request_id).into_response();
     }
 
     let anchor_key = format!("stellar:verify:{}", normalized_hash);
 
-    // Ensure the document was previously anchored before revoking.
     let existing: Option<SubmitResponse> = state
         .cache
         .get::<SubmitResponse>(&anchor_key)
@@ -718,24 +717,23 @@ pub async fn revoke_document(
         .unwrap_or(None);
 
     if existing.is_none() {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(ValidationErrorResponse {
-                error: "document hash has no prior anchor record; cannot revoke".to_string(),
-            }),
+        return ApiError::not_found(
+            "document hash has no prior anchor record; cannot revoke",
+            &request_id,
         )
-            .into_response();
+        .into_response();
     }
 
     info!(
-        "Revoking document hash {} (revoked_by: {})",
-        normalized_hash, req.revoked_by
+        request_id = %request_id,
+        hash = %normalized_hash,
+        revoked_by = %req.revoked_by,
+        "Revoking document hash"
     );
     state.metrics.increment_request_count();
 
     let revoked_at = Utc::now().timestamp();
 
-    // Build the revocation payload stored as ManageData value.
     let revocation_value = serde_json::json!({
         "revokedAt": Utc::now().to_rfc3339(),
         "reason": req.reason,
@@ -743,8 +741,6 @@ pub async fn revoke_document(
     })
     .to_string();
 
-    // Use stellar.rs anchor_hash logic directly — we build a new ManageData tx
-    // with the revocation key.
     match state
         .stellar
         .anchor_revocation(
@@ -756,7 +752,6 @@ pub async fn revoke_document(
         .await
     {
         Ok(result) => {
-            // Update the cached verify entry to reflect revocation.
             let updated_verify = VerifyResponse {
                 verified: true,
                 transaction_id: existing.and_then(|r| r.transaction_id),
@@ -771,12 +766,15 @@ pub async fn revoke_document(
                 .set(&anchor_key, &updated_verify, REVOKE_CACHE_TTL)
                 .await
             {
-                warn!("Failed to update cache after revocation: {}", e);
+                warn!(request_id = %request_id, error = %e, "Failed to update cache after revocation");
             }
 
             info!(
-                "Document {} revoked in ledger {} (tx: {})",
-                normalized_hash, result.ledger, result.tx_hash
+                request_id = %request_id,
+                hash = %normalized_hash,
+                ledger = result.ledger,
+                tx = %result.tx_hash,
+                "Document revoked"
             );
 
             Json(RevokeResponse {
@@ -787,43 +785,31 @@ pub async fn revoke_document(
             .into_response()
         }
         Err(e) => {
-            warn!("Revocation failed for {}: {}", normalized_hash, e);
+            warn!(request_id = %request_id, hash = %normalized_hash, error = %e, "Revocation failed");
             state.metrics.increment_error_count();
-            (
-                StatusCode::BAD_GATEWAY,
-                Json(ValidationErrorResponse {
-                    error: format!("Stellar revocation failed: {}", e),
-                }),
-            )
-                .into_response()
+            ApiError::upstream(&request_id).into_response()
         }
     }
 }
 
 pub async fn transfer_document(Json(req): Json<TransferRequest>) -> impl IntoResponse {
+    let request_id = new_request_id();
     let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
-        let (status, body) = map_validation_error(err);
-        return (status, Json(body));
+        return map_validation_error(err, &request_id).into_response();
     }
 
-    // Basic date validation: expect YYYY-MM-DD
     if chrono::NaiveDate::parse_from_str(&req.transfer_date, "%Y-%m-%d").is_err() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ValidationErrorResponse {
-                error: "invalid date format, expected YYYY-MM-DD".to_string(),
-            }),
-        );
+        return ApiError::bad_request(
+            ERR_BAD_REQUEST,
+            "invalid date format, expected YYYY-MM-DD",
+            &request_id,
+        )
+        .into_response();
     }
 
-    // Endpoint behavior not yet implemented; for now respond with BAD_REQUEST.
-    (
-        StatusCode::BAD_REQUEST,
-        Json(ValidationErrorResponse {
-            error: "transfer endpoint not yet implemented".to_string(),
-        }),
-    )
+    ApiError::bad_request(ERR_BAD_REQUEST, "transfer endpoint not yet implemented", &request_id)
+        .into_response()
 }
 
 /// Calculates Levenshtein distance between two strings
@@ -960,7 +946,7 @@ pub fn find_duplicates(documents: &[&str], threshold: f64) -> Vec<(usize, usize,
 }
 
 #[cfg(test)]
-mod tests {
+mod unit_tests {
     use super::*;
 
     #[test]

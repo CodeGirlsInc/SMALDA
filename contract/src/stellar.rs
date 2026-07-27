@@ -3,6 +3,7 @@ use base64::Engine as _;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tokio::time::sleep;
 use stellar_base::{
     account::DataValue,
     crypto::KeyPair,
@@ -115,11 +116,27 @@ struct OperationRecord {
     value: Option<String>,
 }
 
+/// Maximum number of retries when Horizon responds with HTTP 429.
+const MAX_RETRIES_ON_429: u32 = 3;
+/// Initial back-off duration for 429 responses (doubles each attempt).
+const INITIAL_BACKOFF_MS: u64 = 200;
+
 impl StellarClient {
+    /// Create a new client with sensible timeout and connection-pool defaults.
     pub fn new(horizon_url: &str) -> Self {
+        let http_client = reqwest::Client::builder()
+            // Hard deadline per request so one slow Horizon call cannot
+            // block a thread indefinitely.
+            .timeout(std::time::Duration::from_secs(10))
+            // Keep-alive pool limits.
+            .pool_max_idle_per_host(10)
+            .pool_idle_timeout(std::time::Duration::from_secs(90))
+            .build()
+            .expect("failed to build reqwest client");
+
         Self {
             horizon_url: horizon_url.to_string(),
-            http_client: reqwest::Client::new(),
+            http_client,
         }
     }
 
@@ -132,6 +149,54 @@ impl StellarClient {
             .unwrap_or(false)
     }
 
+    /// Return the base Horizon URL this client targets.
+    pub fn horizon_url(&self) -> &str {
+        &self.horizon_url
+    }
+
+    /// Execute a GET request with automatic 429 back-off.
+    ///
+    /// On HTTP 429 the call is retried up to [`MAX_RETRIES_ON_429`] times,
+    /// honouring a `Retry-After` header when present, otherwise using
+    /// exponential back-off starting at [`INITIAL_BACKOFF_MS`] ms.
+    async fn get_with_backoff(&self, url: &str) -> anyhow::Result<reqwest::Response> {
+        let mut backoff_ms = INITIAL_BACKOFF_MS;
+        for attempt in 0..=MAX_RETRIES_ON_429 {
+            let resp = self
+                .http_client
+                .get(url)
+                .send()
+                .await
+                .map_err(|e| anyhow::anyhow!("HTTP GET failed: {}", e))?;
+
+            if resp.status() != reqwest::StatusCode::TOO_MANY_REQUESTS {
+                return Ok(resp);
+            }
+
+            if attempt == MAX_RETRIES_ON_429 {
+                return Ok(resp); // caller will handle the 429
+            }
+
+            // Respect Retry-After header if present, otherwise use back-off.
+            let wait_ms = resp
+                .headers()
+                .get("retry-after")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.parse::<u64>().ok())
+                .map(|secs| secs * 1_000)
+                .unwrap_or(backoff_ms);
+
+            tracing::warn!(
+                attempt,
+                wait_ms,
+                "Horizon rate-limited (429), backing off before retry"
+            );
+            sleep(std::time::Duration::from_millis(wait_ms)).await;
+            backoff_ms *= 2;
+        }
+        unreachable!()
+    }
+
     /// Verifies a document hash against Horizon using the `ManageData` approach.
     ///
     /// Reads `account.data_attr` for key `"doc_" + &hash[..58]`.
@@ -142,9 +207,7 @@ impl StellarClient {
     ) -> Result<VerificationRecord> {
         let account_url = format!("{}/accounts/{}", self.horizon_url, anchor_account_id);
         let resp = self
-            .http_client
-            .get(&account_url)
-            .send()
+            .get_with_backoff(&account_url)
             .await
             .map_err(|e| anyhow!("Failed to fetch account info from Horizon: {}", e))?;
 
@@ -203,9 +266,7 @@ impl StellarClient {
         );
 
         let resp = self
-            .http_client
-            .get(&url)
-            .send()
+            .get_with_backoff(&url)
             .await
             .map_err(|e| anyhow!("Failed to fetch account operations: {}", e))?;
 
