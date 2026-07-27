@@ -28,10 +28,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Startup configuration summary (redacting secrets)
     info!(
-        "Configuration: port={}, stellar_horizon_url={}, redis_url={}, rate_limit_per_second={}, rate_limit_burst={}, stellar_max_retries={}, log_level={}, webhook_urls={:?}, stellar_secret_key=[REDACTED], webhook_secret=[REDACTED], cache_verification_ttl={}",
+        "Configuration: port={}, stellar_horizon_url={}, stellar_network={}, redis_url=[REDACTED], rate_limit_per_second={}, rate_limit_burst={}, stellar_max_retries={}, log_level={}, webhook_urls={:?}, stellar_secret_key=[REDACTED], webhook_secret=[REDACTED], cache_verification_ttl={}",
         config.port,
         config.stellar_horizon_url,
-        config.redis_url,
+        config.stellar_network,
         config.rate_limit_per_second,
         config.rate_limit_burst,
         config.stellar_max_retries,

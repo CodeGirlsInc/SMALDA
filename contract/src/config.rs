@@ -1,12 +1,22 @@
 use std::env;
 
 use thiserror::Error;
+use tracing::warn;
 use url::Url;
+
+/// Recognized Stellar Horizon hosts. Used to warn when a non-standard
+/// endpoint is configured.
+const ALLOWED_HORIZON_HOSTS: &[&str] = &[
+    "horizon-testnet.stellar.org",
+    "horizon-live.stellar.org",
+    "horizon.stellar.org",
+];
 
 #[derive(Debug, Clone)]
 pub struct AppConfig {
     pub port: u16,
     pub stellar_horizon_url: String,
+    pub stellar_network: String,
     pub stellar_secret_key: Option<String>,
     pub redis_url: String,
     pub rate_limit_per_second: u32,
@@ -83,12 +93,49 @@ impl AppConfig {
         };
 
         // Validate horizon URL
-        if Url::parse(&stellar_horizon_url).is_err() {
-            errors.push(format!(
-                "STELLAR_HORIZON_URL must be a valid URL, got '{}'",
-                stellar_horizon_url
-            ));
+        let parsed_url = Url::parse(&stellar_horizon_url);
+        match &parsed_url {
+            Err(_) => {
+                errors.push(format!(
+                    "STELLAR_HORIZON_URL must be a valid URL, got '{}'",
+                    stellar_horizon_url
+                ));
+            }
+            Ok(url) => {
+                // Enforce HTTPS unless explicitly overridden
+                let allow_insecure = env::var("ALLOW_INSECURE_HORIZON")
+                    .map(|v| v == "true")
+                    .unwrap_or(false);
+
+                if url.scheme() != "https" && !allow_insecure {
+                    errors.push(format!(
+                        "STELLAR_HORIZON_URL must use HTTPS (got '{}'). \
+                         Set ALLOW_INSECURE_HORIZON=true to allow insecure connections.",
+                        url.scheme()
+                    ));
+                }
+
+                // Warn for unrecognized Horizon hosts
+                if let Some(host) = url.host_str() {
+                    if !ALLOWED_HORIZON_HOSTS.contains(&host) {
+                        warn!(
+                            "STELLAR_HORIZON_URL host '{}' is not in the recognized list: {:?}",
+                            host, ALLOWED_HORIZON_HOSTS
+                        );
+                    }
+                }
+            }
         }
+
+        // Auto-derive stellar_network from Horizon URL
+        let stellar_network = match parsed_url.as_ref().map(|u| u.host_str()) {
+            Ok(Some(host)) if host.contains("testnet") => "testnet".to_string(),
+            Ok(Some(host)) if host.contains("mainnet") || host.contains("live") => {
+                "mainnet".to_string()
+            }
+            Ok(_) => "testnet".to_string(),
+            Err(_) => "testnet".to_string(),
+        };
 
         // Parse numeric values
         let rate_limit_per_second: u32 = match rate_limit_per_second_raw.parse() {
@@ -155,6 +202,7 @@ impl AppConfig {
         Ok(Self {
             port,
             stellar_horizon_url,
+            stellar_network,
             stellar_secret_key,
             redis_url,
             rate_limit_per_second,
@@ -188,6 +236,7 @@ mod tests {
             "WEBHOOK_URLS",
             "WEBHOOK_SECRET",
             "CACHE_VERIFICATION_TTL",
+            "ALLOW_INSECURE_HORIZON",
         ];
         for key in keys {
             env::remove_var(key);
@@ -228,6 +277,74 @@ mod tests {
         assert!(msg.contains("PORT must be between 1 and 65535"));
         assert!(msg.contains("STELLAR_HORIZON_URL must be a valid URL"));
         assert!(msg.contains("RATE_LIMIT_PER_SECOND must be greater than 0"));
+    }
+
+    #[test]
+    fn from_env_rejects_non_https_horizon_url() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_env();
+        env::set_var(
+            "STELLAR_SECRET_KEY",
+            "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        );
+        env::set_var("STELLAR_HORIZON_URL", "http://horizon-testnet.stellar.org");
+
+        let err = AppConfig::from_env().expect_err("config should fail");
+        let msg = err.to_string();
+
+        assert!(msg.contains("must use HTTPS"));
+    }
+
+    #[test]
+    fn from_env_allows_insecure_horizon_when_override_set() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_env();
+        env::set_var(
+            "STELLAR_SECRET_KEY",
+            "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        );
+        env::set_var("STELLAR_HORIZON_URL", "http://horizon-testnet.stellar.org");
+        env::set_var("ALLOW_INSECURE_HORIZON", "true");
+
+        let cfg = AppConfig::from_env().expect("config should load with insecure override");
+        assert_eq!(
+            cfg.stellar_horizon_url,
+            "http://horizon-testnet.stellar.org"
+        );
+    }
+
+    #[test]
+    fn from_env_auto_derives_testnet_network() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_env();
+        env::set_var(
+            "STELLAR_SECRET_KEY",
+            "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        );
+        env::set_var(
+            "STELLAR_HORIZON_URL",
+            "https://horizon-testnet.stellar.org",
+        );
+
+        let cfg = AppConfig::from_env().expect("config should load");
+        assert_eq!(cfg.stellar_network, "testnet");
+    }
+
+    #[test]
+    fn from_env_auto_derives_mainnet_network() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_env();
+        env::set_var(
+            "STELLAR_SECRET_KEY",
+            "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        );
+        env::set_var(
+            "STELLAR_HORIZON_URL",
+            "https://horizon-live.stellar.org",
+        );
+
+        let cfg = AppConfig::from_env().expect("config should load");
+        assert_eq!(cfg.stellar_network, "mainnet");
     }
 
     #[test]

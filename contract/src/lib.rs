@@ -18,6 +18,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
+use tower_http::limit::RequestBodyLimitLayer;
+use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
@@ -189,6 +192,8 @@ pub fn app(state: AppState) -> Router {
         .route("/revoke", post(revoke_document))
         .route("/transfer", post(record_transfer))
         .layer(TraceLayer::new_for_http())
+        .layer(RequestBodyLimitLayer::new(1024 * 1024)) // 1 MiB
+        .layer(TimeoutLayer::new(Duration::from_secs(30)))
         .with_state(state)
 }
 
@@ -400,8 +405,14 @@ pub async fn verify_document_by_hash(
     State(state): State<AppState>,
     Path(hash): Path<String>,
 ) -> Response {
+    let normalized_hash = HashValidator::normalize(&hash);
+    if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
+        let (status, body) = map_validation_error(err);
+        return (status, Json(body)).into_response();
+    }
+
     let req = VerifyRequest {
-        document_hash: hash,
+        document_hash: normalized_hash,
         transaction_id: None,
     };
     verify_document(State(state), Json(req)).await
