@@ -8,7 +8,7 @@ edition = "2021"
 axum = "0.7"
 tokio = { version = "1.35", features = ["full"] }
 tower = "0.4"
-tower-http = { version = "0.5", features = ["trace", "cors"] }
+tower-http = { version = "0.5", features = ["trace", "cors", "request-id"] }
 url = "2"
 futures = "0.3"
 
@@ -33,7 +33,7 @@ prometheus = "0.13"
 
 # Logging
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # Error handling
 thiserror = "1.0"

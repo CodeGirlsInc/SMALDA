@@ -7,7 +7,7 @@ pub mod stellar;
 
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderName, Request, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -18,6 +18,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Arc;
+use tower::ServiceBuilder;
+use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
@@ -25,6 +27,11 @@ use cache::CacheBackend;
 use hash_validator::{HashValidator, ValidationError as HashValidationError};
 use metrics::MetricsRegistry;
 use stellar::{derive_account_id, StellarClient, TransactionRecord};
+
+/// Header used to correlate a single logical operation across the NestJS
+/// backend and this verifier service (see BE-136). Must match the header
+/// name used by the backend.
+pub const REQUEST_ID_HEADER: &str = "x-request-id";
 
 // Application state
 #[derive(Clone)]
@@ -178,6 +185,9 @@ fn map_validation_error(err: HashValidationError) -> (StatusCode, ValidationErro
 }
 
 pub fn app(state: AppState) -> Router {
+    let request_id_header = HeaderName::from_static(REQUEST_ID_HEADER);
+    let span_header = request_id_header.clone();
+
     Router::new()
         .route("/health", get(health_check))
         .route("/metrics", get(metrics_handler))
@@ -188,7 +198,34 @@ pub fn app(state: AppState) -> Router {
         .route("/submit", post(submit_document))
         .route("/revoke", post(revoke_document))
         .route("/transfer", post(record_transfer))
-        .layer(TraceLayer::new_for_http())
+        .layer(
+            ServiceBuilder::new()
+                // Honour an inbound X-Request-Id (propagated from the NestJS
+                // backend, per BE-136); generate one only if it's absent.
+                .layer(SetRequestIdLayer::new(
+                    request_id_header.clone(),
+                    MakeRequestUuid,
+                ))
+                .layer(
+                    TraceLayer::new_for_http().make_span_with(move |request: &Request<_>| {
+                        let request_id = request
+                            .headers()
+                            .get(&span_header)
+                            .and_then(|v| v.to_str().ok())
+                            .unwrap_or("unknown");
+
+                        tracing::info_span!(
+                            "http_request",
+                            method = %request.method(),
+                            path = %request.uri().path(),
+                            request_id = %request_id,
+                        )
+                    }),
+                )
+                // Echo the request id back on the response so callers (and
+                // the backend) can confirm which id was used for this op.
+                .layer(PropagateRequestIdLayer::new(request_id_header)),
+        )
         .with_state(state)
 }
 

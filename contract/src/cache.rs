@@ -11,6 +11,7 @@ pub enum CacheBackend {
 }
 
 impl CacheBackend {
+    #[tracing::instrument(name = "cache.check_connection", skip(self))]
     pub async fn check_connection(&self) -> bool {
         match self {
             Self::Redis(c) => c.check_connection().await,
@@ -18,6 +19,7 @@ impl CacheBackend {
         }
     }
 
+    #[tracing::instrument(name = "cache.get_raw", skip(self), fields(key = %key))]
     pub async fn get_raw(&self, key: &str) -> Result<Option<String>> {
         match self {
             Self::Redis(c) => c.get_raw(key).await,
@@ -25,6 +27,7 @@ impl CacheBackend {
         }
     }
 
+    #[tracing::instrument(name = "cache.set_raw", skip(self, value), fields(key = %key, ttl = ttl))]
     pub async fn set_raw(&self, key: &str, value: &str, ttl: u64) -> Result<()> {
         match self {
             Self::Redis(c) => c.set_raw(key, value, ttl).await,
@@ -32,6 +35,7 @@ impl CacheBackend {
         }
     }
 
+    #[tracing::instrument(name = "cache.get", skip(self), fields(key = %key))]
     pub async fn get<T>(&self, key: &str) -> Result<Option<T>>
     where
         T: for<'de> Deserialize<'de>,
@@ -42,6 +46,7 @@ impl CacheBackend {
         }
     }
 
+    #[tracing::instrument(name = "cache.set", skip(self, value), fields(key = %key, ttl = ttl))]
     pub async fn set<T>(&self, key: &str, value: &T, ttl: u64) -> Result<()>
     where
         T: Serialize,
@@ -50,6 +55,7 @@ impl CacheBackend {
         self.set_raw(key, &serialized, ttl).await
     }
 
+    #[tracing::instrument(name = "cache.delete", skip(self), fields(key = %key))]
     pub async fn delete(&self, key: &str) -> Result<()> {
         match self {
             Self::Redis(c) => c.delete(key).await,
