@@ -2,6 +2,7 @@ pub mod cache;
 pub mod config;
 pub mod hash_validator;
 pub mod metrics;
+pub mod module;
 pub mod rate_limit;
 pub mod stellar;
 
@@ -24,6 +25,7 @@ use tracing::{info, warn};
 use cache::CacheBackend;
 use hash_validator::{HashValidator, ValidationError as HashValidationError};
 use metrics::MetricsRegistry;
+use module::{network::network_handler, ownership_chain::chain_handler};
 use stellar::{derive_account_id, StellarClient, TransactionRecord};
 
 // Application state
@@ -188,6 +190,10 @@ pub fn app(state: AppState) -> Router {
         .route("/submit", post(submit_document))
         .route("/revoke", post(revoke_document))
         .route("/transfer", post(record_transfer))
+        // CT-11: Stellar network switcher
+        .route("/module/network", get(network_handler))
+        // CT-22: Ownership chain validator
+        .route("/module/chain/:document_hash", get(chain_handler))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
