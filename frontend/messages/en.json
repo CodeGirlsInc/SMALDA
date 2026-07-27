@@ -109,5 +109,11 @@
       "title": "Language",
       "description": "Choose the language used across the interface and in the emails we send you."
     }
+  },
+  "errors": {
+    "title": "Something went wrong",
+    "description": "An unexpected error occurred. Please try again.",
+    "tryAgain": "Try again",
+    "goHome": "Go back home"
   }
 }

@@ -109,5 +109,11 @@
       "title": "Idioma",
       "description": "Elige el idioma utilizado en la interfaz y en los correos que te enviamos."
     }
+  },
+  "errors": {
+    "title": "Algo salió mal",
+    "description": "Ocurrió un error inesperado. Por favor, inténtalo de nuevo.",
+    "tryAgain": "Intentar de nuevo",
+    "goHome": "Volver al inicio"
   }
 }
