@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tracing::warn;
 
 pub enum CacheBackend {
     Redis(RedisCache),
@@ -15,6 +16,15 @@ impl CacheBackend {
         match self {
             Self::Redis(c) => c.check_connection().await,
             Self::InMemory(c) => c.check_connection().await,
+        }
+    }
+
+    /// Closes the underlying connection cleanly. Called during graceful
+    /// shutdown, after in-flight requests have finished draining.
+    pub async fn close(&self) {
+        match self {
+            Self::Redis(c) => c.close().await,
+            Self::InMemory(c) => c.close().await,
         }
     }
 
@@ -77,6 +87,14 @@ impl RedisCache {
             .is_ok()
     }
 
+    async fn close(&self) {
+        let mut conn = self.connection.clone();
+        match redis::cmd("QUIT").query_async::<_, ()>(&mut conn).await {
+            Ok(()) => tracing::info!("Redis connection closed cleanly during shutdown"),
+            Err(e) => warn!("Error sending QUIT to Redis during shutdown: {}", e),
+        }
+    }
+
     async fn get_raw(&self, key: &str) -> Result<Option<String>> {
         let mut conn = self.connection.clone();
         let value: Option<String> = conn.get(key).await?;
@@ -116,6 +134,8 @@ impl InMemoryCache {
     async fn check_connection(&self) -> bool {
         true
     }
+
+    async fn close(&self) {}
 
     async fn get_raw(&self, key: &str) -> Result<Option<String>> {
         let store = self.store.read().await;
