@@ -58,24 +58,63 @@ impl AppConfig {
         ];
 
         // Helper to read env var with default and check for placeholders in production
-        fn get_env_or_default(key: &str, default: &str, is_production: bool, errors: &mut Vec<String>, placeholders: &[&str]) -> String {
+        fn get_env_or_default(
+            key: &str,
+            default: &str,
+            is_production: bool,
+            errors: &mut Vec<String>,
+            placeholders: &[&str],
+        ) -> String {
             let value = env::var(key).unwrap_or_else(|_| default.to_string());
-            
+
             if is_production && placeholders.contains(&value.as_str()) {
-                errors.push(format!("{} contains a placeholder value '{}' - please set a real production value", key, value));
+                errors.push(format!(
+                    "{} contains a placeholder value '{}' - please set a real production value",
+                    key, value
+                ));
             }
-            
+
             value
         }
 
         // Basic string values with defaults
-        let port_raw = get_env_or_default("PORT", "8080", is_production, &mut errors, &placeholders);
-        let stellar_horizon_url =
-            get_env_or_default("STELLAR_HORIZON_URL", "https://horizon-testnet.stellar.org", is_production, &mut errors, &placeholders);
-        let redis_url = get_env_or_default("REDIS_URL", "redis://127.0.0.1:6379", is_production, &mut errors, &placeholders);
-        let log_level = get_env_or_default("LOG_LEVEL", "info", is_production, &mut errors, &placeholders);
-        let environment = Environment::from_env_str(&get_env_or_default("APP_ENV", "development", is_production, &mut errors, &placeholders));
-        let webhook_urls_raw = get_env_or_default("WEBHOOK_URLS", "", is_production, &mut errors, &placeholders);
+        let port_raw =
+            get_env_or_default("PORT", "8080", is_production, &mut errors, &placeholders);
+        let stellar_horizon_url = get_env_or_default(
+            "STELLAR_HORIZON_URL",
+            "https://horizon-testnet.stellar.org",
+            is_production,
+            &mut errors,
+            &placeholders,
+        );
+        let redis_url = get_env_or_default(
+            "REDIS_URL",
+            "redis://127.0.0.1:6379",
+            is_production,
+            &mut errors,
+            &placeholders,
+        );
+        let log_level = get_env_or_default(
+            "LOG_LEVEL",
+            "info",
+            is_production,
+            &mut errors,
+            &placeholders,
+        );
+        let environment = Environment::from_env_str(&get_env_or_default(
+            "APP_ENV",
+            "development",
+            is_production,
+            &mut errors,
+            &placeholders,
+        ));
+        let webhook_urls_raw = get_env_or_default(
+            "WEBHOOK_URLS",
+            "",
+            is_production,
+            &mut errors,
+            &placeholders,
+        );
 
         let stellar_secret_key = match env::var("STELLAR_SECRET_KEY") {
             Ok(key) => {
@@ -116,12 +155,41 @@ impl AppConfig {
         });
 
         // Numeric values with defaults
-        let rate_limit_per_second_raw = get_env_or_default("RATE_LIMIT_PER_SECOND", "10", is_production, &mut errors, &placeholders);
-        let rate_limit_burst_raw =
-            get_env_or_default("RATE_LIMIT_BURST", &rate_limit_per_second_raw, is_production, &mut errors, &placeholders);
-        let stellar_max_retries_raw = get_env_or_default("STELLAR_MAX_RETRIES", "3", is_production, &mut errors, &placeholders);
-        let cache_verification_ttl_raw = get_env_or_default("CACHE_VERIFICATION_TTL", "3600", is_production, &mut errors, &placeholders);
-        let shutdown_timeout_raw = get_env_or_default("SHUTDOWN_TIMEOUT_SECS", "30", is_production, &mut errors, &placeholders);
+        let rate_limit_per_second_raw = get_env_or_default(
+            "RATE_LIMIT_PER_SECOND",
+            "10",
+            is_production,
+            &mut errors,
+            &placeholders,
+        );
+        let rate_limit_burst_raw = get_env_or_default(
+            "RATE_LIMIT_BURST",
+            &rate_limit_per_second_raw,
+            is_production,
+            &mut errors,
+            &placeholders,
+        );
+        let stellar_max_retries_raw = get_env_or_default(
+            "STELLAR_MAX_RETRIES",
+            "3",
+            is_production,
+            &mut errors,
+            &placeholders,
+        );
+        let cache_verification_ttl_raw = get_env_or_default(
+            "CACHE_VERIFICATION_TTL",
+            "3600",
+            is_production,
+            &mut errors,
+            &placeholders,
+        );
+        let shutdown_timeout_raw = get_env_or_default(
+            "SHUTDOWN_TIMEOUT_SECS",
+            "30",
+            is_production,
+            &mut errors,
+            &placeholders,
+        );
 
         // Parse and validate port
         let port: u16 = match port_raw.parse() {

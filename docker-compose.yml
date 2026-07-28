@@ -29,5 +29,38 @@ services:
       timeout: 5s
       retries: 5
 
+  # Stellar document-verifier (Rust / Axum). The backend (NestJS) addresses
+  # it from inside the compose network at http://stellar-doc-verifier:8080.
+  stellar-doc-verifier:
+    build:
+      context: .
+      dockerfile: contract/Dockerfile
+    container_name: smalda-stellar-doc-verifier
+    environment:
+      APP_ENV: production
+      PORT: 8080
+      STELLAR_HORIZON_URL: ${STELLAR_HORIZON_URL:-https://horizon-testnet.stellar.org}
+      STELLAR_SECRET_KEY: ${STELLAR_SECRET_KEY:-}
+      REDIS_URL: redis://redis:6379
+      STELLAR_MAX_RETRIES: ${STELLAR_MAX_RETRIES:-3}
+      HORIZON_RETRY_INITIAL_BACKOFF_MS: ${HORIZON_RETRY_INITIAL_BACKOFF_MS:-200}
+      HORIZON_RETRY_MAX_BACKOFF_MS: ${HORIZON_RETRY_MAX_BACKOFF_MS:-5000}
+      HORIZON_RETRY_JITTER: ${HORIZON_RETRY_JITTER:-0.25}
+      HORIZON_CB_FAILURE_THRESHOLD: ${HORIZON_CB_FAILURE_THRESHOLD:-5}
+      HORIZON_CB_COOLDOWN_SECS: ${HORIZON_CB_COOLDOWN_SECS:-30}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - '8088:8080'
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:8080/health >/dev/null 2>&1 || exit 1']
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
 volumes:
   postgres_data:

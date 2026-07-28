@@ -1,3 +1,4 @@
+use tower::util::ServiceExt;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use std::sync::Arc;
@@ -7,7 +8,7 @@ use stellar_doc_verifier::config::AppConfig;
 use stellar_doc_verifier::metrics::MetricsRegistry;
 use stellar_doc_verifier::stellar::StellarClient;
 use stellar_doc_verifier::AppState;
-use tower::ServiceExt;
+use tower::util::ServiceExt;
 
 fn test_app_state() -> AppState {
     let cache = CacheBackend::InMemory(InMemoryCache::new());

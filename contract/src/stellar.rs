@@ -3,7 +3,7 @@ use base64::Engine as _;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tokio::time::sleep;
+use std::sync::Arc;
 use stellar_base::{
     account::DataValue,
     crypto::KeyPair,
@@ -14,10 +14,16 @@ use stellar_base::{
 };
 use tracing::info;
 
+use crate::retry::{with_retry_and_cb, CircuitBreaker, CircuitState, RetryPolicy, RetryableError};
+
 #[derive(Debug, Clone)]
 pub struct StellarClient {
     horizon_url: String,
     http_client: reqwest::Client,
+    /// Shared circuit breaker that tracks Horizon-call health.
+    circuit_breaker: Arc<CircuitBreaker>,
+    /// Active retry policy (max_attempts, backoff, jitter).
+    retry_policy: RetryPolicy,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -116,11 +122,6 @@ struct OperationRecord {
     value: Option<String>,
 }
 
-/// Maximum number of retries when Horizon responds with HTTP 429.
-const MAX_RETRIES_ON_429: u32 = 3;
-/// Initial back-off duration for 429 responses (doubles each attempt).
-const INITIAL_BACKOFF_MS: u64 = 200;
-
 impl StellarClient {
     /// Create a new client with sensible timeout and connection-pool defaults.
     pub fn new(horizon_url: &str) -> Self {
@@ -137,6 +138,8 @@ impl StellarClient {
         Self {
             horizon_url: horizon_url.to_string(),
             http_client,
+            circuit_breaker: CircuitBreaker::with_defaults(),
+            retry_policy: RetryPolicy::default(),
         }
     }
 
@@ -160,47 +163,102 @@ impl StellarClient {
         &self.horizon_url
     }
 
-    /// Execute a GET request with automatic 429 back-off.
-    ///
-    /// On HTTP 429 the call is retried up to [`MAX_RETRIES_ON_429`] times,
-    /// honouring a `Retry-After` header when present, otherwise using
-    /// exponential back-off starting at [`INITIAL_BACKOFF_MS`] ms.
-    async fn get_with_backoff(&self, url: &str) -> anyhow::Result<reqwest::Response> {
-        let mut backoff_ms = INITIAL_BACKOFF_MS;
-        for attempt in 0..=MAX_RETRIES_ON_429 {
-            let resp = self
-                .http_client
-                .get(url)
-                .send()
-                .await
-                .map_err(|e| anyhow::anyhow!("HTTP GET failed: {}", e))?;
-
-            if resp.status() != reqwest::StatusCode::TOO_MANY_REQUESTS {
-                return Ok(resp);
-            }
-
-            if attempt == MAX_RETRIES_ON_429 {
-                return Ok(resp); // caller will handle the 429
-            }
-
-            // Respect Retry-After header if present, otherwise use back-off.
-            let wait_ms = resp
-                .headers()
-                .get("retry-after")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|s| s.parse::<u64>().ok())
-                .map(|secs| secs * 1_000)
-                .unwrap_or(backoff_ms);
-
-            tracing::warn!(
-                attempt,
-                wait_ms,
-                "Horizon rate-limited (429), backing off before retry"
-            );
-            sleep(std::time::Duration::from_millis(wait_ms)).await;
-            backoff_ms *= 2;
+    /// Build a client with a custom retry policy and circuit breaker.
+    /// Used by integration tests to inject deterministic behaviour.
+    pub fn with_policy(
+        horizon_url: &str,
+        retry_policy: RetryPolicy,
+        circuit_breaker: Arc<CircuitBreaker>,
+    ) -> Self {
+        let http_client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .pool_max_idle_per_host(10)
+            .pool_idle_timeout(std::time::Duration::from_secs(90))
+            .build()
+            .expect("failed to build reqwest client");
+        Self {
+            horizon_url: horizon_url.to_string(),
+            http_client,
+            circuit_breaker,
+            retry_policy,
         }
-        unreachable!()
+    }
+
+    /// Current circuit-breaker state.
+    pub fn circuit_state(&self) -> CircuitState {
+        self.circuit_breaker.state()
+    }
+
+    /// Human-readable label for the current circuit-breaker state.
+    pub fn circuit_state_label(&self) -> &'static str {
+        self.circuit_breaker.state_label()
+    }
+
+    /// Number of consecutive failures seen by the breaker.
+    pub fn circuit_failures(&self) -> u32 {
+        self.circuit_breaker.failures()
+    }
+
+    /// Execute a GET request wrapped in the retry policy and circuit breaker.
+    ///
+    /// Returns `Ok(resp)` for any Horizon response (including 4xx/5xx -- the
+    /// caller decides how to map non-2xx). Returns `Err(anyhow::Error)`
+    /// only when the breaker is open up-front, or the retry budget is
+    /// exhausted on purely transport-level failures.
+    async fn get_with_backoff(&self, url: &str) -> anyhow::Result<reqwest::Response> {
+        let breaker = self.circuit_breaker.clone();
+        let policy = self.retry_policy.clone();
+        let client = self.http_client.clone();
+        let url_owned = url.to_string();
+        with_retry_and_cb(&breaker, &policy, move || {
+            let client = client.clone();
+            let url_owned = url_owned.clone();
+            async move {
+                match client.get(&url_owned).send().await {
+                    Ok(resp) => Ok(resp),
+                    Err(e) => Err(RetryableError::Retryable(format!(
+                        "HTTP GET {url_owned} failed: {e}"
+                    ))),
+                }
+            }
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("horizon GET {url}: {}", e.into_string()))
+    }
+
+    /// POST a form-urlencoded envelope to Horizon, wrapped in the retry
+    /// policy and circuit breaker.
+    ///
+    /// Callers must build the envelope / form_body OUTSIDE this helper:
+    /// the same bytes are re-sent on every retry, but re-signing and
+    /// re-fetching the source sequence must happen once at the caller to
+    /// keep POSTs idempotent under retry.
+    async fn horizon_post(&self, url: &str, body: String) -> anyhow::Result<reqwest::Response> {
+        let breaker = self.circuit_breaker.clone();
+        let policy = self.retry_policy.clone();
+        let client = self.http_client.clone();
+        let url_owned = url.to_string();
+        with_retry_and_cb(&breaker, &policy, move || {
+            let client = client.clone();
+            let url_owned = url_owned.clone();
+            let body = body.clone();
+            async move {
+                match client
+                    .post(&url_owned)
+                    .header("Content-Type", "application/x-www-form-urlencoded")
+                    .body(body)
+                    .send()
+                    .await
+                {
+                    Ok(resp) => Ok(resp),
+                    Err(e) => Err(RetryableError::Retryable(format!(
+                        "HTTP POST {url_owned} failed: {e}"
+                    ))),
+                }
+            }
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("horizon POST {url}: {}", e.into_string()))
     }
 
     /// Verifies a document hash against Horizon using the `ManageData` approach.
@@ -400,11 +458,7 @@ impl StellarClient {
         let form_body = format!("tx={}", urlencoding::encode(&xdr_b64));
 
         let submit_resp = self
-            .http_client
-            .post(&submit_url)
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .body(form_body)
-            .send()
+            .horizon_post(&submit_url, form_body)
             .await
             .map_err(|e| anyhow!("Transaction submission failed: {}", e))?;
 
@@ -517,11 +571,7 @@ impl StellarClient {
         let form_body = format!("tx={}", urlencoding::encode(&xdr_b64));
 
         let submit_resp = self
-            .http_client
-            .post(&submit_url)
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .body(form_body)
-            .send()
+            .horizon_post(&submit_url, form_body)
             .await
             .map_err(|e| anyhow!("Transaction submission failed: {}", e))?;
 
@@ -633,11 +683,7 @@ impl StellarClient {
         let form_body = format!("tx={}", urlencoding::encode(&xdr_b64));
 
         let submit_resp = self
-            .http_client
-            .post(&submit_url)
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .body(form_body)
-            .send()
+            .horizon_post(&submit_url, form_body)
             .await
             .map_err(|e| anyhow!("Transaction submission failed: {}", e))?;
 
