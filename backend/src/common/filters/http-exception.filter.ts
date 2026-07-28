@@ -7,6 +7,8 @@
   Logger,
 } from '@nestjs/common';
 import { Response, Request } from 'express';
+import { QueryFailedError } from 'typeorm';
+import { ErrorCodes } from '../errors/error-codes';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -19,60 +21,109 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
-    const isHttp = exception instanceof HttpException;
-    const status = isHttp
-      ? exception.getStatus()
-      : HttpStatus.INTERNAL_SERVER_ERROR;
+    const status = this.resolveStatus(exception);
+    const { message, errorCode, fieldErrors } = this.resolveError(exception);
 
-    const errorResponse = isHttp
-      ? exception.getResponse()
-      : { message: (exception as Error)?.message }; // fallback message
-
-    const { message, error } = this.normalizeResponse(errorResponse, exception);
-
-    const payload = {
+    const payload: Record<string, unknown> = {
       statusCode: status,
+      errorCode,
       message,
-      error,
+      requestId: request['requestId'] || null,
       timestamp: new Date().toISOString(),
       path: request.url,
     };
 
-    this.logger.error(`${status}   -> `, (exception as Error)?.stack);
+    if (fieldErrors) {
+      payload.fieldErrors = fieldErrors;
+    }
+
+    this.logger.error(
+      `${status} [${errorCode}] ${request.url}`,
+      (exception as Error)?.stack,
+    );
 
     if (!this.isProduction && exception instanceof Error) {
-      Object.assign(payload, { stack: exception.stack });
+      payload.stack = exception.stack;
     }
 
     response.status(status).json(payload);
   }
 
-  private normalizeResponse(
-    response: string | object | null | undefined,
-    exception: unknown,
-  ) {
-    let message = 'Internal server error';
-    let error = HttpStatus.INTERNAL_SERVER_ERROR.toString();
+  private resolveStatus(exception: unknown): number {
+    if (exception instanceof HttpException) {
+      return exception.getStatus();
+    }
+    if (exception instanceof QueryFailedError) {
+      const msg = exception.message || '';
+      if (msg.includes('unique constraint') || msg.includes('duplicate key')) {
+        return HttpStatus.CONFLICT;
+      }
+      if (msg.includes('foreign key') || msg.includes('violates foreign key')) {
+        return HttpStatus.BAD_REQUEST;
+      }
+    }
+    return HttpStatus.INTERNAL_SERVER_ERROR;
+  }
 
-    if (typeof response === 'string') {
-      message = response;
-    } else if (response && typeof response === 'object') {
+  private resolveError(exception: unknown): {
+    message: string;
+    errorCode: string;
+    fieldErrors?: Record<string, string[]>;
+  } {
+    if (exception instanceof HttpException) {
+      const response = exception.getResponse();
+      const status = exception.getStatus();
+
+      if (typeof response === 'string') {
+        return {
+          message: response,
+          errorCode: this.statusToCode(status),
+        };
+      }
+
       const body = response as Record<string, any>;
-      if (body.message) {
-        message = Array.isArray(body.message)
-          ? body.message.join(', ')
-          : body.message;
-      } else if (exception instanceof Error && exception.message) {
-        message = exception.message;
+
+      if (Array.isArray(body.message)) {
+        return {
+          message: body.message.join(', '),
+          errorCode: ErrorCodes.VALIDATION_ERROR,
+          fieldErrors: body.fieldErrors,
+        };
       }
 
-      if (body.error) {
-        error = body.error;
-      }
-    } else if (exception instanceof Error) {
-      message = exception.message;
+      return {
+        message: body.message || body.error || exception.message,
+        errorCode: body.errorCode || this.statusToCode(status),
+      };
     }
 
-    return { message, error };
+    if (exception instanceof QueryFailedError) {
+      const msg = exception.message || '';
+      if (msg.includes('unique constraint') || msg.includes('duplicate key')) {
+        return { message: 'Resource already exists', errorCode: ErrorCodes.UNIQUE_VIOLATION };
+      }
+      if (msg.includes('foreign key') || msg.includes('violates foreign key')) {
+        return { message: 'Referenced resource not found', errorCode: ErrorCodes.FK_VIOLATION };
+      }
+      return { message: 'Database error', errorCode: ErrorCodes.INTEGRITY_VIOLATION };
+    }
+
+    return {
+      message: (exception as Error)?.message || 'Internal server error',
+      errorCode: ErrorCodes.INTERNAL_ERROR,
+    };
+  }
+
+  private statusToCode(status: number): string {
+    switch (status) {
+      case 400: return ErrorCodes.BAD_REQUEST;
+      case 401: return ErrorCodes.UNAUTHORIZED;
+      case 403: return ErrorCodes.FORBIDDEN;
+      case 404: return ErrorCodes.NOT_FOUND;
+      case 409: return ErrorCodes.CONFLICT;
+      case 429: return ErrorCodes.RATE_LIMITED;
+      case 413: return ErrorCodes.PAYLOAD_TOO_LARGE;
+      default: return ErrorCodes.INTERNAL_ERROR;
+    }
   }
 }

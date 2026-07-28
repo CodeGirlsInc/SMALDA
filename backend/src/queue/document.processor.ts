@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-import { Worker } from 'bullmq';
+import { Worker, Job } from 'bullmq';
 
 import { DocumentsService } from '../documents/documents.service';
 import { DocumentStatus } from '../documents/entities/document.entity';
@@ -8,6 +8,7 @@ import { VerificationStatus } from '../verification/entities/verification-record
 import { RiskAssessmentService } from '../risk-assessment/risk-assessment.service';
 import { StellarService } from '../stellar/stellar.service';
 import { QueueService } from './queue.service';
+import { incCounter } from '../common/metrics/metrics.controller';
 
 @Injectable()
 export class DocumentProcessor implements OnModuleDestroy {
@@ -26,22 +27,29 @@ export class DocumentProcessor implements OnModuleDestroy {
       this.queueService.queueName,
       async (job) => {
         if (job.name === 'analyze') {
+          incCounter('domain_documents_analyzed');
           await this.riskService.assessDocument(job.data.documentId);
           return;
         }
         if (job.name === 'anchor') {
+          incCounter('domain_verifications_attempted');
           await this.handleAnchor(job.data.documentId);
         }
       },
       { connection },
     );
 
-    this.worker.on('failed', (job, err) => {
-      this.logger.error(
-        `Job ${job.id} (${job.name}) failed`,
-        err?.message,
-        err?.stack,
-      );
+    this.worker.on('failed', async (job, err) => {
+      this.logger.error(`Job ${job.id} (${job.name}) failed`, err?.message, err?.stack);
+      incCounter('domain_jobs_failed');
+
+      if (job && job.attemptsMade >= (job.opts.attempts ?? 3)) {
+        await this.queueService.moveToDeadLetter(job.id);
+      }
+    });
+
+    this.worker.on('completed', (job) => {
+      incCounter('domain_jobs_completed');
     });
   }
 
@@ -52,9 +60,7 @@ export class DocumentProcessor implements OnModuleDestroy {
       return;
     }
 
-    const { txHash, ledger } = await this.stellarService.anchorHash(
-      document.fileHash,
-    );
+    const { txHash, ledger } = await this.stellarService.anchorHash(document.fileHash);
     await this.verificationService.create({
       documentId,
       stellarTxHash: txHash,
@@ -63,10 +69,7 @@ export class DocumentProcessor implements OnModuleDestroy {
       status: VerificationStatus.CONFIRMED,
     });
 
-    await this.documentsService.updateStatus(
-      documentId,
-      DocumentStatus.VERIFIED,
-    );
+    await this.documentsService.updateStatus(documentId, DocumentStatus.VERIFIED);
     this.logger.log(`Document ${documentId} verified on ledger ${ledger}`);
   }
 

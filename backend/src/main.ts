@@ -16,17 +16,14 @@ async function bootstrap() {
 
   const configService = app.get(ConfigService);
 
-  // Enable CORS
   app.enableCors({
     origin:
       configService.get<string>('FRONTEND_URL') || 'http://localhost:3001',
     credentials: true,
   });
 
-  // Global prefix
   app.setGlobalPrefix('api');
 
-  // Global validation pipe
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -46,9 +43,9 @@ async function bootstrap() {
 
   // Swagger documentation
   const config = new DocumentBuilder()
-    .setTitle('SMALDA Authentication API')
+    .setTitle('SMALDA — Secure Land Document Verification API')
     .setDescription(
-      'Comprehensive authentication and authorization API with JWT, OAuth, and RBAC',
+      'End-to-end platform for land document verification, risk assessment, and blockchain anchoring on Stellar.',
     )
     .setVersion('1.0')
     .addBearerAuth(
@@ -62,11 +59,16 @@ async function bootstrap() {
       },
       'JWT-auth',
     )
-    .addTag(
-      'Authentication',
-      'Authentication endpoints (login, register, OAuth, etc.)',
-    )
-    .addTag('Users', 'User management and profile endpoints')
+    .addTag('Authentication', 'Login, register, OAuth, and token management')
+    .addTag('Users', 'User profiles and account management')
+    .addTag('Documents', 'Document upload, retrieval, and lifecycle')
+    .addTag('Risk Assessment', 'Automated document risk scoring and flagging')
+    .addTag('Verification', 'Stellar blockchain anchoring and verification records')
+    .addTag('Disputes', 'Dispute filing and resolution')
+    .addTag('External Validation', 'Land registry, government ID, and business registration checks')
+    .addTag('Access Logs', 'Document access audit trail')
+    .addTag('Stellar', 'Blockchain anchoring operations')
+    .addTag('Queue', 'Document processing queue management')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
@@ -78,6 +80,9 @@ async function bootstrap() {
     },
   });
 
+  // Graceful shutdown
+  app.enableShutdownHooks();
+
   const port = configService.get<number>('APP_PORT') || 6004;
   await app.listen(port);
 
@@ -85,5 +90,17 @@ async function bootstrap() {
   console.log(
     `Swagger documentation available at: http://localhost:${port}/api/docs`,
   );
+
+  // Handle shutdown signals
+  const shutdown = async (signal: string) => {
+    console.log(`\n${signal} received. Starting graceful shutdown...`);
+    console.log('Stopping accepting new connections...');
+    await app.close();
+    console.log('All connections closed. Exiting.');
+    process.exit(0);
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 bootstrap();
