@@ -1,3 +1,8 @@
+//! Cache abstraction used for verification results, transfer history, and
+//! transaction history. Backed by Redis in production
+//! ([`RedisCache`]) or an in-process map for tests/local dev without Redis
+//! ([`InMemoryCache`]).
+
 use anyhow::Result;
 use redis::{aio::ConnectionManager, AsyncCommands};
 use serde::{Deserialize, Serialize};
@@ -5,6 +10,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+/// Runtime-selected cache implementation. [`crate::AppState`] holds one of these
+/// behind an `Arc`; callers use the typed [`CacheBackend::get`] /
+/// [`CacheBackend::set`] helpers rather than the backend-specific structs
+/// directly.
 pub enum CacheBackend {
     Redis(RedisCache),
     InMemory(InMemoryCache),
@@ -58,6 +67,7 @@ impl CacheBackend {
     }
 }
 
+/// Redis-backed cache using a pooled async connection manager.
 pub struct RedisCache {
     connection: ConnectionManager,
 }
@@ -96,6 +106,9 @@ impl RedisCache {
     }
 }
 
+/// In-process cache backed by a `RwLock<HashMap>`. TTLs passed to
+/// [`InMemoryCache`] are currently ignored - entries never expire. Intended
+/// for local development and tests, not production use.
 pub struct InMemoryCache {
     store: Arc<RwLock<HashMap<String, String>>>,
 }

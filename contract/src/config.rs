@@ -1,8 +1,16 @@
+//! Environment-based configuration for the service.
+//!
+//! [`AppConfig::from_env`] reads every setting from environment variables,
+//! applying defaults where reasonable and collecting *all* validation
+//! failures into one [`ConfigError`] rather than stopping at the first.
+
 use std::env;
 
 use thiserror::Error;
 use url::Url;
 
+/// Fully validated runtime configuration, built once at startup by
+/// [`AppConfig::from_env`].
 #[derive(Debug, Clone)]
 pub struct AppConfig {
     pub port: u16,
@@ -18,6 +26,8 @@ pub struct AppConfig {
     pub cache_verification_ttl: u64,
 }
 
+/// Error returned when one or more environment variables fail validation.
+/// The message lists every failure found, not just the first.
 #[derive(Debug, Error)]
 pub enum ConfigError {
     #[error("configuration validation failed:\n{0}")]
@@ -25,6 +35,10 @@ pub enum ConfigError {
 }
 
 impl AppConfig {
+    /// Read and validate configuration from environment variables.
+    ///
+    /// See `contract/README.md`'s "Local setup" table for the full list of
+    /// variables, defaults, and which are required.
     pub fn from_env() -> Result<Self, ConfigError> {
         let mut errors = Vec::new();
 

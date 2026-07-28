@@ -1,3 +1,10 @@
+//! All interaction with the Stellar network via the Horizon HTTP API.
+//!
+//! Every write (anchor, revoke, transfer) is a `ManageData` operation
+//! signed and submitted under the single Stellar account derived from the
+//! service's configured secret key. Reads (verify, history) query that same
+//! account's data entries and operation history back from Horizon.
+
 use anyhow::{anyhow, Result};
 use base64::Engine as _;
 use chrono::Utc;
@@ -13,12 +20,16 @@ use stellar_base::{
 };
 use tracing::info;
 
+/// Thin HTTP client over the Stellar Horizon API. Holds no key material -
+/// secret keys are passed in per-call, not stored on the client.
 #[derive(Debug, Clone)]
 pub struct StellarClient {
     horizon_url: String,
     http_client: reqwest::Client,
 }
 
+/// A single cached transaction entry, as stored under `history:<hash>` in
+/// the cache backend.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TransactionRecord {
     pub transaction_id: String,
@@ -26,6 +37,9 @@ pub struct TransactionRecord {
     pub verified: bool,
 }
 
+/// General-purpose verification result shape. Superseded in practice by
+/// [`VerificationRecord`], which [`StellarClient::verify_hash`] actually
+/// returns; kept for API compatibility.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VerificationResult {
     pub verified: bool,
@@ -116,6 +130,8 @@ struct OperationRecord {
 }
 
 impl StellarClient {
+    /// Construct a client pointed at the given Horizon base URL (e.g.
+    /// `https://horizon-testnet.stellar.org`).
     pub fn new(horizon_url: &str) -> Self {
         Self {
             horizon_url: horizon_url.to_string(),
@@ -123,6 +139,8 @@ impl StellarClient {
         }
     }
 
+    /// Best-effort liveness check used by `GET /health`. Returns `false` on
+    /// any request error rather than propagating it.
     pub async fn check_connection(&self) -> bool {
         self.http_client
             .get(&self.horizon_url)
@@ -247,6 +265,8 @@ impl StellarClient {
     }
 
     /// Anchor a transfer record on Stellar using a `ManageData` operation.
+    /// Anchor a transfer record on Stellar via `ManageData`, using the
+    /// `trf_` key prefix (see [`build_transfer_key`]).
     pub async fn anchor_transfer(
         &self,
         transfer_hash: &str,

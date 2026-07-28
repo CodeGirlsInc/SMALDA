@@ -1,3 +1,9 @@
+//! Binary entry point for `stellar-doc-verifier`.
+//!
+//! Loads configuration from the environment, initializes structured
+//! logging, wires up the Stellar client / Redis cache / metrics registry
+//! into `AppState`, and starts the Axum HTTP server.
+
 use std::sync::Arc;
 use stellar_doc_verifier::app;
 use stellar_doc_verifier::cache::{CacheBackend, RedisCache};

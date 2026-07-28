@@ -1,6 +1,11 @@
+//! Prometheus metrics registry backing `GET /metrics`.
+
 use axum::response::IntoResponse;
 use prometheus::{Counter, Encoder, Registry, TextEncoder};
 
+/// Holds the service's Prometheus counters: total requests, cache
+/// hits/misses, and errors. One instance is shared across all handlers via
+/// [`crate::AppState`].
 pub struct MetricsRegistry {
     registry: Registry,
     request_count: Counter,
@@ -53,6 +58,8 @@ impl MetricsRegistry {
         self.error_count.inc();
     }
 
+    /// Render all registered metrics in Prometheus text exposition format,
+    /// as served by `GET /metrics`.
     pub fn render(&self) -> impl IntoResponse {
         let encoder = TextEncoder::new();
         let metric_families = self.registry.gather();

@@ -1,3 +1,12 @@
+//! `stellar-doc-verifier`: an Axum HTTP service (not a Soroban smart contract)
+//! that anchors, verifies, revokes, and transfers document hashes on the
+//! Stellar network via `ManageData` operations against a single configured
+//! Stellar account.
+//!
+//! This module defines [`AppState`], every HTTP request/response type, the
+//! [`app`] router, and all route handlers. See `contract/README.md` for the
+//! full HTTP API reference and module layout.
+
 pub mod cache;
 pub mod config;
 pub mod hash_validator;
@@ -26,7 +35,12 @@ use hash_validator::{HashValidator, ValidationError as HashValidationError};
 use metrics::MetricsRegistry;
 use stellar::{derive_account_id, StellarClient, TransactionRecord};
 
-// Application state
+/// Shared application state injected into every handler via Axum's
+/// `State` extractor.
+///
+/// Cloned per-request (cheap: everything inside is an `Arc` or a small
+/// value), so all handlers observe the same Stellar client, cache backend,
+/// and metrics registry.
 #[derive(Clone)]
 pub struct AppState {
     pub stellar: Arc<StellarClient>,
@@ -35,13 +49,17 @@ pub struct AppState {
     pub stellar_secret_key: String,
 }
 
-// Request/Response types
+/// Request body for `POST /verify`.
 #[derive(Debug, Deserialize)]
 pub struct VerifyRequest {
     pub document_hash: String,
     pub transaction_id: Option<String>,
 }
 
+/// Response body for `POST /verify` and `GET /verify/:hash`.
+///
+/// `revoked` and `revoked_at` are omitted from the serialized JSON when
+/// `None` (see `#[serde(skip_serializing_if...)]` below).
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VerifyResponse {
     pub verified: bool,
@@ -85,6 +103,7 @@ pub struct RevokeResponse {
     pub revoked: bool,
 }
 
+/// Response body for `GET /health`.
 #[derive(Debug, Serialize)]
 pub struct HealthResponse {
     pub status: String,
@@ -101,16 +120,21 @@ pub struct HistoryResponse {
     pub cached: bool,
 }
 
+/// Error body returned for `400` responses across every endpoint that
+/// validates a document hash.
 #[derive(Debug, Serialize)]
 pub struct ValidationErrorResponse {
     pub error: String,
 }
 
+/// Request body for `POST /verify/batch`. `hashes` must be non-empty and
+/// at most 50 entries.
 #[derive(Debug, Deserialize)]
 pub struct BatchVerifyRequest {
     pub hashes: Vec<String>,
 }
 
+/// Response body for `POST /verify/batch`.
 #[derive(Debug, Serialize)]
 pub struct BatchVerifyResponse {
     pub results: Vec<BatchVerifyItem>,
@@ -119,6 +143,8 @@ pub struct BatchVerifyResponse {
     pub failed_count: usize,
 }
 
+/// Per-hash result inside [`BatchVerifyResponse::results`]. A per-hash
+/// failure sets `error` and `verified: false` without failing the batch.
 #[derive(Debug, Serialize)]
 pub struct BatchVerifyItem {
     pub hash: String,
@@ -128,6 +154,7 @@ pub struct BatchVerifyItem {
     pub error: Option<String>,
 }
 
+/// Request body for `POST /transfer`.
 #[derive(Debug, Deserialize, Clone)]
 pub struct TransferRequest {
     pub document_hash: String,
@@ -149,6 +176,7 @@ pub struct TransferRecord {
     pub anchored_at: String,
 }
 
+/// Response body for `POST /transfer`.
 #[derive(Debug, Serialize)]
 pub struct TransferResponse {
     pub transfer_hash: String,
@@ -177,6 +205,12 @@ fn map_validation_error(err: HashValidationError) -> (StatusCode, ValidationErro
     )
 }
 
+/// Build the service's Axum [`Router`].
+///
+/// Note: `transfer_document` and `get_transfer_history` (below) are defined
+/// but intentionally **not** wired into this router; see the "Known
+/// issues" section of `contract/README.md`. Only the routes listed here are
+/// actually reachable.
 pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health_check))
@@ -192,7 +226,9 @@ pub fn app(state: AppState) -> Router {
         .with_state(state)
 }
 
-// Health check endpoint
+/// `GET /health` - reports service status plus live Stellar/Redis
+/// connectivity. Always returns `200`; check the `status` field for
+/// `"degraded"`.
 pub async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
     let stellar_ok = state.stellar.check_connection().await;
     let redis_ok = state.cache.check_connection().await;
@@ -210,7 +246,8 @@ pub async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
     })
 }
 
-// Metrics endpoint
+/// `GET /metrics` - Prometheus text-format exposition of request, cache,
+/// and error counters.
 pub async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
     state.metrics.render()
 }
@@ -320,7 +357,11 @@ pub async fn record_transfer(
     }))
 }
 
-/// GET /transfer/:document_hash — retrieve transfer history for a document.
+/// Retrieve transfer history for a document hash from the cache.
+///
+/// Not currently routed - no path in `app()` calls this handler. Kept
+/// here for a possible future GET /transfer/:hash route; do not assume
+/// this endpoint is reachable.
 pub async fn get_transfer_history(
     State(state): State<AppState>,
     Path(document_hash): Path<String>,
@@ -337,7 +378,8 @@ pub async fn get_transfer_history(
     }
 }
 
-// Verify document by POST
+/// `POST /verify` - validate and verify a document hash, checking the
+/// cache before falling back to a live Horizon query.
 pub async fn verify_document(
     State(state): State<AppState>,
     Json(req): Json<VerifyRequest>,
@@ -395,7 +437,8 @@ pub async fn verify_document(
     Json(response).into_response()
 }
 
-// Verify document by GET with hash in path
+/// `GET /verify/:hash` - identical behavior to [`verify_document`], with
+/// the hash taken from the path instead of a JSON body.
 pub async fn verify_document_by_hash(
     State(state): State<AppState>,
     Path(hash): Path<String>,
@@ -407,7 +450,8 @@ pub async fn verify_document_by_hash(
     verify_document(State(state), Json(req)).await
 }
 
-// Verify document history by hash
+/// `GET /verify/:hash/history` - cached transaction history for a hash.
+/// Reads only from cache; does not query Horizon for fresh operation data.
 pub async fn verify_document_history(
     State(state): State<AppState>,
     Path(hash): Path<String>,
@@ -440,7 +484,9 @@ pub async fn verify_document_history(
     .into_response()
 }
 
-// Batch verify documents
+/// `POST /verify/batch` - verify up to 50 hashes concurrently. Per-hash
+/// failures are reported in each item's `error` field rather than failing
+/// the whole request.
 pub async fn batch_verify_documents(
     State(state): State<AppState>,
     Json(req): Json<BatchVerifyRequest>,
@@ -496,7 +542,8 @@ pub async fn batch_verify_documents(
     Json(response).into_response()
 }
 
-// Helper function to verify a single hash
+/// Verify one hash for [`batch_verify_documents`]: cache lookup, then a
+/// live Horizon query on a miss, caching the result for one hour.
 async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
     let normalized_hash = HashValidator::normalize(&hash);
 
@@ -800,6 +847,10 @@ pub async fn revoke_document(
     }
 }
 
+/// **Not currently routed.** [`app`] wires `POST /transfer` to
+/// [`record_transfer`] instead of this handler, which always responds
+/// `400 "transfer endpoint not yet implemented"`. Kept for reference only;
+/// do not assume this is reachable.
 pub async fn transfer_document(Json(req): Json<TransferRequest>) -> impl IntoResponse {
     let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
