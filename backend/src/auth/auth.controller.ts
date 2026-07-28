@@ -7,6 +7,7 @@
   Res,
   UseGuards,
   BadRequestException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '@nestjs/passport';
@@ -18,12 +19,14 @@ import { AuthService } from './auth.service';
 import { RegisterAuthDto } from './dto/register-auth.dto';
 import { LoginAuthDto } from './dto/login-auth.dto';
 import { RefreshAuthDto } from './dto/refresh-auth.dto';
+import { BruteForceGuard } from '../common/guards/brute-force.guard';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
+    private readonly bruteForceGuard: BruteForceGuard,
   ) {}
 
   @Post('register')
@@ -32,8 +35,17 @@ export class AuthController {
   }
 
   @Post('login')
-  login(@Body() dto: LoginAuthDto) {
-    return this.authService.login(dto);
+  async login(@Body() dto: LoginAuthDto, @Req() req: Request) {
+    try {
+      const result = await this.authService.login(dto);
+      this.bruteForceGuard.resetAttempts(req);
+      return result;
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        this.bruteForceGuard.recordFailedAttempt(req);
+      }
+      throw error;
+    }
   }
 
   @Post('refresh')

@@ -9,6 +9,7 @@ import { UsersModule } from '../users/users.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { GithubStrategy } from './strategies/github.strategy';
+import { BruteForceGuard } from '../common/guards/brute-force.guard';
 
 @Module({
   imports: [
@@ -27,7 +28,7 @@ import { GithubStrategy } from './strategies/github.strategy';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, GoogleStrategy, GithubStrategy],
-  exports: [AuthService],
+  providers: [AuthService, JwtStrategy, GoogleStrategy, GithubStrategy, BruteForceGuard],
+  exports: [AuthService, BruteForceGuard],
 })
 export class AuthModule {}

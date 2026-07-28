@@ -9,6 +9,8 @@ import { AccessLogsModule } from './access-logs/access-logs.module';
 import { AuthModule } from './auth/auth.module';
 import { buildWinstonOptions } from './common/logger.config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
+import { SecurityHeadersMiddleware } from './common/middleware/security-headers.middleware';
+import { AccessLogMiddleware } from './common/middleware/access-log.middleware';
 import { DocumentsModule } from './documents/documents.module';
 import { MailModule } from './mail/mail.module';
 import { QueueModule } from './queue/queue.module';
@@ -64,10 +66,10 @@ import { ConfigValidationSchema } from './config/config.validation';
     ExternalValidationModule,
   ],
   controllers: [AppController],
-  providers: [AppService, LoggerMiddleware],
+  providers: [AppService, LoggerMiddleware, SecurityHeadersMiddleware, AccessLogMiddleware],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(LoggerMiddleware).forRoutes('*');
+    consumer.apply(LoggerMiddleware, SecurityHeadersMiddleware, AccessLogMiddleware).forRoutes('*');
   }
 }

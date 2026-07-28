@@ -1,9 +1,14 @@
-import { IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsNumber, IsOptional, IsString } from 'class-validator';
+import { AccessAction } from '../entities/access-log.entity';
 
 export class CreateAccessLogDto {
   @IsOptional()
   @IsString()
-  userId?: string | null;
+  userId?: string;
+
+  @IsOptional()
+  @IsString()
+  documentId?: string;
 
   @IsString()
   routePath: string;
@@ -11,10 +16,22 @@ export class CreateAccessLogDto {
   @IsString()
   httpMethod: string;
 
+  @IsOptional()
   @IsString()
-  ipAddress: string;
+  ipAddress?: string;
+
+  @IsOptional()
+  @IsString()
+  userAgent?: string;
+
+  @IsOptional()
+  @IsEnum(AccessAction)
+  action?: AccessAction;
 
   @IsOptional()
   @IsNumber()
   statusCode?: number;
+
+  @IsOptional()
+  isAdmin?: boolean;
 }
