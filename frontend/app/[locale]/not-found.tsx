@@ -23,6 +23,9 @@ export default async function NotFound({
       >
         {t("home")}
       </Link>
+      <p className="mt-6 max-w-md text-xs text-gray-400">
+        {t("docNotFoundDescription")}
+      </p>
     </main>
   );
 }

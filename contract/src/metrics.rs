@@ -1,5 +1,4 @@
-use axum::response::IntoResponse;
-use prometheus::{Counter, Encoder, Registry, TextEncoder};
+use prometheus::{Counter, Encoder, Gauge, Registry, TextEncoder};
 
 #[derive(Clone)]
 pub struct MetricsRegistry {
@@ -8,6 +7,12 @@ pub struct MetricsRegistry {
     cache_hits: Counter,
     cache_misses: Counter,
     error_count: Counter,
+    /// Horizon calls that triggered a retry (each retry occurrence counted).
+    horizon_retries_total: Counter,
+    /// Times the Horizon circuit breaker transitioned into the `Open` state.
+    horizon_circuit_opens_total: Counter,
+    /// Current circuit-breaker state. 0 = Closed, 1 = Open, 2 = HalfOpen.
+    horizon_circuit_state: Gauge,
 }
 
 impl Default for MetricsRegistry {
@@ -23,11 +28,35 @@ impl MetricsRegistry {
         let cache_hits = Counter::new("cache_hits_total", "Total cache hits").unwrap();
         let cache_misses = Counter::new("cache_misses_total", "Total cache misses").unwrap();
         let error_count = Counter::new("errors_total", "Total errors").unwrap();
+        let horizon_retries_total = Counter::new(
+            "horizon_retries_total",
+            "Total Horizon call retries triggered by the retry policy",
+        )
+        .unwrap();
+        let horizon_circuit_opens_total = Counter::new(
+            "horizon_circuit_opens_total",
+            "Times the Horizon circuit breaker transitioned to Open",
+        )
+        .unwrap();
+        let horizon_circuit_state = Gauge::new(
+            "horizon_circuit_state",
+            "Current Horizon circuit-breaker state (0=Closed, 1=Open, 2=HalfOpen)",
+        )
+        .unwrap();
 
         registry.register(Box::new(request_count.clone())).unwrap();
         registry.register(Box::new(cache_hits.clone())).unwrap();
         registry.register(Box::new(cache_misses.clone())).unwrap();
         registry.register(Box::new(error_count.clone())).unwrap();
+        registry
+            .register(Box::new(horizon_retries_total.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(horizon_circuit_opens_total.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(horizon_circuit_state.clone()))
+            .unwrap();
 
         Self {
             registry,
@@ -35,6 +64,9 @@ impl MetricsRegistry {
             cache_hits,
             cache_misses,
             error_count,
+            horizon_retries_total,
+            horizon_circuit_opens_total,
+            horizon_circuit_state,
         }
     }
 
@@ -54,7 +86,19 @@ impl MetricsRegistry {
         self.error_count.inc();
     }
 
-    pub fn render(&self) -> impl IntoResponse {
+    pub fn record_horizon_retry(&self) {
+        self.horizon_retries_total.inc();
+    }
+
+    pub fn record_circuit_open(&self) {
+        self.horizon_circuit_opens_total.inc();
+    }
+
+    pub fn set_circuit_state(&self, state: u8) {
+        self.horizon_circuit_state.set(f64::from(state));
+    }
+
+    pub fn render(&self) -> String {
         let encoder = TextEncoder::new();
         let metric_families = self.registry.gather();
         let mut buffer = Vec::new();
@@ -68,9 +112,6 @@ impl MetricsRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::body::Body;
-    use axum::http::{Request, StatusCode};
-    use tower::ServiceExt;
 
     #[test]
     fn test_metrics_registry_new() {

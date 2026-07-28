@@ -114,10 +114,22 @@
     "title": "Algo salió mal",
     "description": "Ocurrió un error inesperado. Por favor, inténtalo de nuevo.",
     "tryAgain": "Intentar de nuevo",
-    "goHome": "Volver al inicio"
+    "goHome": "Volver al inicio",
+    "status": {
+      "unauthorized": "Tu sesión ha expirado. Vuelve a iniciar sesión.",
+      "forbidden": "No tienes permiso para hacer eso.",
+      "validation": "Hay campos que revisar. Por favor, corrige el formulario.",
+      "rateLimited": "Estás enviando demasiadas solicitudes. Reduce la velocidad.",
+      "server": "Algo falló de nuestro lado. Inténtalo de nuevo en un momento.",
+      "network": "No pudimos contactar al servidor. Comprueba tu conexión.",
+      "unknown": "Ocurrió un error inesperado."
+    }
   },
   "notFound": {
     "description": "No se pudo encontrar la página que buscas.",
-    "home": "Volver al inicio"
+    "home": "Volver al inicio",
+    "docNotFound": "Sin registro anclado",
+    "docNotFoundDescription": "Si llegaste a esta página desde un enlace de verificación, el hash consultado nunca se ancló en el libro de Stellar. Esto es distinto de una verificación fallida, que indicaría que existe un ancla pero no coincide con lo enviado.",
+    "dashboardHome": "Volver al panel"
   }
 }

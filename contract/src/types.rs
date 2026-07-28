@@ -292,6 +292,42 @@ pub fn find_duplicates(documents: &[&str], threshold: f64) -> Vec<(usize, usize,
     duplicates
 }
 
+// ── Transfer helpers ───────────────────────────────────────────
+
+/// Compute deterministic transfer hash from core fields.
+///
+/// SHA-256(document_hash + from_owner + to_owner + transfer_date)
+pub fn compute_transfer_hash(req: &TransferRequest) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(req.document_hash.as_bytes());
+    hasher.update(req.from_owner.as_bytes());
+    hasher.update(req.to_owner.as_bytes());
+    hasher.update(req.transfer_date.as_bytes());
+    let digest = hasher.finalize();
+    hex::encode(digest)
+}
+
+/// Validate that the provided date is a valid ISO 8601 calendar date (YYYY-MM-DD).
+pub fn is_valid_iso8601_date(date: &str) -> bool {
+    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_ok()
+}
+
+/// Build a Stellar memo string for a transfer hash, respecting the 28-byte
+/// text memo limit and using the required TRANSFER: prefix.
+pub fn build_transfer_memo(transfer_hash: &str) -> String {
+    const PREFIX: &str = "TRANSFER:";
+    const MAX_MEMO_LEN: usize = 28;
+
+    let remaining = MAX_MEMO_LEN.saturating_sub(PREFIX.len());
+    let truncated = if transfer_hash.len() > remaining {
+        &transfer_hash[..remaining]
+    } else {
+        transfer_hash
+    };
+
+    format!("{}{}", PREFIX, truncated)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -504,40 +540,4 @@ mod tests {
         assert_eq!(item.timestamp, None);
         assert_eq!(item.error, Some("invalid hash format".to_string()));
     }
-}
-
-// ── Transfer helpers ───────────────────────────────────────────
-
-/// Compute deterministic transfer hash from core fields.
-///
-/// SHA-256(document_hash + from_owner + to_owner + transfer_date)
-pub fn compute_transfer_hash(req: &TransferRequest) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(req.document_hash.as_bytes());
-    hasher.update(req.from_owner.as_bytes());
-    hasher.update(req.to_owner.as_bytes());
-    hasher.update(req.transfer_date.as_bytes());
-    let digest = hasher.finalize();
-    hex::encode(digest)
-}
-
-/// Validate that the provided date is a valid ISO 8601 calendar date (YYYY-MM-DD).
-pub fn is_valid_iso8601_date(date: &str) -> bool {
-    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_ok()
-}
-
-/// Build a Stellar memo string for a transfer hash, respecting the 28-byte
-/// text memo limit and using the required TRANSFER: prefix.
-pub fn build_transfer_memo(transfer_hash: &str) -> String {
-    const PREFIX: &str = "TRANSFER:";
-    const MAX_MEMO_LEN: usize = 28;
-
-    let remaining = MAX_MEMO_LEN.saturating_sub(PREFIX.len());
-    let truncated = if transfer_hash.len() > remaining {
-        &transfer_hash[..remaining]
-    } else {
-        transfer_hash
-    };
-
-    format!("{}{}", PREFIX, truncated)
 }

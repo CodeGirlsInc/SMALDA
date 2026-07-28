@@ -2,11 +2,13 @@ import {
   BadRequestException,
   ConflictException,
   Controller,
+  ForbiddenException,
   Get,
   NotFoundException,
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
   Res,
   UploadedFile,
@@ -24,12 +26,14 @@ import { lookup } from 'mime-types';
 import * as multer from 'multer';
 
 import { DocumentsService } from './documents.service';
-import { DocumentStatus } from './entities/document.entity';
+import { DocumentStatus, Document } from './entities/document.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User } from '../users/entities/user.entity';
 import { QueueService } from '../queue/queue.service';
 import { VerificationService } from '../verification/verification.service';
 import { FileValidationPipe } from './pipes/file-validation.pipe';
+import { ListDocumentsDto } from './dto/list-documents.dto';
+import { DocumentResponseDto } from './dto/document-response.dto';
 
 const ALLOWED_MIME_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
@@ -108,6 +112,48 @@ export class DocumentsController {
 
     await this.queueService.enqueueAnalyze(document.id, req.requestId);
     return res.status(202).send(document);
+  }
+
+  @Get()
+  @UseGuards(JwtAuthGuard)
+  async listDocuments(
+    @Query() query: ListDocumentsDto,
+    @Req() req: Request & { user?: User },
+  ) {
+    const user = req.user!;
+    const result = await this.documentsService.findByOwnerPaginated(
+      user.id,
+      query.page!,
+      query.limit!,
+      query.status,
+    );
+
+    return {
+      data: result.data.map(toDocumentResponse),
+      total: result.total,
+      page: result.page,
+      limit: result.limit,
+    };
+  }
+
+  @Get(':id')
+  @UseGuards(JwtAuthGuard)
+  async getDocument(
+    @Param('id') id: string,
+    @Req() req: Request & { user?: User },
+  ) {
+    const user = req.user!;
+    const document = await this.documentsService.findById(id);
+
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+
+    if (document.ownerId !== user.id && user.role !== 'admin') {
+      throw new ForbiddenException('Access denied');
+    }
+
+    return toDocumentResponse(document);
   }
 
   @Post(':id/verify')
@@ -198,4 +244,16 @@ export class DocumentsController {
         return '.bin';
     }
   }
+}
+
+function toDocumentResponse(document: Document): DocumentResponseDto {
+  return {
+    id: document.id,
+    title: document.title,
+    status: document.status,
+    riskScore: document.riskScore,
+    riskFlags: document.riskFlags,
+    createdAt: document.createdAt,
+    updatedAt: document.updatedAt,
+  };
 }

@@ -312,6 +312,43 @@ missing something:
 If you pick up any of these, open a separate issue rather than folding a
 behavior change into a documentation PR.
 
+
+## Performance baselines
+
+This service is benchmarked under [CT-65]. The benchmarks are intentionally narrow so a future contributor can compare the new number against the previous one and notice drift early.
+
+### Micro-benchmarks (`cargo bench --bench hash_bench`)
+
+Run from `contract/`. Three groups measure the hot path for SHA-256 validation:
+
+- `normalize`: trims and lowercases the inbound hash string.
+- `validate_sha256`: walks every character of a 64-char hex string.
+- `detect_algorithm`: classifies the hash length into SHA-256/SHA-512.
+
+Initial baseline (single-threaded, GitHub Actions ubuntu-latest, criterion 0.5 default-features = false, representative numbers; your runner will differ):
+
+| Bench                 | Approx. sample time       |
+|-----------------------|---------------------------|
+| normalize (clean)     | ~130 ns / iteration       |
+| normalize (sha256)    | ~160 ns / iteration       |
+| validate_sha256       | ~1.6 µs / iteration       |
+| detect_algorithm      | ~85 ns / iteration        |
+
+Anything 2x above this baseline on the same runner is a strong signal that something changed.
+
+### End-to-end verification (`cargo bench --bench verify_bench`)
+
+Only the **cache-hit** path is measured in this PR: a pre-seeded `InMemoryCache` returns the cached `VerifyResponse` JSON. Approximate numbers (same runner):
+
+| Bench                 | Approx. sample time       |
+|-----------------------|---------------------------|
+| cache_hit lookup      | ~2.4 µs / iteration       |
+
+The cache-miss path measures the cache lookup plus Horizon `getAccountData` round trip. It is **not** benchmarked in this PR because a meaningful baseline requires either a Horizon mock or live testnet with the cache pre-warmed and cleared between samples; both are noisy on shared CI runners. Run the bench locally against `STELLAR_HORIZON_URL=https://horizon-testnet.stellar.org` after `cargo run` is up and the service has answered at least one real request to prime the connection pool.
+
+### CI integration
+
+The `contracts` job in `.github/workflows/ci.yml` already runs `cargo build --all` and `cargo test --all`. Benchmarks are intentionally compiled but not executed in CI (`cargo bench --no-run`) because shared runners produce noisy timings that a hard threshold would fail on. Use the local figures above for trend tracking.
 ## Local setup
 
 **Toolchain**: stable Rust (edition 2021) with `rustfmt` and `clippy`

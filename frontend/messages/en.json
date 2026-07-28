@@ -114,10 +114,22 @@
     "title": "Something went wrong",
     "description": "An unexpected error occurred. Please try again.",
     "tryAgain": "Try again",
-    "goHome": "Go back home"
+    "goHome": "Go back home",
+    "status": {
+      "unauthorized": "Your session has expired. Please sign in again.",
+      "forbidden": "You don't have permission to do that.",
+      "validation": "Some fields need attention. Please review the form.",
+      "rateLimited": "You're going too fast. Please slow down.",
+      "server": "Something went wrong on our side. Please try again in a moment.",
+      "network": "We couldn't reach the server. Check your connection.",
+      "unknown": "An unexpected error occurred."
+    }
   },
   "notFound": {
     "description": "The page you are looking for could not be found.",
-    "home": "Go back home"
+    "home": "Go back home",
+    "docNotFound": "No record anchored",
+    "docNotFoundDescription": "If you reached this page from a verification link, the hash you opened has never been anchored on the Stellar ledger. This is distinct from a verification failure, which would mean an anchor exists but did not match what you submitted.",
+    "dashboardHome": "Return to dashboard"
   }
 }

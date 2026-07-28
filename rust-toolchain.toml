@@ -1,0 +1,8 @@
+# Pin rust toolchain for the workspace so the CI contracts job and the
+# cargo-llvm-cov job can resolve transitive crates (e.g. rand_core 0.10.1,
+# time 0.3.54, icu_*) that require rustc >= 1.88 for edition2024 support.
+# Without this pin, dtolnay/rust-toolchain@stable falls back to rust 1.82
+# on the CI runner which fails to download those crates.
+[toolchain]
+channel = "1.89.0"
+components = ["rustfmt", "clippy"]

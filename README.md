@@ -58,6 +58,26 @@ Integrating Stellar allows SMALDA to:
 
 ---
 
+## Verifier service (`contract/`)
+
+The `contract/` directory contains the `stellar-doc-verifier` service, a Rust / Axum HTTP service that anchors and verifies document hashes against the Stellar blockchain.
+
+- Source: [`contract/src/`](contract/src)
+- Container image: [`contract/Dockerfile`](contract/Dockerfile)
+- Deployment guide: [`docs/contract-deployment.md`](docs/contract-deployment.md)
+- Retry + circuit breaker for Horizon calls: [`contract/src/retry.rs`](contract/src/retry.rs)
+- Coverage workflow: [`.github/workflows/coverage.yml`](.github/workflows/coverage.yml)
+
+To run the verifier locally alongside the rest of the stack:
+
+```bash
+docker compose up -d --build stellar-doc-verifier
+```
+
+The verifier exposes `/health`, `/metrics`, `/verify`, `/verify/batch`, `/verify/:hash`, `/verify/:hash/history`, `/submit`, `/revoke`, `/transfer`, and `/transfer/:document_hash`.
+
+---
+
 ## Technology Stack
 
 ### Frontend

@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import jsPDF from "jspdf";
+import { EmptyState } from "@/components/EmptyState";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
@@ -450,9 +451,11 @@ function DocumentsTable({
 
   if (docs.length === 0) {
     return (
-      <p className="py-6 text-center text-sm text-gray-500">
-        No documents match the selected filters.
-      </p>
+      <EmptyState
+        title="No documents match these filters"
+        description="Adjust the date range, status, or both to broaden the search."
+        variant="no-match"
+      />
     );
   }
 
