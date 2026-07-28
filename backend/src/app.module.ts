@@ -9,6 +9,7 @@ import { AccessLogsModule } from './access-logs/access-logs.module';
 import { AuthModule } from './auth/auth.module';
 import { buildWinstonOptions } from './common/logger.config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
+import { CorrelationIdMiddleware } from './common/correlation/correlation-id.middleware';
 import { DocumentsModule } from './documents/documents.module';
 import { MailModule } from './mail/mail.module';
 import { QueueModule } from './queue/queue.module';
@@ -69,10 +70,12 @@ import { QueueObservabilityModule } from './queue/queue-observability.module';
     QueueObservabilityModule,
   ],
   controllers: [AppController],
-  providers: [AppService, LoggerMiddleware],
+  providers: [AppService, LoggerMiddleware, CorrelationIdMiddleware],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(LoggerMiddleware).forRoutes('*');
+    consumer
+      .apply(CorrelationIdMiddleware, LoggerMiddleware)
+      .forRoutes('*');
   }
 }

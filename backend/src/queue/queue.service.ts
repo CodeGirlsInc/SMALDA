@@ -2,6 +2,11 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Queue, ConnectionOptions as RedisConnectionOptions } from 'bullmq';
 
+export interface DocumentJobData {
+  documentId: string;
+  requestId?: string;
+}
+
 @Injectable()
 export class QueueService implements OnModuleDestroy {
   private readonly logger = new Logger(QueueService.name);
@@ -33,12 +38,18 @@ export class QueueService implements OnModuleDestroy {
     return this.connection;
   }
 
-  async enqueueAnalyze(documentId: string) {
-    return this.queue.add('analyze', { documentId });
+  async enqueueAnalyze(documentId: string, requestId?: string) {
+    this.logger.debug(
+      `Queueing analyze job for document ${documentId} (request ${requestId ?? 'none'})`,
+    );
+    return this.queue.add('analyze', { documentId, requestId });
   }
 
-  async enqueueAnchor(documentId: string) {
-    return this.queue.add('anchor', { documentId });
+  async enqueueAnchor(documentId: string, requestId?: string) {
+    this.logger.debug(
+      `Queueing anchor job for document ${documentId} (request ${requestId ?? 'none'})`,
+    );
+    return this.queue.add('anchor', { documentId, requestId });
   }
 
   async onModuleDestroy(): Promise<void> {
