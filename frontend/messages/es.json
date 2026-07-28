@@ -118,6 +118,9 @@
   },
   "notFound": {
     "description": "No se pudo encontrar la página que buscas.",
-    "home": "Volver al inicio"
+    "home": "Volver al inicio",
+    "docNotFound": "Sin registro anclado",
+    "docNotFoundDescription": "Si llegaste a esta página desde un enlace de verificación, el hash consultado nunca se ancló en el libro de Stellar. Esto es distinto de una verificación fallida, que indicaría que existe un ancla pero no coincide con lo enviado.",
+    "dashboardHome": "Volver al panel"
   }
 }
