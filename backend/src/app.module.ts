@@ -18,6 +18,7 @@ import { UsersModule } from './users/users.module';
 import { VerificationModule } from './verification/verification.module';
 import { DisputeModule } from './dispute/dispute.module';
 import { ExternalValidationModule } from './external-validation/external-validation.module';
+import { HealthModule } from './health/health.module';
 import { ConfigValidationSchema } from './config/config.validation';
 
 import { MetricsModule } from './metrics/metrics.module';
@@ -65,6 +66,7 @@ import { QueueObservabilityModule } from './queue/queue-observability.module';
     QueueModule,
     DisputeModule,
     ExternalValidationModule,
+    HealthModule,
     MetricsModule,
     QueueObservabilityModule,
   ],
