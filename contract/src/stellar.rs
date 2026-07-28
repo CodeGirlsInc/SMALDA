@@ -1,4 +1,6 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+use base64::Engine as _;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -38,6 +40,66 @@ pub struct VerificationResult {
     pub verified: bool,
     pub transaction_id: Option<String>,
     pub timestamp: Option<i64>,
+    pub data_key: Option<String>,
+    pub raw_value: Option<String>,
+    pub decoded_value: Option<String>,
+}
+
+/// Verification details matching NestJS verification response payload format.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VerificationRecord {
+    pub hash: String,
+    pub anchored: bool,
+    pub data_key: String,
+    pub transaction_id: Option<String>,
+    pub timestamp: Option<i64>,
+    pub raw_value_base64: Option<String>,
+    pub decoded_value: Option<String>,
+}
+
+/// History entry for GET /verify/:hash/history (CT-03 / CT-04 compatibility).
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct HistoryEntry {
+    pub id: String,
+    pub transaction_hash: String,
+    pub created_at: String,
+    pub data_name: String,
+    pub data_value_base64: Option<String>,
+    pub decoded_value: Option<String>,
+}
+
+/// Successful result returned by [`StellarClient::anchor_hash`].
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AnchorResult {
+    /// Stellar transaction hash.
+    pub tx_hash: String,
+    /// Ledger sequence number where the transaction was included.
+    pub ledger: u32,
+    /// Unix timestamp (seconds) when the transaction was anchored.
+    pub anchored_at: i64,
+}
+
+/// Horizon account object (subset of fields).
+#[derive(Debug, Deserialize)]
+struct HorizonAccount {
+    sequence: String,
+    #[serde(default)]
+    data: HashMap<String, String>,
+}
+
+/// Horizon transaction submission response (subset of fields).
+#[derive(Debug, Deserialize)]
+struct HorizonTxResponse {
+    hash: String,
+    ledger: u32,
+    created_at: Option<String>,
+}
+
+/// Horizon error envelope returned on failure.
+#[derive(Debug, Deserialize)]
+struct HorizonError {
+    detail: Option<String>,
+    title: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -57,6 +119,7 @@ struct HorizonEmbedded {
 }
 
 impl StellarClient {
+    /// Create a new client with sensible timeout and connection-pool defaults.
     pub fn new(horizon_url: &str) -> Self {
         let http_client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
@@ -113,10 +176,14 @@ impl StellarClient {
                 timestamp: Some(timestamp),
             })
         } else {
-            Ok(VerificationResult {
-                verified: false,
+            Ok(VerificationRecord {
+                hash: hash.to_string(),
+                anchored: false,
+                data_key,
                 transaction_id: None,
                 timestamp: None,
+                raw_value_base64: None,
+                decoded_value: None,
             })
         }
     }

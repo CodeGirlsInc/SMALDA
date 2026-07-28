@@ -1,4 +1,4 @@
-﻿import {
+import {
   ArgumentsHost,
   Catch,
   ExceptionFilter,
@@ -30,18 +30,20 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     const { message, error } = this.normalizeResponse(errorResponse, exception);
 
+    const requestId = (request as any).requestId || request.headers['x-request-id'] || 'req-id';
+    const errorCode = (errorResponse as any)?.errorCode || error || `ERR_${status}`;
+
     const payload = {
       statusCode: status,
+      errorCode,
       message,
       error,
+      requestId,
       timestamp: new Date().toISOString(),
       path: request.url,
     };
 
-    this.logger.error(
-      `${status}   -> `,
-      (exception as Error)?.stack,
-    );
+    this.logger.error(`${status} -> `, (exception as Error)?.stack);
 
     if (!this.isProduction && exception instanceof Error) {
       Object.assign(payload, { stack: exception.stack });

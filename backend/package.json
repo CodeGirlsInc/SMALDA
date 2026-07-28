@@ -18,7 +18,8 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "migration:run": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:run -d src/typeorm.config.ts"
+    "migration:run": "echo \"Schema is managed via TypeORM synchronize â€” no explicit migrations to run\"",
+    "export:openapi": "ts-node scripts/export-openapi.ts"
   },
   "dependencies": {
     "@nestjs/bull": "^11.0.4",
@@ -44,6 +45,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
     "exceljs": "^4.4.0",
+    "express": "^5.2.1",
     "ioredis": "^5.10.1",
     "joi": "^17.13.3",
     "nest-winston": "^1.10.2",

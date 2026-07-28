@@ -1,6 +1,6 @@
-import { NestFactory } from '@nestjs/core';
+import { NestFactory, Reflector } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, VersioningType, ClassSerializerInterceptor } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
@@ -14,6 +14,8 @@ async function bootstrap() {
   const logger = WinstonModule.createLogger(buildWinstonOptions());
   const app = await NestFactory.create(AppModule, { logger });
 
+  app.enableShutdownHooks();
+
   const configService = app.get(ConfigService);
 
   // Enable CORS
@@ -23,8 +25,14 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // Global prefix
+  // Global prefix & URI versioning
   app.setGlobalPrefix('api');
+  app.enableVersioning({
+    type: VersioningType.URI,
+    defaultVersion: '1',
+  });
+
+  app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
 
   // Global validation pipe
   app.useGlobalPipes(
@@ -46,9 +54,9 @@ async function bootstrap() {
 
   // Swagger documentation
   const config = new DocumentBuilder()
-    .setTitle('SMALDA Authentication API')
+    .setTitle('SMALDA Land Management Platform API')
     .setDescription(
-      'Comprehensive authentication and authorization API with JWT, OAuth, and RBAC',
+      'Comprehensive Land Record Management API covering Documents, Risk Assessment, Verification, Disputes, External Validation, Access Logs, and Stellar Anchoring',
     )
     .setVersion('1.0')
     .addBearerAuth(
@@ -62,11 +70,15 @@ async function bootstrap() {
       },
       'JWT-auth',
     )
-    .addTag(
-      'Authentication',
-      'Authentication endpoints (login, register, OAuth, etc.)',
-    )
+    .addTag('Authentication', 'Authentication endpoints (login, register, OAuth, etc.)')
     .addTag('Users', 'User management and profile endpoints')
+    .addTag('Documents', 'Land document management endpoints')
+    .addTag('Risk Assessment', 'Automated document risk evaluation')
+    .addTag('Verification', 'Public and internal record verification')
+    .addTag('Disputes', 'Land title dispute resolution endpoints')
+    .addTag('External Validation', 'Registry external validation')
+    .addTag('Access Logs', 'Audit logging endpoints')
+    .addTag('Stellar', 'Blockchain anchoring endpoints')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

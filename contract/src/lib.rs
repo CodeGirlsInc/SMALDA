@@ -1,14 +1,17 @@
 pub mod cache;
 pub mod config;
+pub mod error;
+pub mod handlers;
 pub mod hash_validator;
 pub mod metrics;
-pub mod module;
 pub mod rate_limit;
+pub mod routes;
 pub mod stellar;
+pub mod types;
 
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderName, Request, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -19,15 +22,20 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Arc;
+use tower::ServiceBuilder;
+use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
 use cache::CacheBackend;
 use hash_validator::{HashValidator, ValidationError as HashValidationError};
 use metrics::MetricsRegistry;
-use module::middleware::hash_normalization::normalize;
-use module::webhook::VerificationWebhookNotifier;
-use stellar::{StellarClient, TransactionRecord};
+use stellar::{derive_account_id, StellarClient, TransactionRecord};
+
+/// Header used to correlate a single logical operation across the NestJS
+/// backend and this verifier service (see BE-136). Must match the header
+/// name used by the backend.
+pub const REQUEST_ID_HEADER: &str = "x-request-id";
 
 // Application state
 #[derive(Clone)]
@@ -36,11 +44,10 @@ pub struct AppState {
     pub cache: Arc<CacheBackend>,
     pub metrics: Arc<MetricsRegistry>,
     pub stellar_secret_key: String,
-    pub notifier: Arc<VerificationWebhookNotifier>,
 }
 
 // Request/Response types
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct VerifyRequest {
     pub document_hash: String,
     pub transaction_id: Option<String>,
@@ -52,10 +59,14 @@ pub struct VerifyResponse {
     pub transaction_id: Option<String>,
     pub timestamp: Option<i64>,
     pub cached: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revoked: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revoked_at: Option<i64>,
 }
 
 /// Request type for submitting a document hash to Stellar blockchain
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct SubmitRequest {
     pub document_hash: String,
     pub document_id: String,
@@ -63,7 +74,7 @@ pub struct SubmitRequest {
 }
 
 /// Response type for document hash submission
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SubmitResponse {
     pub success: bool,
     pub transaction_id: Option<String>,
@@ -71,17 +82,18 @@ pub struct SubmitResponse {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct RevokeRequest {
     pub document_hash: String,
     pub reason: String,
     pub revoked_by: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RevokeResponse {
     pub transaction_id: String,
     pub revoked_at: i64,
+    pub revoked: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -105,7 +117,7 @@ pub struct ValidationErrorResponse {
     pub error: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct BatchVerifyRequest {
     pub hashes: Vec<String>,
 }
@@ -127,7 +139,7 @@ pub struct BatchVerifyItem {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct TransferRequest {
     pub document_hash: String,
     pub from_owner: String,
@@ -177,7 +189,8 @@ fn map_validation_error(err: HashValidationError) -> (StatusCode, ValidationErro
 }
 
 pub fn app(state: AppState) -> Router {
-    use crate::module::middleware::hash_normalization::hash_normalization_middleware;
+    let request_id_header = HeaderName::from_static(REQUEST_ID_HEADER);
+    let span_header = request_id_header.clone();
 
     Router::new()
         .route("/health", get(health_check))
@@ -189,8 +202,34 @@ pub fn app(state: AppState) -> Router {
         .route("/submit", post(submit_document))
         .route("/revoke", post(revoke_document))
         .route("/transfer", post(record_transfer))
-        .layer(axum::middleware::from_fn(hash_normalization_middleware))
-        .layer(TraceLayer::new_for_http())
+        .layer(
+            ServiceBuilder::new()
+                // Honour an inbound X-Request-Id (propagated from the NestJS
+                // backend, per BE-136); generate one only if it's absent.
+                .layer(SetRequestIdLayer::new(
+                    request_id_header.clone(),
+                    MakeRequestUuid,
+                ))
+                .layer(
+                    TraceLayer::new_for_http().make_span_with(move |request: &Request<_>| {
+                        let request_id = request
+                            .headers()
+                            .get(&span_header)
+                            .and_then(|v| v.to_str().ok())
+                            .unwrap_or("unknown");
+
+                        tracing::info_span!(
+                            "http_request",
+                            method = %request.method(),
+                            path = %request.uri().path(),
+                            request_id = %request_id,
+                        )
+                    }),
+                )
+                // Echo the request id back on the response so callers (and
+                // the backend) can confirm which id was used for this op.
+                .layer(PropagateRequestIdLayer::new(request_id_header)),
+        )
         .with_state(state)
 }
 
@@ -263,22 +302,25 @@ pub async fn record_transfer(
     let transfer_hash = compute_transfer_hash(&req);
     let memo = build_transfer_memo(&transfer_hash);
 
-    if let Err(e) = state.stellar.anchor_transfer(&transfer_hash, &memo).await {
+    let anchor_account_id = derive_account_id(&state.stellar_secret_key).map_err(|e| {
+        warn!("Failed to derive anchor account id: {}", e);
+        state.metrics.increment_error_count();
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    if let Err(e) = state
+        .stellar
+        .anchor_transfer(
+            &transfer_hash,
+            &anchor_account_id,
+            &state.stellar_secret_key,
+        )
+        .await
+    {
         warn!("Failed to anchor transfer on Stellar: {}", e);
         state.metrics.increment_error_count();
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
-
-    let anchored_at = Utc::now().timestamp();
-    state
-        .notifier
-        .notify(
-            "document.transferred",
-            &req.document_hash,
-            &transfer_hash,
-            anchored_at,
-        )
-        .await;
 
     let record = TransferRecord {
         document_hash: req.document_hash.clone(),
@@ -341,7 +383,7 @@ pub async fn verify_document(
     State(state): State<AppState>,
     Json(req): Json<VerifyRequest>,
 ) -> Response {
-    let normalized_hash = normalize(&req.document_hash);
+    let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);
         return (status, Json(body)).into_response();
@@ -359,8 +401,21 @@ pub async fn verify_document(
 
     state.metrics.increment_cache_misses();
 
+    let anchor_account_id = match derive_account_id(&state.stellar_secret_key) {
+        Ok(id) => id,
+        Err(e) => {
+            warn!("Failed to derive anchor account id: {}", e);
+            state.metrics.increment_error_count();
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
     // Query Stellar blockchain
-    let result = match state.stellar.verify_hash(&normalized_hash).await {
+    let result = match state
+        .stellar
+        .verify_hash(&normalized_hash, &anchor_account_id)
+        .await
+    {
         Ok(verification) => verification,
         Err(e) => {
             warn!("Stellar query failed: {}", e);
@@ -370,16 +425,13 @@ pub async fn verify_document(
     };
 
     let response = VerifyResponse {
-        verified: result.verified,
+        verified: result.anchored,
         transaction_id: result.transaction_id,
         timestamp: result.timestamp,
         cached: false,
+        revoked: None,
+        revoked_at: None,
     };
-
-    // Cache result
-    if let Err(e) = state.cache.set(&normalized_hash, &response, 3600).await {
-        warn!("Failed to cache result: {}", e);
-    }
 
     Json(response).into_response()
 }
@@ -401,7 +453,7 @@ pub async fn verify_document_history(
     State(state): State<AppState>,
     Path(hash): Path<String>,
 ) -> Response {
-    let normalized_hash = normalize(&hash);
+    let normalized_hash = HashValidator::normalize(&hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);
         return (status, Json(body)).into_response();
@@ -487,7 +539,8 @@ pub async fn batch_verify_documents(
 
 // Helper function to verify a single hash
 async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
-    let normalized_hash = normalize(&hash);
+    let normalized_hash = HashValidator::normalize(&hash);
+
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let error_msg = match err {
             HashValidationError::EmptyHash => "hash must not be empty".to_string(),
@@ -529,8 +582,28 @@ async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
 
     state.metrics.increment_cache_misses();
 
+    let anchor_account_id = match derive_account_id(&state.stellar_secret_key) {
+        Ok(id) => id,
+        Err(e) => {
+            warn!("Failed to derive anchor account id: {}", e);
+            state.metrics.increment_error_count();
+
+            return BatchVerifyItem {
+                hash,
+                verified: false,
+                transaction_id: None,
+                timestamp: None,
+                error: Some(format!("failed to derive anchor account id: {}", e)),
+            };
+        }
+    };
+
     // Query Stellar blockchain
-    let result = match state.stellar.verify_hash(&normalized_hash).await {
+    let result = match state
+        .stellar
+        .verify_hash(&normalized_hash, &anchor_account_id)
+        .await
+    {
         Ok(verification) => verification,
         Err(e) => {
             warn!("Stellar query failed for hash {}: {}", normalized_hash, e);
@@ -548,10 +621,12 @@ async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
 
     // Cache the result
     let cache_response = VerifyResponse {
-        verified: result.verified,
+        verified: result.anchored,
         transaction_id: result.transaction_id.clone(),
         timestamp: result.timestamp,
         cached: false,
+        revoked: None,
+        revoked_at: None,
     };
 
     if let Err(e) = state
@@ -564,73 +639,88 @@ async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
 
     BatchVerifyItem {
         hash,
-        verified: result.verified,
+        verified: result.anchored,
         transaction_id: result.transaction_id,
         timestamp: result.timestamp,
         error: None,
     }
 }
 
+/// POST /submit — anchor a document hash to Stellar using a ManageData operation.
+///
+/// Request body: `{ document_hash, document_id, submitter }`
+///
+/// On success returns `{ success: true, transaction_id, anchored_at }`.
+/// Duplicate submissions return the cached result with `200 OK` (idempotent).
 pub async fn submit_document(
     State(state): State<AppState>,
     Json(req): Json<SubmitRequest>,
-) -> impl IntoResponse {
-    let normalized_hash = normalize(&req.document_hash);
+) -> Response {
+    let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);
         return (status, Json(body)).into_response();
     }
 
-    let memo = format!(
-        "SUBMIT:{}",
-        &normalized_hash[..19.min(normalized_hash.len())]
-    );
-    match state.stellar.anchor_transfer(&normalized_hash, &memo).await {
-        Ok(()) => {
-            let anchored_at = Utc::now().timestamp();
-            let tx_hash = format!("0x{}", &normalized_hash[..16]);
+    let cache_key = format!("stellar:verify:{}", normalized_hash);
 
-            let submit_key = format!("submit:{}", normalized_hash);
-            let record = serde_json::json!({ "tx_hash": tx_hash, "anchored_at": anchored_at });
+    // Idempotency check — return cached anchor result if it exists.
+    if let Ok(Some(cached)) = state.cache.get::<SubmitResponse>(&cache_key).await {
+        info!(
+            "Cache hit for submit: returning existing anchor for {}",
+            normalized_hash
+        );
+        return Json(cached).into_response();
+    }
+
+    info!(
+        "Anchoring document hash {} submitted by {}",
+        normalized_hash, req.submitter
+    );
+    state.metrics.increment_request_count();
+
+    match state
+        .stellar
+        .anchor_hash(&normalized_hash, &req.submitter, &state.stellar_secret_key)
+        .await
+    {
+        Ok(result) => {
+            let response = SubmitResponse {
+                success: true,
+                transaction_id: Some(result.tx_hash.clone()),
+                anchored_at: Some(result.anchored_at),
+                error: None,
+            };
+
+            // Cache the result so duplicate submissions get a fast 200.
+            const ANCHOR_CACHE_TTL: u64 = 60 * 60 * 24 * 365; // 1 year
             if let Err(e) = state
                 .cache
-                .set_raw(&submit_key, &record.to_string(), 60 * 60 * 24 * 365)
+                .set(&cache_key, &response, ANCHOR_CACHE_TTL)
                 .await
             {
-                warn!("Failed to persist submit record: {}", e);
+                warn!(
+                    "Failed to cache anchor result for {}: {}",
+                    normalized_hash, e
+                );
             }
 
-            state
-                .notifier
-                .notify(
-                    "document.submitted",
-                    &normalized_hash,
-                    &tx_hash,
-                    anchored_at,
-                )
-                .await;
-
-            (
-                StatusCode::OK,
-                Json(serde_json::json!({
-                    "success": true,
-                    "transaction_id": tx_hash,
-                    "anchored_at": anchored_at,
-                    "error": null
-                })),
-            )
-                .into_response()
+            info!(
+                "Document hash {} anchored in ledger {} (tx: {})",
+                normalized_hash, result.ledger, result.tx_hash
+            );
+            Json(response).into_response()
         }
         Err(e) => {
-            warn!(
-                "Stellar anchor failed for submit {}: {}",
-                normalized_hash, e
-            );
+            warn!("Stellar anchor failed for {}: {}", normalized_hash, e);
             state.metrics.increment_error_count();
             (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ValidationErrorResponse {
-                    error: format!("stellar anchor failed: {}", e),
+                StatusCode::BAD_GATEWAY,
+                Json(SubmitResponse {
+                    success: false,
+                    transaction_id: None,
+                    anchored_at: None,
+                    error: Some(e.to_string()),
                 }),
             )
                 .into_response()
@@ -638,54 +728,112 @@ pub async fn submit_document(
     }
 }
 
+/// POST /revoke — record a document revocation on Stellar.
+///
+/// Writes a `ManageData` entry with key `"revoked_" + hash[:56]` and
+/// value `{ revokedAt, reason }` as bytes.  The original `doc_` entry is
+/// preserved so audit history remains intact.
+///
+/// After a successful on-chain revocation the Redis cache entry for
+/// `stellar:verify:{hash}` is updated so that subsequent `GET /verify/:hash`
+/// calls return `{ verified: true, revoked: true, revokedAt }`.
+///
+/// Returns `404` if the hash has no prior anchor record.
 pub async fn revoke_document(
     State(state): State<AppState>,
     Json(req): Json<RevokeRequest>,
-) -> impl IntoResponse {
-    let normalized_hash = normalize(&req.document_hash);
+) -> Response {
+    let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);
         return (status, Json(body)).into_response();
     }
 
-    let memo = format!(
-        "REVOKE:{}",
-        &normalized_hash[..19.min(normalized_hash.len())]
-    );
-    match state.stellar.anchor_transfer(&normalized_hash, &memo).await {
-        Ok(()) => {
-            let revoked_at = Utc::now().timestamp();
-            let tx_hash = format!("0x{}", &normalized_hash[..16]);
+    let anchor_key = format!("stellar:verify:{}", normalized_hash);
 
-            let revoked_key = format!("revoked:{}", normalized_hash);
-            if let Err(e) = state.cache.set(&revoked_key, &true, u64::MAX / 2).await {
-                warn!("Failed to cache revocation: {}", e);
+    // Ensure the document was previously anchored before revoking.
+    let existing: Option<SubmitResponse> = state
+        .cache
+        .get::<SubmitResponse>(&anchor_key)
+        .await
+        .unwrap_or(None);
+
+    if existing.is_none() {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(ValidationErrorResponse {
+                error: "document hash has no prior anchor record; cannot revoke".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
+    info!(
+        "Revoking document hash {} (revoked_by: {})",
+        normalized_hash, req.revoked_by
+    );
+    state.metrics.increment_request_count();
+
+    let revoked_at = Utc::now().timestamp();
+
+    // Build the revocation payload stored as ManageData value.
+    let revocation_value = serde_json::json!({
+        "revokedAt": Utc::now().to_rfc3339(),
+        "reason": req.reason,
+        "revokedBy": req.revoked_by,
+    })
+    .to_string();
+
+    // Use stellar.rs anchor_hash logic directly — we build a new ManageData tx
+    // with the revocation key.
+    match state
+        .stellar
+        .anchor_revocation(
+            &normalized_hash,
+            &revocation_value,
+            &req.revoked_by,
+            &state.stellar_secret_key,
+        )
+        .await
+    {
+        Ok(result) => {
+            // Update the cached verify entry to reflect revocation.
+            let updated_verify = VerifyResponse {
+                verified: true,
+                transaction_id: existing.and_then(|r| r.transaction_id),
+                timestamp: Some(revoked_at),
+                cached: false,
+                revoked: Some(true),
+                revoked_at: Some(revoked_at),
+            };
+            const REVOKE_CACHE_TTL: u64 = 60 * 60 * 24 * 365;
+            if let Err(e) = state
+                .cache
+                .set(&anchor_key, &updated_verify, REVOKE_CACHE_TTL)
+                .await
+            {
+                warn!("Failed to update cache after revocation: {}", e);
             }
 
-            state
-                .notifier
-                .notify("document.revoked", &normalized_hash, &tx_hash, revoked_at)
-                .await;
+            info!(
+                "Document {} revoked in ledger {} (tx: {})",
+                normalized_hash, result.ledger, result.tx_hash
+            );
 
-            (
-                StatusCode::OK,
-                Json(RevokeResponse {
-                    transaction_id: tx_hash,
-                    revoked_at,
-                }),
-            )
-                .into_response()
+            Json(RevokeResponse {
+                transaction_id: result.tx_hash,
+                revoked_at,
+                revoked: true,
+            })
+            .into_response()
         }
         Err(e) => {
-            warn!(
-                "Stellar anchor failed for revoke {}: {}",
-                normalized_hash, e
-            );
+            warn!("Revocation failed for {}: {}", normalized_hash, e);
             state.metrics.increment_error_count();
             (
-                StatusCode::INTERNAL_SERVER_ERROR,
+                StatusCode::BAD_GATEWAY,
                 Json(ValidationErrorResponse {
-                    error: format!("stellar anchor failed: {}", e),
+                    error: format!("Stellar revocation failed: {}", e),
                 }),
             )
                 .into_response()
@@ -694,7 +842,7 @@ pub async fn revoke_document(
 }
 
 pub async fn transfer_document(Json(req): Json<TransferRequest>) -> impl IntoResponse {
-    let normalized_hash = normalize(&req.document_hash);
+    let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);
         return (status, Json(body));

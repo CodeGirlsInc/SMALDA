@@ -3,6 +3,23 @@ use std::env;
 use thiserror::Error;
 use url::Url;
 
+/// Deployment environment. Controls log output format: JSON in production,
+/// human-readable in development. Unrecognized values default to development.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Environment {
+    Development,
+    Production,
+}
+
+impl Environment {
+    fn from_env_str(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "production" | "prod" => Self::Production,
+            _ => Self::Development,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct AppConfig {
     pub port: u16,
@@ -13,9 +30,11 @@ pub struct AppConfig {
     pub rate_limit_burst: u32,
     pub stellar_max_retries: u32,
     pub log_level: String,
+    pub environment: Environment,
     pub webhook_urls: Vec<String>,
     pub webhook_secret: Option<String>,
     pub cache_verification_ttl: u64,
+    pub shutdown_timeout_secs: u64,
 }
 
 #[derive(Debug, Error)]
@@ -171,6 +190,20 @@ impl AppConfig {
                 3600
             }
         };
+        let shutdown_timeout_secs: u64 = match shutdown_timeout_raw.parse() {
+            Ok(v) if v > 0 => v,
+            Ok(_) => {
+                errors.push("SHUTDOWN_TIMEOUT_SECS must be greater than 0".to_string());
+                30
+            }
+            Err(_) => {
+                errors.push(format!(
+                    "SHUTDOWN_TIMEOUT_SECS must be a valid u64, got '{}'",
+                    shutdown_timeout_raw
+                ));
+                30
+            }
+        };
 
         // Parse webhook URLs (comma-separated, ignore empty)
         let webhook_urls: Vec<String> = webhook_urls_raw
@@ -194,9 +227,11 @@ impl AppConfig {
             rate_limit_burst,
             stellar_max_retries,
             log_level,
+            environment,
             webhook_urls,
             webhook_secret,
             cache_verification_ttl,
+            shutdown_timeout_secs,
         })
     }
 }
@@ -218,9 +253,11 @@ mod tests {
             "RATE_LIMIT_BURST",
             "STELLAR_MAX_RETRIES",
             "LOG_LEVEL",
+            "APP_ENV",
             "WEBHOOK_URLS",
             "WEBHOOK_SECRET",
             "CACHE_VERIFICATION_TTL",
+            "SHUTDOWN_TIMEOUT_SECS",
         ];
         for key in keys {
             env::remove_var(key);
@@ -245,6 +282,7 @@ mod tests {
         assert_eq!(cfg.redis_url, "redis://127.0.0.1:6379");
         assert_eq!(cfg.rate_limit_per_second, 10);
         assert_eq!(cfg.cache_verification_ttl, 3600);
+        assert_eq!(cfg.shutdown_timeout_secs, 30);
     }
 
     #[test]

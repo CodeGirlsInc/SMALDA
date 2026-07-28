@@ -51,7 +51,9 @@ export class AuthService {
 
   async handleOAuthLogin(email: string, fullName?: string) {
     if (!email) {
-      throw new BadRequestException('Email is required from the OAuth provider');
+      throw new BadRequestException(
+        'Email is required from the OAuth provider',
+      );
     }
 
     let user = await this.usersService.findByEmail(email);
@@ -76,9 +78,12 @@ export class AuthService {
     }
 
     try {
-      const payload = await this.jwtService.verifyAsync<JwtPayload>(refreshToken, {
-        secret: this.getRefreshSecret(),
-      });
+      const payload = await this.jwtService.verifyAsync<JwtPayload>(
+        refreshToken,
+        {
+          secret: this.getRefreshSecret(),
+        },
+      );
 
       const user = await this.usersService.findById(payload.sub);
       if (!user) {
@@ -135,8 +140,10 @@ export class AuthService {
   }
 
   private getRefreshSecret() {
-    return this.configService.get<string>('JWT_REFRESH_SECRET') ??
-      this.configService.get<string>('JWT_SECRET');
+    return (
+      this.configService.get<string>('JWT_REFRESH_SECRET') ??
+      this.configService.get<string>('JWT_SECRET')
+    );
   }
 
   private getRefreshExpiration() {
