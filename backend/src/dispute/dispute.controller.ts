@@ -15,7 +15,7 @@ import { CreateDisputeDto } from './dto/create-dispute.dto';
 import { DisputeResponseDto } from './dto/dispute-response.dto';
 import { DisputeService } from './dispute.service';
 
-@Controller('disputes')
+@Controller({ path: 'disputes', version: '1' })
 @UseGuards(JwtAuthGuard)
 export class DisputeController {
   constructor(private readonly disputeService: DisputeService) {}

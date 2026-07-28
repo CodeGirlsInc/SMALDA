@@ -1,4 +1,5 @@
 "use client";
+import { API_URL } from "@/lib/api-config";
 
 import React, { useEffect, useRef, useState } from "react";
 
@@ -19,7 +20,6 @@ interface ApiKey {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 function getAuthHeaders(): HeadersInit {
   const token =
@@ -240,7 +240,7 @@ export default function ApiKeysPage() {
   useEffect(() => {
     async function fetchKeys() {
       try {
-        const res = await fetch(`${API_BASE}/api/users/me/api-keys`, {
+        const res = await fetch(`${API_URL}/users/me/api-keys`, {
           headers: getAuthHeaders(),
         });
         if (!res.ok) throw new Error(`Failed to load keys: ${res.status}`);
@@ -261,7 +261,7 @@ export default function ApiKeysPage() {
     setGenerating(true);
     setGenerateError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/users/me/api-keys`, {
+      const res = await fetch(`${API_URL}/users/me/api-keys`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify({ name }),
@@ -290,7 +290,7 @@ export default function ApiKeysPage() {
     setRevoking(true);
     try {
       const res = await fetch(
-        `${API_BASE}/api/users/me/api-keys/${revokeTarget.id}`,
+        `${API_URL}/users/me/api-keys/${revokeTarget.id}`,
         { method: "DELETE", headers: getAuthHeaders() }
       );
       if (!res.ok) throw new Error(`Revoke failed: ${res.status}`);

@@ -1,4 +1,5 @@
 "use client";
+import { API_URL } from "@/lib/api-config";
 
 import React, { useCallback, useEffect, useState } from "react";
 import jsPDF from "jspdf";
@@ -7,7 +8,6 @@ import jsPDF from "jspdf";
 // Configuration
 // ─────────────────────────────────────────────────────────────────────────────
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -183,7 +183,7 @@ function PortfolioExport({
     setExcelError(null);
     try {
       const qs = buildQueryParams();
-      const url = `${API_BASE}/api/documents/export/excel${qs ? `?${qs}` : ""}`;
+      const url = `${API_URL}/documents/export/excel${qs ? `?${qs}` : ""}`;
       const res = await fetch(url, { headers: getAuthHeaders() });
       if (!res.ok) {
         throw new Error(`Export failed (${res.status})`);
@@ -210,7 +210,7 @@ function PortfolioExport({
     try {
       // Try the backend PDF endpoint first; fall back to client-side generation.
       const qs = buildQueryParams();
-      const url = `${API_BASE}/api/documents/export/pdf${qs ? `?${qs}` : ""}`;
+      const url = `${API_URL}/documents/export/pdf${qs ? `?${qs}` : ""}`;
       const res = await fetch(url, { headers: getAuthHeaders() });
 
       if (res.ok) {
@@ -296,7 +296,7 @@ function DocumentRow({ doc }: { doc: Document }) {
     setDlState("loading");
     try {
       const res = await fetch(
-        `${API_BASE}/api/documents/${doc.id}/export/pdf`,
+        `${API_URL}/documents/${doc.id}/export/pdf`,
         { headers: getAuthHeaders() }
       );
 
@@ -405,7 +405,7 @@ function DocumentsTable({
       const qs = params.toString();
 
       const res = await fetch(
-        `${API_BASE}/api/documents${qs ? `?${qs}` : ""}`,
+        `${API_URL}/documents${qs ? `?${qs}` : ""}`,
         { headers: getAuthHeaders() }
       );
       if (!res.ok) throw new Error(`Failed to load documents (${res.status})`);

@@ -1,10 +1,11 @@
+import { API_URL } from "@/lib/api-config";
 import { http, HttpResponse } from "msw";
 
 const API_BASE = "http://localhost:3001";
 
 export const handlers = [
   // Auth — login
-  http.post(`${API_BASE}/api/auth/login`, async ({ request }) => {
+  http.post(`${API_URL}/auth/login`, async ({ request }) => {
     const body = (await request.json()) as { email: string; password: string };
     if (body.email === "bad@example.com") {
       return HttpResponse.json(
@@ -16,7 +17,7 @@ export const handlers = [
   }),
 
   // Auth — verify
-  http.get(`${API_BASE}/api/auth/verify`, ({ request }) => {
+  http.get(`${API_URL}/auth/verify`, ({ request }) => {
     const auth = request.headers.get("Authorization");
     if (!auth || !auth.startsWith("Bearer ")) {
       return HttpResponse.json({ message: "Unauthorized" }, { status: 401 });
@@ -25,7 +26,7 @@ export const handlers = [
   }),
 
   // Documents — list
-  http.get(`${API_BASE}/api/admin/documents`, ({ request }) => {
+  http.get(`${API_URL}/admin/documents`, ({ request }) => {
     const url = new URL(request.url);
     const page = Number(url.searchParams.get("page") ?? "1");
     return HttpResponse.json({
@@ -51,14 +52,14 @@ export const handlers = [
   }),
 
   // Documents — export PDF
-  http.get(`${API_BASE}/api/documents/:id/export/pdf`, () => {
+  http.get(`${API_URL}/documents/:id/export/pdf`, () => {
     return HttpResponse.arrayBuffer(new ArrayBuffer(0), {
       headers: { "Content-Type": "application/pdf" },
     });
   }),
 
   // Users — me
-  http.get(`${API_BASE}/api/users/me`, ({ request }) => {
+  http.get(`${API_URL}/users/me`, ({ request }) => {
     const auth = request.headers.get("Authorization");
     if (!auth) {
       return HttpResponse.json({ message: "Unauthorized" }, { status: 401 });
@@ -71,7 +72,7 @@ export const handlers = [
     });
   }),
 
-  http.patch(`${API_BASE}/api/users/me`, async ({ request }) => {
+  http.patch(`${API_URL}/users/me`, async ({ request }) => {
     const body = (await request.json()) as Record<string, unknown>;
     return HttpResponse.json({ ok: true, ...body });
   }),

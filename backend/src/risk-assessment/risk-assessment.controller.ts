@@ -3,7 +3,7 @@
 import { RiskAssessmentService } from './risk-assessment.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
-@Controller('documents')
+@Controller({ path: 'documents', version: '1' })
 export class RiskAssessmentController {
   constructor(private readonly riskService: RiskAssessmentService) {}
 

@@ -6,6 +6,7 @@
   UpdateDateColumn,
   DeleteDateColumn,
 } from 'typeorm';
+import { Exclude } from 'class-transformer';
 
 export enum UserRole {
   ADMIN = 'admin',
@@ -20,6 +21,7 @@ export class User {
   @Column({ unique: true })
   email: string;
 
+  @Exclude()
   @Column({ name: 'password_hash', nullable: true })
   passwordHash?: string | null;
 
@@ -38,12 +40,15 @@ export class User {
 
   @Column({ name: 'preferred_language', default: 'en' })
   preferredLanguage: string;
+
   @Column({ name: 'two_factor_enabled', default: false })
   twoFactorEnabled: boolean;
 
+  @Exclude()
   @Column({ name: 'two_factor_secret', nullable: true })
   twoFactorSecret?: string;
 
+  @Exclude()
   @Column({ name: 'two_factor_backup_codes', type: 'text', nullable: true })
   twoFactorBackupCodes?: string;
 
@@ -53,6 +58,7 @@ export class User {
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
 
+  @Exclude()
   @DeleteDateColumn({ name: 'deleted_at', nullable: true })
   deletedAt?: Date;
 }

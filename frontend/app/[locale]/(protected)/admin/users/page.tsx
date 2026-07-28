@@ -1,4 +1,5 @@
 "use client";
+import { API_URL } from "@/lib/api-config";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -31,7 +32,6 @@ interface PaginatedUsers {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 function getAuthHeaders(): HeadersInit {
   const token =
@@ -176,7 +176,7 @@ export default function AdminUsersPage() {
     if (appliedSearch) params.set("search", appliedSearch);
 
     try {
-      const res = await fetch(`${API_BASE}/api/users?${params}`, {
+      const res = await fetch(`${API_URL}/users?${params}`, {
         headers: getAuthHeaders(),
       });
       if (res.status === 403) { router.replace("/dashboard"); return; }
@@ -202,7 +202,7 @@ export default function AdminUsersPage() {
     }
     setActionLoading((prev) => ({ ...prev, [`role_${user.id}`]: true }));
     try {
-      const res = await fetch(`${API_BASE}/api/users/${user.id}`, {
+      const res = await fetch(`${API_URL}/users/${user.id}`, {
         method: "PATCH",
         headers: getAuthHeaders(),
         body: JSON.stringify({ role: newRole }),
@@ -222,7 +222,7 @@ export default function AdminUsersPage() {
     const newStatus: UserStatus = user.status === "active" ? "suspended" : "active";
     setActionLoading((prev) => ({ ...prev, [`status_${user.id}`]: true }));
     try {
-      const res = await fetch(`${API_BASE}/api/users/${user.id}`, {
+      const res = await fetch(`${API_URL}/users/${user.id}`, {
         method: "PATCH",
         headers: getAuthHeaders(),
         body: JSON.stringify({ status: newStatus }),
@@ -243,7 +243,7 @@ export default function AdminUsersPage() {
     setDeleteLoading(true);
     setDeleteError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/users/${deleteTarget.id}`, {
+      const res = await fetch(`${API_URL}/users/${deleteTarget.id}`, {
         method: "DELETE",
         headers: getAuthHeaders(),
       });
@@ -265,7 +265,7 @@ export default function AdminUsersPage() {
     try {
       await Promise.all(
         Array.from(selected).map((id) =>
-          fetch(`${API_BASE}/api/users/${id}`, {
+          fetch(`${API_URL}/users/${id}`, {
             method: "DELETE",
             headers: getAuthHeaders(),
           })

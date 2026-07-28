@@ -1,9 +1,9 @@
 "use client";
+import { API_URL } from "@/lib/api-config";
 
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -184,7 +184,7 @@ export default function SettingsDataPage() {
     setIsExporting(true);
     setExportError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/users/me/export`, {
+      const res = await fetch(`${API_URL}/users/me/export`, {
         headers: getAuthHeaders(),
       });
       if (!res.ok) throw new Error(`Export failed: ${res.status}`);
@@ -215,7 +215,7 @@ export default function SettingsDataPage() {
     setIsDeleting(true);
     setDeleteError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/users/me/data`, {
+      const res = await fetch(`${API_URL}/users/me/data`, {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",

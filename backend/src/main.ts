@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, VersioningType, ClassSerializerInterceptor } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
@@ -16,17 +17,19 @@ async function bootstrap() {
 
   const configService = app.get(ConfigService);
 
-  // Enable CORS
   app.enableCors({
     origin:
       configService.get<string>('FRONTEND_URL') || 'http://localhost:3001',
     credentials: true,
   });
 
-  // Global prefix
+  app.enableVersioning({
+    type: VersioningType.URI,
+    defaultVersion: '1',
+  });
+
   app.setGlobalPrefix('api');
 
-  // Global validation pipe
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -38,17 +41,18 @@ async function bootstrap() {
     }),
   );
 
+  app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
+
   app.useGlobalFilters(
     new HttpExceptionFilter(
       configService.get<string>('NODE_ENV') === 'production',
     ),
   );
 
-  // Swagger documentation
   const config = new DocumentBuilder()
-    .setTitle('SMALDA Authentication API')
+    .setTitle('SMALDA — Secure Land Document Verification API')
     .setDescription(
-      'Comprehensive authentication and authorization API with JWT, OAuth, and RBAC',
+      'End-to-end platform for land document verification, risk assessment, and blockchain anchoring on Stellar.',
     )
     .setVersion('1.0')
     .addBearerAuth(
@@ -62,11 +66,16 @@ async function bootstrap() {
       },
       'JWT-auth',
     )
-    .addTag(
-      'Authentication',
-      'Authentication endpoints (login, register, OAuth, etc.)',
-    )
-    .addTag('Users', 'User management and profile endpoints')
+    .addTag('Authentication', 'Login, register, OAuth, and token management')
+    .addTag('Users', 'User profiles and account management')
+    .addTag('Documents', 'Document upload, retrieval, and lifecycle')
+    .addTag('Risk Assessment', 'Automated document risk scoring and flagging')
+    .addTag('Verification', 'Stellar blockchain anchoring and verification records')
+    .addTag('Disputes', 'Dispute filing and resolution')
+    .addTag('External Validation', 'Land registry, government ID, and business registration checks')
+    .addTag('Access Logs', 'Document access audit trail')
+    .addTag('Stellar', 'Blockchain anchoring operations')
+    .addTag('Queue', 'Document processing queue management')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

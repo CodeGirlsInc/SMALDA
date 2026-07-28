@@ -1,13 +1,14 @@
 "use client";
+import { API_URL } from "@/lib/api-config";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
 // ─────────────────────────────────────────────────────────────────────────────
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const WS_BASE = (process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:3001").replace(/^http/, "ws");
 const STELLAR_EXPLORER = "https://stellar.expert/explorer/testnet/tx";
 
@@ -322,7 +323,7 @@ export default function VerifyPage() {
     if (!docId) return;
     const headers = getAuthHeaders();
 
-    fetch(`${API_BASE}/api/documents/${docId}`, { headers })
+    fetch(`${API_URL}/documents/${docId}`, { headers })
       .then((res) => {
         if (!res.ok) throw new Error(res.status === 404 ? "Document not found." : `Error ${res.status}`);
         return res.json() as Promise<DocumentSummary>;
@@ -371,7 +372,7 @@ export default function VerifyPage() {
   const fetchVerification = useCallback(async () => {
     if (!docId) return;
     try {
-      const res = await fetch(`${API_BASE}/api/documents/${docId}/verification`, {
+      const res = await fetch(`${API_URL}/documents/${docId}/verification`, {
         headers: getAuthHeaders(),
       });
       if (!res.ok) throw new Error(`Failed to fetch verification (${res.status})`);
@@ -398,7 +399,7 @@ export default function VerifyPage() {
     setStatusMsg("Submitting to Stellar network…");
 
     try {
-      const res = await fetch(`${API_BASE}/api/documents/${docId}/verify`, {
+      const res = await fetch(`${API_URL}/documents/${docId}/verify`, {
         method: "POST",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
       });
@@ -422,7 +423,7 @@ export default function VerifyPage() {
       // Poll for completion (fallback when WS is not available)
       const poll = async () => {
         await new Promise((r) => setTimeout(r, 8000));
-        const verifyRes = await fetch(`${API_BASE}/api/documents/${docId}/verification`, {
+        const verifyRes = await fetch(`${API_URL}/documents/${docId}/verification`, {
           headers: getAuthHeaders(),
         });
         if (verifyRes.ok) {
@@ -470,9 +471,9 @@ export default function VerifyPage() {
       <main className="mx-auto max-w-xl px-4 py-8">
         <div className="rounded-2xl border border-red-200 bg-red-50 p-6">
           <p className="text-sm text-red-700">{loadError ?? "Document not found."}</p>
-          <a href="/documents" className="mt-3 block text-sm underline text-red-700">
+          <Link href="/documents" className="mt-3 block text-sm underline text-red-700">
             Back to Documents
-          </a>
+          </Link>
         </div>
       </main>
     );

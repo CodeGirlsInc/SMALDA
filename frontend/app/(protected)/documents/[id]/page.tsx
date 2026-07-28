@@ -1,4 +1,5 @@
 "use client";
+import { API_URL } from "@/lib/api-config";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -7,7 +8,6 @@ import { useParams, useRouter } from "next/navigation";
 // Configuration
 // ─────────────────────────────────────────────────────────────────────────────
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const WS_BASE = (process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:3001").replace(/^http/, "ws");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -304,8 +304,8 @@ export default function DocumentDetailPage() {
     try {
       const headers = getAuthHeaders();
       const [docRes, riskRes] = await Promise.all([
-        fetch(`${API_BASE}/api/documents/${docId}`, { headers }),
-        fetch(`${API_BASE}/api/documents/${docId}/risk`, { headers }),
+        fetch(`${API_URL}/documents/${docId}`, { headers }),
+        fetch(`${API_URL}/documents/${docId}/risk`, { headers }),
       ]);
 
       if (!docRes.ok) {
@@ -343,7 +343,7 @@ export default function DocumentDetailPage() {
     if (!docId) return;
     setVerifying(true);
     try {
-      const res = await fetch(`${API_BASE}/api/documents/${docId}/verify`, {
+      const res = await fetch(`${API_URL}/documents/${docId}/verify`, {
         method: "POST",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
       });
@@ -441,7 +441,7 @@ export default function DocumentDetailPage() {
             )}
 
             <a
-              href={`${API_BASE}/api/documents/${docId}/report`}
+              href={`${API_URL}/documents/${docId}/report`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"

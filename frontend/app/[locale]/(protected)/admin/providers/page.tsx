@@ -1,4 +1,5 @@
 "use client";
+import { API_URL } from "@/lib/api-config";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -41,7 +42,6 @@ const REFRESH_INTERVAL_SECONDS = 60;
 // Helpers
 // ---------------------------------------------------------------------------
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 function getAuthHeaders(): HeadersInit {
   const token =
@@ -284,7 +284,7 @@ export default function AdminProvidersPage() {
   const fetchStats = useCallback(async () => {
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/external-validation/stats`, {
+      const res = await fetch(`${API_URL}/external-validation/stats`, {
         headers: getAuthHeaders(),
       });
       if (res.status === 403) {
@@ -342,7 +342,7 @@ export default function AdminProvidersPage() {
     setCheckErrors((prev) => ({ ...prev, [id]: null }));
 
     try {
-      const res = await fetch(`${API_BASE}/api/external-validation/health`, {
+      const res = await fetch(`${API_URL}/external-validation/health`, {
         headers: getAuthHeaders(),
       });
       if (!res.ok) throw new Error(`Health check failed: ${res.status}`);

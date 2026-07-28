@@ -17,7 +17,7 @@ import { ExternalValidationService } from './external-validation.service';
 import { CreateValidationRequestDto } from './dto/validation-request.dto';
 import { ValidationType } from './entities/validation-request.entity';
 
-@Controller('documents/:id/external-validation')
+@Controller({ path: 'documents/:id/external-validation', version: '1' })
 @UseGuards(JwtAuthGuard)
 export class ExternalValidationController {
   constructor(

@@ -42,7 +42,7 @@ const fileFilter: multer.Options['fileFilter'] = (_req, file, callback) => {
   );
 };
 
-@Controller('documents')
+@Controller({ path: 'documents', version: '1' })
 export class DocumentsController {
   constructor(
     private readonly documentsService: DocumentsService,

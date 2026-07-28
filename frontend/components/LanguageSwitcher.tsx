@@ -1,11 +1,11 @@
 "use client";
+import { API_URL } from "@/lib/api-config";
 
 import { useTransition } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { usePathname, useRouter } from "@/i18n/navigation";
 import { routing } from "@/i18n/routing";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 /**
  * Persist the chosen language to the backend so it can be reused elsewhere
@@ -22,7 +22,7 @@ async function persistPreferredLanguage(language: string): Promise<void> {
     // Not signed in — the language still switches locally via the cookie/URL.
     if (!token) return;
 
-    await fetch(`${API_BASE}/api/users/me`, {
+    await fetch(`${API_URL}/users/me`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",

@@ -1,4 +1,5 @@
 "use client";
+import { API_URL } from "@/lib/api-config";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
@@ -55,7 +56,6 @@ const NOTIFICATION_TYPES: Pick<NotificationPreference, "key" | "label" | "descri
   },
 ];
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 function getAuthHeaders(): HeadersInit {
   const token =
@@ -155,7 +155,7 @@ export default function NotificationsSettingsPage() {
   useEffect(() => {
     async function fetchPrefs() {
       try {
-        const res = await fetch(`${API_BASE}/api/users/me/notification-preferences`, {
+        const res = await fetch(`${API_URL}/users/me/notification-preferences`, {
           headers: getAuthHeaders(),
         });
         if (!res.ok) throw new Error(`Failed to load preferences: ${res.status}`);
@@ -212,7 +212,7 @@ export default function NotificationsSettingsPage() {
       });
 
       try {
-        const res = await fetch(`${API_BASE}/api/users/me/notification-preferences`, {
+        const res = await fetch(`${API_URL}/users/me/notification-preferences`, {
           method: "PATCH",
           headers: getAuthHeaders(),
           body: JSON.stringify(payload),

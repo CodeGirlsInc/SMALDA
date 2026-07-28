@@ -1,4 +1,5 @@
 "use client";
+import { API_URL } from "@/lib/api-config";
 
 import React, { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
@@ -40,7 +41,6 @@ interface PaginatedResponse {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 function riskColor(score?: number | null): string {
   if (score == null) return "text-gray-400";
@@ -131,7 +131,7 @@ export default function AdminDocumentsPage() {
             : null;
 
         const res = await fetch(
-          `${API_BASE}/api/admin/documents?${params.toString()}`,
+          `${API_URL}/admin/documents?${params.toString()}`,
           {
             headers: {
               "Content-Type": "application/json",
@@ -179,7 +179,7 @@ export default function AdminDocumentsPage() {
         : null;
 
     try {
-      const res = await fetch(`${API_BASE}/api/documents/${id}/export/pdf`, {
+      const res = await fetch(`${API_URL}/documents/${id}/export/pdf`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) throw new Error("Download failed");
