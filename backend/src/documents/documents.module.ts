@@ -1,7 +1,9 @@
 import { forwardRef, Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DocumentsController } from './documents.controller';
+import { DocumentsGateway } from './documents.gateway';
 import { DocumentsService } from './documents.service';
 import { Document } from './entities/document.entity';
 import { StellarModule } from '../stellar/stellar.module';
@@ -12,13 +14,20 @@ import { QueueModule } from '../queue/queue.module';
   imports: [
     ConfigModule,
     TypeOrmModule.forFeature([Document]),
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        secret: config.get<string>('JWT_SECRET'),
+      }),
+    }),
     StellarModule,
     VerificationModule,
     forwardRef(() => QueueModule),
   ],
   controllers: [DocumentsController],
-  providers: [DocumentsService],
-  exports: [DocumentsService],
+  providers: [DocumentsService, DocumentsGateway],
+  exports: [DocumentsService, DocumentsGateway],
 })
 export class DocumentsModule {}
 // hhhh

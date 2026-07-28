@@ -1,7 +1,8 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleDestroy, forwardRef } from '@nestjs/common';
 import { Worker } from 'bullmq';
 
 import { DocumentsService } from '../documents/documents.service';
+import { DocumentsGateway } from '../documents/documents.gateway';
 import { DocumentStatus } from '../documents/entities/document.entity';
 import { VerificationService } from '../verification/verification.service';
 import { VerificationStatus } from '../verification/entities/verification-record.entity';
@@ -20,13 +21,15 @@ export class DocumentProcessor implements OnModuleDestroy {
     private readonly documentsService: DocumentsService,
     private readonly stellarService: StellarService,
     private readonly verificationService: VerificationService,
+    @Inject(forwardRef(() => DocumentsGateway))
+    private readonly documentsGateway: DocumentsGateway,
   ) {
     const connection = this.queueService.getConnectionOptions();
     this.worker = new Worker(
       this.queueService.queueName,
       async (job) => {
         if (job.name === 'analyze') {
-          await this.riskService.assessDocument(job.data.documentId);
+          await this.handleAnalyze(job.data.documentId);
           return;
         }
         if (job.name === 'anchor') {
@@ -43,6 +46,33 @@ export class DocumentProcessor implements OnModuleDestroy {
         err?.stack,
       );
     });
+  }
+
+  private async handleAnalyze(documentId: string) {
+    const document = await this.documentsService.findById(documentId);
+    if (!document) {
+      this.logger.warn(`Document ${documentId} not found for analyze job`);
+      return;
+    }
+
+    const prevStatus = document.status;
+
+    if (prevStatus === DocumentStatus.PENDING) {
+      await this.documentsService.updateStatus(documentId, DocumentStatus.ANALYZING);
+      this.documentsGateway.notifyStatusChanged(documentId, DocumentStatus.ANALYZING, prevStatus);
+    }
+
+    const result = await this.riskService.assessDocument(documentId);
+
+    let newStatus: DocumentStatus;
+    if (result.score >= 60) {
+      newStatus = DocumentStatus.FLAGGED;
+    } else {
+      newStatus = DocumentStatus.VERIFIED;
+    }
+
+    await this.documentsService.updateStatus(documentId, newStatus);
+    this.documentsGateway.notifyStatusChanged(documentId, newStatus, DocumentStatus.ANALYZING);
   }
 
   private async handleAnchor(documentId: string) {
@@ -63,10 +93,13 @@ export class DocumentProcessor implements OnModuleDestroy {
       status: VerificationStatus.CONFIRMED,
     });
 
+    const prevStatus = document.status;
     await this.documentsService.updateStatus(
       documentId,
       DocumentStatus.VERIFIED,
     );
+
+    this.documentsGateway.notifyStatusChanged(documentId, DocumentStatus.VERIFIED, prevStatus);
     this.logger.log(`Document ${documentId} verified on ledger ${ledger}`);
   }
 
