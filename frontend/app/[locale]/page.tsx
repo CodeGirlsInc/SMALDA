@@ -14,16 +14,19 @@ export default async function DashboardPage({
   const t = await getTranslations("dashboard");
 
   return (
-    <main className="mx-auto max-w-4xl px-4 py-8">
+    <main aria-labelledby="dashboard-heading" className="mx-auto max-w-4xl px-4 py-8">
+      <h1 id="dashboard-heading" className="sr-only">{t("title")}</h1>
       <header className="mb-8">
         <p className="text-sm font-medium text-blue-600">{t("welcome")}</p>
-        <h1 className="mt-1 text-2xl font-bold text-gray-900">{t("title")}</h1>
+        <h2 className="mt-1 text-2xl font-bold text-gray-900">{t("title")}</h2>
         <p className="mt-1 text-sm text-gray-500">{t("subtitle")}</p>
       </header>
 
       {/* Stat cards — values are wired to the API in a later ticket. */}
       <section
         aria-label={t("title")}
+        aria-live="polite"
+        aria-atomic="true"
         className="grid grid-cols-2 gap-4 sm:grid-cols-4"
       >
         {STAT_KEYS.map((key) => (
@@ -31,7 +34,7 @@ export default async function DashboardPage({
             key={key}
             className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"
           >
-            <p className="text-2xl font-bold text-gray-900">—</p>
+            <p className="text-2xl font-bold text-gray-900" aria-hidden="true">—</p>
             <p className="mt-1 text-xs font-medium text-gray-500">
               {t(`stats.${key}`)}
             </p>
