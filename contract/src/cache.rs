@@ -4,13 +4,16 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tracing::warn;
 
+#[derive(Clone)]
 pub enum CacheBackend {
     Redis(RedisCache),
     InMemory(InMemoryCache),
 }
 
 impl CacheBackend {
+    #[tracing::instrument(name = "cache.check_connection", skip(self))]
     pub async fn check_connection(&self) -> bool {
         match self {
             Self::Redis(c) => c.check_connection().await,
@@ -18,6 +21,15 @@ impl CacheBackend {
         }
     }
 
+    #[tracing::instrument(name = "cache.close", skip(self))]
+    pub async fn close(&self) {
+        match self {
+            Self::Redis(c) => c.close().await,
+            Self::InMemory(c) => c.close().await,
+        }
+    }
+
+    #[tracing::instrument(name = "cache.get_raw", skip(self), fields(key = %key))]
     pub async fn get_raw(&self, key: &str) -> Result<Option<String>> {
         match self {
             Self::Redis(c) => c.get_raw(key).await,
@@ -25,6 +37,7 @@ impl CacheBackend {
         }
     }
 
+    #[tracing::instrument(name = "cache.set_raw", skip(self, value), fields(key = %key, ttl = ttl))]
     pub async fn set_raw(&self, key: &str, value: &str, ttl: u64) -> Result<()> {
         match self {
             Self::Redis(c) => c.set_raw(key, value, ttl).await,
@@ -32,6 +45,7 @@ impl CacheBackend {
         }
     }
 
+    #[tracing::instrument(name = "cache.get", skip(self), fields(key = %key))]
     pub async fn get<T>(&self, key: &str) -> Result<Option<T>>
     where
         T: for<'de> Deserialize<'de>,
@@ -42,6 +56,7 @@ impl CacheBackend {
         }
     }
 
+    #[tracing::instrument(name = "cache.set", skip(self, value), fields(key = %key, ttl = ttl))]
     pub async fn set<T>(&self, key: &str, value: &T, ttl: u64) -> Result<()>
     where
         T: Serialize,
@@ -50,6 +65,7 @@ impl CacheBackend {
         self.set_raw(key, &serialized, ttl).await
     }
 
+    #[tracing::instrument(name = "cache.delete", skip(self), fields(key = %key))]
     pub async fn delete(&self, key: &str) -> Result<()> {
         match self {
             Self::Redis(c) => c.delete(key).await,
@@ -58,6 +74,7 @@ impl CacheBackend {
     }
 }
 
+#[derive(Clone)]
 pub struct RedisCache {
     connection: ConnectionManager,
 }
@@ -75,6 +92,14 @@ impl RedisCache {
             .query_async::<_, String>(&mut conn)
             .await
             .is_ok()
+    }
+
+    async fn close(&self) {
+        let mut conn = self.connection.clone();
+        match redis::cmd("QUIT").query_async::<_, ()>(&mut conn).await {
+            Ok(()) => tracing::info!("Redis connection closed cleanly during shutdown"),
+            Err(e) => warn!("Error sending QUIT to Redis during shutdown: {}", e),
+        }
     }
 
     async fn get_raw(&self, key: &str) -> Result<Option<String>> {
@@ -96,6 +121,7 @@ impl RedisCache {
     }
 }
 
+#[derive(Clone)]
 pub struct InMemoryCache {
     store: Arc<RwLock<HashMap<String, String>>>,
 }
@@ -117,6 +143,8 @@ impl InMemoryCache {
         true
     }
 
+    async fn close(&self) {}
+
     async fn get_raw(&self, key: &str) -> Result<Option<String>> {
         let store = self.store.read().await;
         Ok(store.get(key).cloned())
@@ -132,5 +160,126 @@ impl InMemoryCache {
         let mut store = self.store.write().await;
         store.remove(key);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn in_memory_backend() -> CacheBackend {
+        CacheBackend::InMemory(InMemoryCache::new())
+    }
+
+    #[tokio::test]
+    async fn test_set_and_get_string() {
+        let cache = in_memory_backend();
+        cache.set("key1", &"hello".to_string(), 3600).await.unwrap();
+        let result: Option<String> = cache.get("key1").await.unwrap();
+        assert_eq!(result, Some("hello".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_get_miss_returns_none() {
+        let cache = in_memory_backend();
+        let result: Option<String> = cache.get("nonexistent").await.unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[tokio::test]
+    async fn test_overwrite_value() {
+        let cache = in_memory_backend();
+        cache.set("key1", &"first".to_string(), 3600).await.unwrap();
+        cache
+            .set("key1", &"second".to_string(), 3600)
+            .await
+            .unwrap();
+        let result: Option<String> = cache.get("key1").await.unwrap();
+        assert_eq!(result, Some("second".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_delete_removes_key() {
+        let cache = in_memory_backend();
+        cache.set("key1", &"value".to_string(), 3600).await.unwrap();
+        cache.delete("key1").await.unwrap();
+        let result: Option<String> = cache.get("key1").await.unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[tokio::test]
+    async fn test_multiple_keys_independent() {
+        let cache = in_memory_backend();
+        cache.set("a", &"1".to_string(), 3600).await.unwrap();
+        cache.set("b", &"2".to_string(), 3600).await.unwrap();
+        cache.set("c", &"3".to_string(), 3600).await.unwrap();
+
+        let a: Option<String> = cache.get("a").await.unwrap();
+        let b: Option<String> = cache.get("b").await.unwrap();
+        let c: Option<String> = cache.get("c").await.unwrap();
+
+        assert_eq!(a, Some("1".to_string()));
+        assert_eq!(b, Some("2".to_string()));
+        assert_eq!(c, Some("3".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_get_set_with_vec() {
+        let cache = in_memory_backend();
+        let data = vec![1u64, 2, 3, 4, 5];
+        cache.set("numbers", &data, 3600).await.unwrap();
+        let result: Option<Vec<u64>> = cache.get("numbers").await.unwrap();
+        assert_eq!(result, Some(data));
+    }
+
+    #[tokio::test]
+    async fn test_get_set_with_custom_struct() {
+        use serde::{Deserialize, Serialize};
+
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        struct TestData {
+            name: String,
+            value: i32,
+        }
+
+        let cache = in_memory_backend();
+        let item = TestData {
+            name: "test".to_string(),
+            value: 42,
+        };
+        cache.set("struct_key", &item, 3600).await.unwrap();
+        let result: Option<TestData> = cache.get("struct_key").await.unwrap();
+        assert_eq!(result, Some(item));
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_check_connection_always_true() {
+        let cache = in_memory_backend();
+        assert!(cache.check_connection().await);
+    }
+
+    #[tokio::test]
+    async fn test_delete_nonexistent_key_succeeds() {
+        let cache = in_memory_backend();
+        assert!(cache.delete("nonexistent").await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_set_raw_and_get_raw() {
+        let cache = in_memory_backend();
+        cache.set_raw("raw_key", "raw_value", 3600).await.unwrap();
+        let result = cache.get_raw("raw_key").await.unwrap();
+        assert_eq!(result, Some("raw_value".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_cache_backend_enum_dispatch() {
+        let cache = in_memory_backend();
+        cache
+            .set("enum_key", &"enum_value".to_string(), 3600)
+            .await
+            .unwrap();
+        let result: Option<String> = cache.get("enum_key").await.unwrap();
+        assert_eq!(result, Some("enum_value".to_string()));
     }
 }

@@ -1,3 +1,7 @@
+//! Hex hash normalization and validation for SHA-256 and SHA-512 document
+//! hashes.
+
+/// Reasons a candidate hash string fails validation.
 #[derive(Debug)]
 pub enum ValidationError {
     WrongLength { expected: usize, actual: usize },
@@ -11,6 +15,8 @@ pub enum HashAlgorithm {
     SHA512,
 }
 
+/// Stateless helper for normalizing and validating hex-encoded hashes.
+/// All methods are associated functions - there is nothing to construct.
 pub struct HashValidator;
 
 impl HashValidator {
