@@ -1,0 +1,16 @@
+#!/bin/sh
+# Pre-commit hook to prevent committing any .env files except .env.example
+
+# List of files to check for forbidden env files
+forbidden_env_files=$(git diff --cached --name-only | grep -E "^.*\.env(?!.*example)$")
+
+if [ -n "$forbidden_env_files" ]; then
+    echo "ERROR: You are trying to commit the following environment files which are forbidden:"
+    echo "$forbidden_env_files"
+    echo "These files contain secrets and should not be committed to version control."
+    echo "Only .env.example is allowed to be tracked. Your local .env files are already ignored by .gitignore."
+    exit 1
+fi
+
+echo "✅ No forbidden environment files detected, proceeding with commit."
+exit 0

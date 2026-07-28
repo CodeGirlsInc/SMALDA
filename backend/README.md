@@ -26,6 +26,29 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+## Environment Configuration
+
+### Local Development
+1. Copy `.env.example` to create your local environment file:
+   ```bash
+   cp .env.example .env.development
+   ```
+2. Update the placeholder values in `.env.development` with your actual secrets and configuration.
+3. The application automatically loads the appropriate environment file based on `NODE_ENV`:
+   - `development` → `.env.development`
+   - `staging` → `.env.staging`
+   - `production` → `.env.production`
+   - Falls back to `.env` if no environment-specific file is found.
+
+### Security Notes
+- **Never commit actual secrets or environment files to version control**. The root `.gitignore` prevents this by ignoring all `.env` files except `.env.example`.
+- In production, all secrets must be set via your deployment platform's secret management system (never commit them).
+- The application will **refuse to start in production mode** if any placeholder values are still detected, ensuring real secrets are always used.
+- All environment variables are validated at startup using a Joi schema - missing or invalid variables will prevent the app from booting.
+
+### Required Variables
+All required variables are documented in `.env.example` with placeholder values. You must set all of them for the application to function correctly.
+
 ## Project setup
 
 ```bash
