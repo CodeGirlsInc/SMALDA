@@ -5,6 +5,7 @@ pub mod handlers;
 pub mod hash_validator;
 pub mod metrics;
 pub mod rate_limit;
+pub mod retry;
 pub mod routes;
 pub mod stellar;
 pub mod types;
@@ -101,6 +102,8 @@ pub struct HealthResponse {
     pub status: String,
     pub stellar_connected: bool,
     pub redis_connected: bool,
+    pub circuit_state: String,
+    pub circuit_failures: u32,
 }
 
 /// Response type for document verification history
@@ -248,12 +251,20 @@ pub async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
         status: status.to_string(),
         stellar_connected: stellar_ok,
         redis_connected: redis_ok,
+        circuit_state: state.stellar.circuit_state_label().to_string(),
+        circuit_failures: state.stellar.circuit_failures(),
     })
 }
 
 // Metrics endpoint
 pub async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
-    state.metrics.render()
+    (
+        [(
+            axum::http::header::CONTENT_TYPE,
+            axum::http::HeaderValue::from_static("text/plain; version=0.0.4"),
+        )],
+        state.metrics.render(),
+    )
 }
 
 /// Compute deterministic transfer hash from core fields.

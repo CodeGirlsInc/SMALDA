@@ -1,0 +1,95 @@
+name: Coverage
+
+on:
+  pull_request:
+    branches: ["**"]
+  push:
+    branches: [main]
+
+jobs:
+  rust-coverage:
+    name: Rust coverage (cargo-llvm-cov)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    defaults:
+      run:
+        working-directory: contract
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            contract/target
+          key: ${{ runner.os }}-cov-${{ hashFiles('contract/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cov-
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Generate lcov + coverage.json
+        run: |
+          cargo llvm-cov --workspace --lcov --output-path coverage.lcov \
+            --json-path coverage.json --ignore-filename-regex 'tests/'
+
+      - name: Print per-module summary
+        run: |
+          python3 - <<'PY'
+          import json
+          data = json.load(open("coverage.json")).get("data", [])
+          rows = []
+          for entry in data:
+              path = entry.get("path") or ""
+              if not path:
+                  continue
+              if path.startswith("./"):
+                  path = path[2:]
+              summary = entry.get("summary", {}).get("lines", {})
+              count = summary.get("count", 0)
+              covered = summary.get("covered", 0)
+              pct = (100.0 * covered / count) if count else None
+              rows.append((path, covered, count, pct))
+          rows.sort()
+          width = max((len(r[0]) for r in rows), default=10)
+          print(f"{'module':<{width}}  covered/total   percent")
+          for path, cov, cnt, pct in rows:
+              pct_s = "n/a" if pct is None else f"{pct:6.2f}%"
+              print(f"{path:<{width}}  {cov:>7}/{cnt:<7} {pct_s}")
+          PY
+
+      - name: Enforce per-module floor
+        run: |
+          python3 contract/scripts/check_coverage.py \
+            contract/coverage.json \
+            contract/coverage-thresholds.json
+        continue-on-error: true
+
+      - name: Upload lcov artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: contract/coverage.lcov
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload coverage.json artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-json
+          path: contract/coverage.json
+          if-no-files-found: warn
+          retention-days: 14

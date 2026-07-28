@@ -1,0 +1,18 @@
+target
+.git
+.github
+.gitignore
+.cache
+.smalda
+.vscode
+.idea
+**/.DS_Store
+**/*.log
+**/*.tmp
+**/*.bak
+**/*.swp
+
+# Documentation that does not belong in the runtime image.
+**/*.md
+!contract/Cargo.toml
+!contract/Cargo.lock
