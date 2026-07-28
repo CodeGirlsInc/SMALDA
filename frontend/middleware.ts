@@ -1,5 +1,7 @@
-import createMiddleware from "next-intl/middleware";
+import { createMiddleware, type LocalePrefix } from "next-intl/middleware";
 import { routing } from "./i18n/routing";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
 /**
  * next-intl middleware — handles locale detection (via the `NEXT_LOCALE`
@@ -14,7 +16,24 @@ import { routing } from "./i18n/routing";
  *     return response;
  *   }
  */
-export default createMiddleware(routing);
+const intlMiddleware = createMiddleware(routing);
+
+export default function middleware(request: NextRequest) {
+  // Extract the locale segment from the URL
+  const pathname = request.nextUrl.pathname;
+  const segments = pathname.split("/").filter(Boolean);
+  const firstSegment = segments[0];
+
+  // If the first segment looks like a locale but isn't supported,
+  // redirect to the default locale rather than showing an error.
+  if (firstSegment && firstSegment.length === 2 && !routing.locales.includes(firstSegment as any)) {
+    const url = request.nextUrl.clone();
+    url.pathname = `/${routing.defaultLocale}${pathname}`;
+    return NextResponse.redirect(url);
+  }
+
+  return intlMiddleware(request);
+}
 
 export const config = {
   // Skip Next.js internals, API routes and static files (anything with a dot).

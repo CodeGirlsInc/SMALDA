@@ -15,6 +15,9 @@ futures = "0.3"
 # Stellar SDK
 stellar_sdk = "0.1"
 stellar-base = "0.5"
+# Crypto — sodiumoxide is pinned to 0.2.6 because newer versions
+# changed the libsodium bindings ABI which breaks stellar-sdk at runtime.
+# See: https://github.com/nickel-org/rust-sodium/issues/234
 sodiumoxide = "=0.2.6"
 reqwest = { version = "0.11", features = ["json"] }
 

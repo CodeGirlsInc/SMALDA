@@ -109,5 +109,15 @@
       "title": "Langue",
       "description": "Choisissez la langue utilisée dans l'interface et dans les e-mails que nous vous envoyons."
     }
+  },
+  "errors": {
+    "title": "Une erreur est survenue",
+    "description": "Une erreur inattendue s'est produite. Veuillez réessayer.",
+    "tryAgain": "Réessayer",
+    "goHome": "Retour à l'accueil"
+  },
+  "notFound": {
+    "description": "La page que vous recherchez est introuvable.",
+    "home": "Retour à l'accueil"
   }
 }

@@ -10,6 +10,14 @@ const config = {
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/$1",
   },
+  coverageThreshold: {
+    global: {
+      branches: 10,
+      functions: 10,
+      lines: 10,
+      statements: 10,
+    },
+  },
 };
 
 // next/jest sets a blanket `/node_modules/` transformIgnorePattern, which stops
