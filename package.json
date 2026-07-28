@@ -1,0 +1,1 @@
+{'name': 'smalda-monorepo', 'version': '1.0.0', 'description': 'SMALDA - Secure Land Administration Platform', 'scripts': {'install-hooks': 'cp .githooks/pre-commit .git/hooks/ && chmod +x .git/hooks/pre-commit', 'postinstall': 'npm run install-hooks'}, 'workspaces': ['backend', 'contract'], 'author': '', 'license': 'UNLICENSED'}

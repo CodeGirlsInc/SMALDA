@@ -28,7 +28,7 @@ import { ConfigValidationSchema } from './config/config.validation';
       validationSchema: ConfigValidationSchema,
       validationOptions: {
         abortEarly: false,
-        allowUnknown: true,
+        allowUnknown: false,
       },
     }),
     WinstonModule.forRootAsync({
