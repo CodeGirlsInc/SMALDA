@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
+import { EmptyState } from "@/components/EmptyState";
 
 // ---------------------------------------------------------------------------
 // Types matching the backend Document entity + User owner
@@ -365,10 +366,7 @@ export default function AdminDocumentsPage() {
       )}
 
       {!loading && !error && documents.length === 0 && (
-        <div className="text-center py-16 text-gray-500">
-          <p className="text-lg">{t("empty")}</p>
-          <p className="text-sm mt-1">{t("emptyHint")}</p>
-        </div>
+        <EmptyState title={t("empty")} description={t("emptyHint")} />
       )}
 
       {!loading && documents.length > 0 && (
