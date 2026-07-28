@@ -5,6 +5,9 @@ on:
     branches: ["**"]
   push:
     branches: [main]
+  schedule:
+    # Weekly security audit on Mondays at 06:00 UTC
+    - cron: "0 6 * * 1"
 
 jobs:
   # ─────────────────────────────────────────────
@@ -69,13 +72,28 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Check locale parity
+        run: npm run check:locales
+
       - name: Build
         run: npm run build
         env:
           NEXT_PUBLIC_API_URL: http://localhost:3001
 
+      - name: Typecheck
+        run: npm run typecheck
+
       - name: Unit tests
-        run: npm run test -- --passWithNoTests
+        run: npm run test
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E tests
+        run: npm run test:e2e
 
   # ─────────────────────────────────────────────
   # SMART CONTRACTS — Rust / Cargo
@@ -118,6 +136,22 @@ jobs:
 
       - name: Tests
         run: cargo test --all
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+        if: github.event_name == 'schedule'
+
+      - name: Security audit (cargo-audit)
+        run: cargo audit
+        if: github.event_name == 'schedule'
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny
+        if: github.event_name == 'schedule'
+
+      - name: Dependency policy check (cargo-deny)
+        run: cargo deny check
+        if: github.event_name == 'schedule'
         # ─────────────────────────────────────────────
   # BACKEND E2E — NestJS + Postgres + Redis
   # ─────────────────────────────────────────────
