@@ -20,6 +20,9 @@ import { DisputeModule } from './dispute/dispute.module';
 import { ExternalValidationModule } from './external-validation/external-validation.module';
 import { ConfigValidationSchema } from './config/config.validation';
 
+import { MetricsModule } from './metrics/metrics.module';
+import { QueueObservabilityModule } from './queue/queue-observability.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -62,6 +65,8 @@ import { ConfigValidationSchema } from './config/config.validation';
     QueueModule,
     DisputeModule,
     ExternalValidationModule,
+    MetricsModule,
+    QueueObservabilityModule,
   ],
   controllers: [AppController],
   providers: [AppService, LoggerMiddleware],

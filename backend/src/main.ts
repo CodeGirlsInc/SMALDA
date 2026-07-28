@@ -14,6 +14,8 @@ async function bootstrap() {
   const logger = WinstonModule.createLogger(buildWinstonOptions());
   const app = await NestFactory.create(AppModule, { logger });
 
+  app.enableShutdownHooks();
+
   const configService = app.get(ConfigService);
 
   // Enable CORS
