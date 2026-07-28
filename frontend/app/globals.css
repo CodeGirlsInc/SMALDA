@@ -118,3 +118,21 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* FE-88: honor prefers-reduced-motion and enforce 44x44 touch-target minimums. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.touch-target {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+}
