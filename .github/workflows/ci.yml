@@ -137,6 +137,9 @@ jobs:
       - name: Tests
         run: cargo test --all
 
+      - name: Bench (compile only)
+        run: cargo bench --no-run
+
       - name: Install cargo-audit
         run: cargo install cargo-audit
         if: github.event_name == 'schedule'

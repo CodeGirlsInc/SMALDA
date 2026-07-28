@@ -57,3 +57,12 @@ once_cell = "1.19"
 [dev-dependencies]
 httpmock = "0.7"
 axum-test = "16.4.1"
+criterion = { version = "0.5", default-features = false }
+
+[[bench]]
+name = "hash_bench"
+harness = false
+
+[[bench]]
+name = "verify_bench"
+harness = false
