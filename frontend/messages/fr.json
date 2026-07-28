@@ -118,6 +118,9 @@
   },
   "notFound": {
     "description": "La page que vous recherchez est introuvable.",
-    "home": "Retour à l'accueil"
+    "home": "Retour à l'accueil",
+    "docNotFound": "Aucun enregistrement ancré",
+    "docNotFoundDescription": "Si vous accédez à cette page via un lien de vérification, le hash demandé n'a jamais été ancré sur le registre Stellar. Cela diffère d'un échec de vérification, qui signifierait qu'un ancrage existe mais ne correspond pas à ce que vous avez soumis.",
+    "dashboardHome": "Retour au tableau de bord"
   }
 }

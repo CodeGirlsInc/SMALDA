@@ -118,6 +118,9 @@
   },
   "notFound": {
     "description": "The page you are looking for could not be found.",
-    "home": "Go back home"
+    "home": "Go back home",
+    "docNotFound": "No record anchored",
+    "docNotFoundDescription": "If you reached this page from a verification link, the hash you opened has never been anchored on the Stellar ledger. This is distinct from a verification failure, which would mean an anchor exists but did not match what you submitted.",
+    "dashboardHome": "Return to dashboard"
   }
 }
