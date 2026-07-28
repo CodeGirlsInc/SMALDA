@@ -14,11 +14,17 @@ pub fn app(state: AppState) -> Router {
         .route("/verify", post(verify::verify_document))
         .route("/verify/batch", post(verify::batch_verify_documents))
         .route("/verify/:hash", get(verify::verify_document_by_hash))
-        .route("/verify/:hash/history", get(verify::verify_document_history))
+        .route(
+            "/verify/:hash/history",
+            get(verify::verify_document_history),
+        )
         .route("/submit", post(submit::submit_document))
         .route("/revoke", post(revoke::revoke_document))
         .route("/transfer", post(transfer::record_transfer))
-        .route("/transfer/:document_hash", get(transfer::get_transfer_history))
+        .route(
+            "/transfer/:document_hash",
+            get(transfer::get_transfer_history),
+        )
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }

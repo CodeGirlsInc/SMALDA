@@ -123,6 +123,7 @@ impl StellarClient {
         }
     }
 
+    #[tracing::instrument(name = "stellar.check_connection", skip(self))]
     pub async fn check_connection(&self) -> bool {
         self.http_client
             .get(&self.horizon_url)
@@ -135,6 +136,11 @@ impl StellarClient {
     /// Verifies a document hash against Horizon using the `ManageData` approach.
     ///
     /// Reads `account.data_attr` for key `"doc_" + &hash[..58]`.
+    #[tracing::instrument(
+        name = "stellar.verify_hash",
+        skip(self, hash),
+        fields(hash_prefix = %hash_prefix(hash), anchor_account_id = %anchor_account_id)
+    )]
     pub async fn verify_hash(
         &self,
         hash: &str,
@@ -188,6 +194,11 @@ impl StellarClient {
     }
 
     /// Fetches all ManageData history entries for a given document hash (anchors, updates, transfers).
+    #[tracing::instrument(
+        name = "stellar.get_hash_history",
+        skip(self, hash),
+        fields(hash_prefix = %hash_prefix(hash), anchor_account_id = %anchor_account_id)
+    )]
     pub async fn get_hash_history(
         &self,
         hash: &str,
@@ -247,6 +258,11 @@ impl StellarClient {
     }
 
     /// Anchor a transfer record on Stellar using a `ManageData` operation.
+    #[tracing::instrument(
+        name = "stellar.anchor_transfer",
+        skip(self, transfer_hash, secret_key),
+        fields(hash_prefix = %hash_prefix(transfer_hash), public_key = %public_key)
+    )]
     pub async fn anchor_transfer(
         &self,
         transfer_hash: &str,
@@ -359,6 +375,11 @@ impl StellarClient {
     ///
     /// # Key format
     /// `"doc_" + &hash[..58]` — matches NestJS `buildDataKey()`.
+    #[tracing::instrument(
+        name = "stellar.anchor_hash",
+        skip(self, hash, secret_key),
+        fields(hash_prefix = %hash_prefix(hash), public_key = %public_key)
+    )]
     pub async fn anchor_hash(
         &self,
         hash: &str,
@@ -467,6 +488,11 @@ impl StellarClient {
     ///
     /// Key: `"revoked_" + &hash[..56]` (max 64 bytes).
     /// Value: the revocation JSON payload (truncated to 64 bytes).
+    #[tracing::instrument(
+        name = "stellar.anchor_revocation",
+        skip(self, hash, revocation_json, secret_key),
+        fields(hash_prefix = %hash_prefix(hash), public_key = %public_key)
+    )]
     pub async fn anchor_revocation(
         &self,
         hash: &str,
@@ -575,6 +601,10 @@ impl StellarClient {
 }
 
 /// Build the ManageData key: `"doc_" + &hash[..58]` (max 62 bytes ≤ 64-byte limit).
+fn hash_prefix(hash: &str) -> &str {
+    &hash[..hash.len().min(16)]
+}
+
 pub fn build_data_key(hash: &str) -> String {
     let suffix_len = hash.len().min(58);
     format!("doc_{}", &hash[..suffix_len])

@@ -11,7 +11,7 @@ use crate::hash_validator::{HashValidator, ValidationError as HashValidationErro
 use crate::stellar::derive_account_id;
 use crate::types::{
     map_validation_error, AppState, BatchVerifyItem, BatchVerifyRequest, BatchVerifyResponse,
-    HistoryResponse, VerifyRequest, VerifyResponse, ValidationErrorResponse,
+    HistoryResponse, ValidationErrorResponse, VerifyRequest, VerifyResponse,
 };
 
 // Verify document by POST

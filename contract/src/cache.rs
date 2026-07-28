@@ -6,12 +6,14 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::warn;
 
+#[derive(Clone)]
 pub enum CacheBackend {
     Redis(RedisCache),
     InMemory(InMemoryCache),
 }
 
 impl CacheBackend {
+    #[tracing::instrument(name = "cache.check_connection", skip(self))]
     pub async fn check_connection(&self) -> bool {
         match self {
             Self::Redis(c) => c.check_connection().await,
@@ -19,8 +21,7 @@ impl CacheBackend {
         }
     }
 
-    /// Closes the underlying connection cleanly. Called during graceful
-    /// shutdown, after in-flight requests have finished draining.
+    #[tracing::instrument(name = "cache.close", skip(self))]
     pub async fn close(&self) {
         match self {
             Self::Redis(c) => c.close().await,
@@ -28,6 +29,7 @@ impl CacheBackend {
         }
     }
 
+    #[tracing::instrument(name = "cache.get_raw", skip(self), fields(key = %key))]
     pub async fn get_raw(&self, key: &str) -> Result<Option<String>> {
         match self {
             Self::Redis(c) => c.get_raw(key).await,
@@ -35,6 +37,7 @@ impl CacheBackend {
         }
     }
 
+    #[tracing::instrument(name = "cache.set_raw", skip(self, value), fields(key = %key, ttl = ttl))]
     pub async fn set_raw(&self, key: &str, value: &str, ttl: u64) -> Result<()> {
         match self {
             Self::Redis(c) => c.set_raw(key, value, ttl).await,
@@ -42,6 +45,7 @@ impl CacheBackend {
         }
     }
 
+    #[tracing::instrument(name = "cache.get", skip(self), fields(key = %key))]
     pub async fn get<T>(&self, key: &str) -> Result<Option<T>>
     where
         T: for<'de> Deserialize<'de>,
@@ -52,6 +56,7 @@ impl CacheBackend {
         }
     }
 
+    #[tracing::instrument(name = "cache.set", skip(self, value), fields(key = %key, ttl = ttl))]
     pub async fn set<T>(&self, key: &str, value: &T, ttl: u64) -> Result<()>
     where
         T: Serialize,
@@ -60,6 +65,7 @@ impl CacheBackend {
         self.set_raw(key, &serialized, ttl).await
     }
 
+    #[tracing::instrument(name = "cache.delete", skip(self), fields(key = %key))]
     pub async fn delete(&self, key: &str) -> Result<()> {
         match self {
             Self::Redis(c) => c.delete(key).await,
@@ -68,6 +74,7 @@ impl CacheBackend {
     }
 }
 
+#[derive(Clone)]
 pub struct RedisCache {
     connection: ConnectionManager,
 }
@@ -114,6 +121,7 @@ impl RedisCache {
     }
 }
 
+#[derive(Clone)]
 pub struct InMemoryCache {
     store: Arc<RwLock<HashMap<String, String>>>,
 }
@@ -182,7 +190,10 @@ mod tests {
     async fn test_overwrite_value() {
         let cache = in_memory_backend();
         cache.set("key1", &"first".to_string(), 3600).await.unwrap();
-        cache.set("key1", &"second".to_string(), 3600).await.unwrap();
+        cache
+            .set("key1", &"second".to_string(), 3600)
+            .await
+            .unwrap();
         let result: Option<String> = cache.get("key1").await.unwrap();
         assert_eq!(result, Some("second".to_string()));
     }
@@ -264,7 +275,10 @@ mod tests {
     #[tokio::test]
     async fn test_cache_backend_enum_dispatch() {
         let cache = in_memory_backend();
-        cache.set("enum_key", &"enum_value".to_string(), 3600).await.unwrap();
+        cache
+            .set("enum_key", &"enum_value".to_string(), 3600)
+            .await
+            .unwrap();
         let result: Option<String> = cache.get("enum_key").await.unwrap();
         assert_eq!(result, Some("enum_value".to_string()));
     }

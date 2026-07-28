@@ -7,8 +7,7 @@ use axum::{
 use tracing::{info, warn};
 
 use crate::hash_validator::HashValidator;
-use crate::stellar::derive_account_id;
-use crate::types::{AppState, SubmitRequest, SubmitResponse};
+use crate::types::{map_validation_error, AppState, SubmitRequest, SubmitResponse};
 
 /// POST /submit — anchor a document hash to Stellar using a ManageData operation.
 ///
@@ -22,7 +21,7 @@ pub async fn submit_document(
 ) -> Response {
     let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
-        let (status, body) = super::verify::map_validation_error_inline(err);
+        let (status, body) = map_validation_error(err);
         return (status, Json(body)).into_response();
     }
 

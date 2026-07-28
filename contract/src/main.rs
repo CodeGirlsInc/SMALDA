@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use stellar_doc_verifier::app;
 use stellar_doc_verifier::cache::{CacheBackend, RedisCache};
-use stellar_doc_verifier::config::AppConfig;
+use stellar_doc_verifier::config::{AppConfig, Environment};
 use stellar_doc_verifier::metrics::MetricsRegistry;
 use stellar_doc_verifier::stellar::StellarClient;
 use stellar_doc_verifier::*;
@@ -23,7 +23,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             config.log_level, config.log_level
         ))
     });
-    tracing_subscriber::fmt().with_env_filter(env_filter).init();
+
+    match config.environment {
+        Environment::Production => {
+            tracing_subscriber::fmt()
+                .with_env_filter(env_filter)
+                .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
+                .json()
+                .init();
+        }
+        Environment::Development => {
+            tracing_subscriber::fmt()
+                .with_env_filter(env_filter)
+                .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
+                .init();
+        }
+    }
 
     info!("Starting Stellar Document Verification Service");
 
