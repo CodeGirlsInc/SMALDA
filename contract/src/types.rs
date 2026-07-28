@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
-use crate::hash_validator::{HashValidator, ValidationError as HashValidationError};
+use crate::hash_validator::ValidationError as HashValidationError;
 use crate::stellar::TransactionRecord;
 
 // Application state

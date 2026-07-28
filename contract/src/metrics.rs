@@ -1,6 +1,7 @@
 use axum::response::IntoResponse;
 use prometheus::{Counter, Encoder, Registry, TextEncoder};
 
+#[derive(Clone)]
 pub struct MetricsRegistry {
     registry: Registry,
     request_count: Counter,

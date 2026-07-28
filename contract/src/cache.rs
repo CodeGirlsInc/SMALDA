@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::warn;
 
+#[derive(Clone)]
 pub enum CacheBackend {
     Redis(RedisCache),
     InMemory(InMemoryCache),
@@ -17,6 +18,14 @@ impl CacheBackend {
         match self {
             Self::Redis(c) => c.check_connection().await,
             Self::InMemory(c) => c.check_connection().await,
+        }
+    }
+
+    #[tracing::instrument(name = "cache.close", skip(self))]
+    pub async fn close(&self) {
+        match self {
+            Self::Redis(c) => c.close().await,
+            Self::InMemory(c) => c.close().await,
         }
     }
 
@@ -65,6 +74,7 @@ impl CacheBackend {
     }
 }
 
+#[derive(Clone)]
 pub struct RedisCache {
     connection: ConnectionManager,
 }
@@ -111,6 +121,7 @@ impl RedisCache {
     }
 }
 
+#[derive(Clone)]
 pub struct InMemoryCache {
     store: Arc<RwLock<HashMap<String, String>>>,
 }
@@ -179,7 +190,10 @@ mod tests {
     async fn test_overwrite_value() {
         let cache = in_memory_backend();
         cache.set("key1", &"first".to_string(), 3600).await.unwrap();
-        cache.set("key1", &"second".to_string(), 3600).await.unwrap();
+        cache
+            .set("key1", &"second".to_string(), 3600)
+            .await
+            .unwrap();
         let result: Option<String> = cache.get("key1").await.unwrap();
         assert_eq!(result, Some("second".to_string()));
     }
@@ -261,7 +275,10 @@ mod tests {
     #[tokio::test]
     async fn test_cache_backend_enum_dispatch() {
         let cache = in_memory_backend();
-        cache.set("enum_key", &"enum_value".to_string(), 3600).await.unwrap();
+        cache
+            .set("enum_key", &"enum_value".to_string(), 3600)
+            .await
+            .unwrap();
         let result: Option<String> = cache.get("enum_key").await.unwrap();
         assert_eq!(result, Some("enum_value".to_string()));
     }
