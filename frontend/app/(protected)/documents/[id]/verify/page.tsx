@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
@@ -470,9 +471,9 @@ export default function VerifyPage() {
       <main className="mx-auto max-w-xl px-4 py-8">
         <div className="rounded-2xl border border-red-200 bg-red-50 p-6">
           <p className="text-sm text-red-700">{loadError ?? "Document not found."}</p>
-          <a href="/documents" className="mt-3 block text-sm underline text-red-700">
+          <Link href="/documents" className="mt-3 block text-sm underline text-red-700">
             Back to Documents
-          </a>
+          </Link>
         </div>
       </main>
     );
