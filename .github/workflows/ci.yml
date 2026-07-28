@@ -96,6 +96,9 @@ jobs:
       - name: Unit tests
         run: npm run test
 
+      - name: Accessibility tests (jest-axe)
+        run: npm run test:a11y -- --passWithNoTests
+
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
