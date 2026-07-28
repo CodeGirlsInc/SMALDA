@@ -114,7 +114,16 @@
     "title": "Une erreur est survenue",
     "description": "Une erreur inattendue s'est produite. Veuillez réessayer.",
     "tryAgain": "Réessayer",
-    "goHome": "Retour à l'accueil"
+    "goHome": "Retour à l'accueil",
+    "status": {
+      "unauthorized": "Votre session a expiré. Veuillez vous reconnecter.",
+      "forbidden": "Vous n'avez pas la permission de faire cela.",
+      "validation": "Certains champs nécessitent une correction. Veuillez vérifier le formulaire.",
+      "rateLimited": "Vous envoyez trop de requêtes. Veuillez ralentir.",
+      "server": "Un problème est survenu de notre côté. Réessayez dans un instant.",
+      "network": "Nous n'avons pas pu joindre le serveur. Vérifiez votre connexion.",
+      "unknown": "Une erreur inattendue est survenue."
+    }
   },
   "notFound": {
     "description": "La page que vous recherchez est introuvable.",
