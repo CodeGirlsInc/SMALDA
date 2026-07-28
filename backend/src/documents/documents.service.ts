@@ -23,6 +23,27 @@ export class DocumentsService {
     return this.documentRepository.find({ where: { ownerId } });
   }
 
+  async findByOwnerPaginated(
+    ownerId: string,
+    page: number,
+    limit: number,
+    status?: DocumentStatus,
+  ): Promise<{ data: Document[]; total: number; page: number; limit: number }> {
+    const where: any = { ownerId };
+    if (status) {
+      where.status = status;
+    }
+
+    const [data, total] = await this.documentRepository.findAndCount({
+      where,
+      skip: (page - 1) * limit,
+      take: limit,
+      order: { createdAt: 'DESC' },
+    });
+
+    return { data, total, page, limit };
+  }
+
   findByFileHash(fileHash: string): Promise<Document | null> {
     return this.documentRepository.findOne({ where: { fileHash } });
   }
