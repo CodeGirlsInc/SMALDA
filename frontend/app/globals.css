@@ -118,3 +118,10 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* FE-85: ensure every keyboard-focusable element shows a visible focus ring
+   without relying on the focus ring from individual components. */
+*:focus-visible {
+  outline: 2px solid var(--color-ring, currentColor);
+  outline-offset: 2px;
+}
