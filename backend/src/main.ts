@@ -54,9 +54,9 @@ async function bootstrap() {
 
   // Swagger documentation
   const config = new DocumentBuilder()
-    .setTitle('SMALDA Authentication API')
+    .setTitle('SMALDA Land Management Platform API')
     .setDescription(
-      'Comprehensive authentication and authorization API with JWT, OAuth, and RBAC',
+      'Comprehensive Land Record Management API covering Documents, Risk Assessment, Verification, Disputes, External Validation, Access Logs, and Stellar Anchoring',
     )
     .setVersion('1.0')
     .addBearerAuth(
@@ -70,11 +70,15 @@ async function bootstrap() {
       },
       'JWT-auth',
     )
-    .addTag(
-      'Authentication',
-      'Authentication endpoints (login, register, OAuth, etc.)',
-    )
+    .addTag('Authentication', 'Authentication endpoints (login, register, OAuth, etc.)')
     .addTag('Users', 'User management and profile endpoints')
+    .addTag('Documents', 'Land document management endpoints')
+    .addTag('Risk Assessment', 'Automated document risk evaluation')
+    .addTag('Verification', 'Public and internal record verification')
+    .addTag('Disputes', 'Land title dispute resolution endpoints')
+    .addTag('External Validation', 'Registry external validation')
+    .addTag('Access Logs', 'Audit logging endpoints')
+    .addTag('Stellar', 'Blockchain anchoring endpoints')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
