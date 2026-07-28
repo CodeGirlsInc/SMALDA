@@ -51,6 +51,9 @@ rand = "0.8"
 uuid = { version = "1", features = ["v4"] }
 async-trait = "0.1"
 
+# Shared mutable state for health cache
+once_cell = "1.19"
+
 [dev-dependencies]
 httpmock = "0.7"
 axum-test = "16.4.1"
