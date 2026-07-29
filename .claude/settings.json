@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm view *)",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/class-variance-authority/package.json'\\).version\\)\")",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/tailwind-merge/package.json'\\).version\\)\")",
+      "Bash(npx jest *)",
+      "Bash(npm run *)"
+    ]
+  }
+}

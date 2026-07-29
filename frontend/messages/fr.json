@@ -39,6 +39,9 @@
       "errorRequired": "Veuillez saisir votre e-mail et votre mot de passe.",
       "errorInvalid": "E-mail ou mot de passe invalide.",
       "errorGeneric": "Une erreur est survenue. Veuillez réessayer.",
+      "dividerOr": "ou",
+      "continueWithGoogle": "Continuer avec Google",
+      "continueWithGithub": "Continuer avec GitHub",
       "resetSuccessToast": "Votre mot de passe a été réinitialisé. Veuillez vous connecter."
     },
     "forgotPassword": {
@@ -161,6 +164,16 @@
       "server": "Un problème est survenu de notre côté. Réessayez dans un instant.",
       "network": "Nous n'avons pas pu joindre le serveur. Vérifiez votre connexion.",
       "unknown": "Une erreur inattendue est survenue."
+    },
+    "email": {
+      "invalid": "Saisissez une adresse e-mail valide."
+    },
+    "password": {
+      "required": "Saisissez votre mot de passe.",
+      "minLength": "Le mot de passe doit contenir au moins 6 caractères."
+    },
+    "fullName": {
+      "required": "Saisissez votre nom complet."
     }
   },
   "notFound": {

@@ -39,6 +39,9 @@
       "errorRequired": "Please enter your email and password.",
       "errorInvalid": "Invalid email or password.",
       "errorGeneric": "Something went wrong. Please try again.",
+      "dividerOr": "or",
+      "continueWithGoogle": "Continue with Google",
+      "continueWithGithub": "Continue with GitHub",
       "resetSuccessToast": "Your password has been reset. Please sign in."
     },
     "forgotPassword": {
@@ -161,6 +164,16 @@
       "server": "Something went wrong on our side. Please try again in a moment.",
       "network": "We couldn't reach the server. Check your connection.",
       "unknown": "An unexpected error occurred."
+    },
+    "email": {
+      "invalid": "Enter a valid email address."
+    },
+    "password": {
+      "required": "Enter your password.",
+      "minLength": "Password must be at least 6 characters."
+    },
+    "fullName": {
+      "required": "Enter your full name."
     }
   },
   "notFound": {
