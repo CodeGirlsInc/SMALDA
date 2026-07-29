@@ -8,7 +8,11 @@ import { VerificationService } from '../verification/verification.service';
 import { VerificationStatus } from '../verification/entities/verification-record.entity';
 import { RiskAssessmentService } from '../risk-assessment/risk-assessment.service';
 import { StellarService } from '../stellar/stellar.service';
-import { QueueService } from './queue.service';
+import { QueueService, DocumentJobData } from './queue.service';
+import {
+  generateCorrelationId,
+  runWithCorrelationId,
+} from '../common/correlation/correlation-id.storage';
 
 @Injectable()
 export class DocumentProcessor implements OnModuleDestroy {
@@ -28,21 +32,31 @@ export class DocumentProcessor implements OnModuleDestroy {
     this.worker = new Worker(
       this.queueService.queueName,
       async (job) => {
-        if (job.name === 'analyze') {
-          await this.handleAnalyze(job.data.documentId);
-          return;
-        }
-        if (job.name === 'anchor') {
-          await this.handleAnchor(job.data.documentId);
-        }
+        const data = job.data as DocumentJobData;
+        const requestId = data.requestId || generateCorrelationId();
+
+        return runWithCorrelationId(requestId, async () => {
+          this.logger.log(
+            `Processing job ${job.id} (${job.name}) for document ${data.documentId}`,
+          );
+
+          if (job.name === 'analyze') {
+            await this.riskService.assessDocument(data.documentId);
+            return;
+          }
+          if (job.name === 'anchor') {
+            await this.handleAnchor(data.documentId);
+          }
+        });
       },
       { connection },
     );
 
     this.worker.on('failed', (job, err) => {
+      const data = (job?.data as DocumentJobData) ?? { documentId: 'unknown' };
+      const requestId = data.requestId || 'unknown';
       this.logger.error(
-        `Job ${job.id} (${job.name}) failed`,
-        err?.message,
+        `Job ${job?.id} (${job?.name}) failed (request ${requestId}): ${err?.message}`,
         err?.stack,
       );
     });
