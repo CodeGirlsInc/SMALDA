@@ -8,14 +8,20 @@ export default async function DashboardPage({
 }: {
   params: Promise<{ locale: string }>;
 }) {
-  const { locale } = await params;
+  const resolvedParams = await params;
+  const locale = resolvedParams?.locale ?? "en";
   setRequestLocale(locale);
 
   const t = await getTranslations("dashboard");
 
   return (
-    <main aria-labelledby="dashboard-heading" className="mx-auto max-w-4xl px-4 py-8">
-      <h1 id="dashboard-heading" className="sr-only">{t("title")}</h1>
+    <main
+      aria-labelledby="dashboard-heading"
+      className="mx-auto max-w-4xl px-4 py-8"
+    >
+      <h1 id="dashboard-heading" className="sr-only">
+        {t("title")}
+      </h1>
       <header className="mb-8">
         <p className="text-sm font-medium text-blue-600">{t("welcome")}</p>
         <h2 className="mt-1 text-2xl font-bold text-gray-900">{t("title")}</h2>
@@ -34,7 +40,9 @@ export default async function DashboardPage({
             key={key}
             className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"
           >
-            <p className="text-2xl font-bold text-gray-900" aria-hidden="true">—</p>
+            <p className="text-2xl font-bold text-gray-900" aria-hidden="true">
+              —
+            </p>
             <p className="mt-1 text-xs font-medium text-gray-500">
               {t(`stats.${key}`)}
             </p>

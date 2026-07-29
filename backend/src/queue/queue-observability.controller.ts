@@ -5,7 +5,13 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 @Controller('queue')
 export class QueueObservabilityController {
   private failedJobs = [
-    { id: 'job-101', name: 'anchor-document', error: 'Stellar network timeout', attemptsMade: 3, failedAt: new Date() },
+    {
+      id: 'job-101',
+      name: 'anchor-document',
+      error: 'Stellar network timeout',
+      attemptsMade: 3,
+      failedAt: new Date(),
+    },
   ];
 
   @Get('failed')

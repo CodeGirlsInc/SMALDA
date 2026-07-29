@@ -1,4 +1,10 @@
-import { Inject, Injectable, Logger, OnModuleDestroy, forwardRef } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  forwardRef,
+} from '@nestjs/common';
 import { Worker } from 'bullmq';
 
 import { DocumentsService } from '../documents/documents.service';
@@ -58,8 +64,15 @@ export class DocumentProcessor implements OnModuleDestroy {
     const prevStatus = document.status;
 
     if (prevStatus === DocumentStatus.PENDING) {
-      await this.documentsService.updateStatus(documentId, DocumentStatus.ANALYZING);
-      this.documentsGateway.notifyStatusChanged(documentId, DocumentStatus.ANALYZING, prevStatus);
+      await this.documentsService.updateStatus(
+        documentId,
+        DocumentStatus.ANALYZING,
+      );
+      this.documentsGateway.notifyStatusChanged(
+        documentId,
+        DocumentStatus.ANALYZING,
+        prevStatus,
+      );
     }
 
     const result = await this.riskService.assessDocument(documentId);
@@ -72,7 +85,11 @@ export class DocumentProcessor implements OnModuleDestroy {
     }
 
     await this.documentsService.updateStatus(documentId, newStatus);
-    this.documentsGateway.notifyStatusChanged(documentId, newStatus, DocumentStatus.ANALYZING);
+    this.documentsGateway.notifyStatusChanged(
+      documentId,
+      newStatus,
+      DocumentStatus.ANALYZING,
+    );
   }
 
   private async handleAnchor(documentId: string) {
@@ -99,7 +116,11 @@ export class DocumentProcessor implements OnModuleDestroy {
       DocumentStatus.VERIFIED,
     );
 
-    this.documentsGateway.notifyStatusChanged(documentId, DocumentStatus.VERIFIED, prevStatus);
+    this.documentsGateway.notifyStatusChanged(
+      documentId,
+      DocumentStatus.VERIFIED,
+      prevStatus,
+    );
     this.logger.log(`Document ${documentId} verified on ledger ${ledger}`);
   }
 

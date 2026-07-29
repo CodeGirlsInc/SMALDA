@@ -52,7 +52,9 @@ interface AuthenticatedSocket extends Socket {
   },
 })
 @Injectable()
-export class DocumentsGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class DocumentsGateway
+  implements OnGatewayConnection, OnGatewayDisconnect
+{
   private readonly logger = new Logger(DocumentsGateway.name);
 
   @WebSocketServer()
@@ -68,7 +70,7 @@ export class DocumentsGateway implements OnGatewayConnection, OnGatewayDisconnec
     try {
       const token =
         client.handshake.auth?.token ??
-        client.handshake.query?.token as string;
+        (client.handshake.query?.token as string);
 
       if (!token) {
         client.emit('error', { message: 'Authentication required' });
@@ -77,7 +79,9 @@ export class DocumentsGateway implements OnGatewayConnection, OnGatewayDisconnec
       }
 
       const secret = this.configService.get<string>('JWT_SECRET');
-      const payload = await this.jwtService.verifyAsync<JwtPayload>(token, { secret });
+      const payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
+        secret,
+      });
 
       client.userId = payload.sub;
       client.userRole = payload.role;
@@ -129,13 +133,11 @@ export class DocumentsGateway implements OnGatewayConnection, OnGatewayDisconnec
     status: DocumentStatus,
     previousStatus: DocumentStatus | null,
   ): void {
-    this.server
-      .to(`document:${documentId}`)
-      .emit('document:status-changed', {
-        documentId,
-        status,
-        previousStatus,
-        timestamp: new Date().toISOString(),
-      });
+    this.server.to(`document:${documentId}`).emit('document:status-changed', {
+      documentId,
+      status,
+      previousStatus,
+      timestamp: new Date().toISOString(),
+    });
   }
 }
