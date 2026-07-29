@@ -38,7 +38,10 @@
       "signUp": "Crea una",
       "errorRequired": "Introduce tu correo electrónico y contraseña.",
       "errorInvalid": "Correo electrónico o contraseña no válidos.",
-      "errorGeneric": "Algo salió mal. Inténtalo de nuevo."
+      "errorGeneric": "Algo salió mal. Inténtalo de nuevo.",
+      "dividerOr": "o",
+      "continueWithGoogle": "Continuar con Google",
+      "continueWithGithub": "Continuar con GitHub"
     }
   },
   "dashboard": {
@@ -123,6 +126,16 @@
       "server": "Algo falló de nuestro lado. Inténtalo de nuevo en un momento.",
       "network": "No pudimos contactar al servidor. Comprueba tu conexión.",
       "unknown": "Ocurrió un error inesperado."
+    },
+    "email": {
+      "invalid": "Introduce una dirección de correo electrónico válida."
+    },
+    "password": {
+      "required": "Introduce tu contraseña.",
+      "minLength": "La contraseña debe tener al menos 6 caracteres."
+    },
+    "fullName": {
+      "required": "Introduce tu nombre completo."
     }
   },
   "notFound": {
