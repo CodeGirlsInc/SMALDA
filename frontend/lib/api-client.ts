@@ -97,11 +97,21 @@ export function clearSession(): void {
   window.localStorage.removeItem(ACCESS_TOKEN_KEY);
   window.localStorage.removeItem(REFRESH_TOKEN_KEY);
   document.cookie = "token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+  // Signal other tabs to also redirect to login
+  window.localStorage.setItem("logout-event", Date.now().toString());
 }
 
+/**
+ * Preserve the current path (including locale) as the post-login destination,
+ * then redirect to login. The login page's resolvePostLoginPath reads the
+ * `?redirect=` param so the user lands back where they were after signing in.
+ */
 function redirectToLogin(): void {
   if (typeof window === "undefined") return;
-  window.location.href = "/login";
+  const currentPath = window.location.pathname + window.location.search;
+  const params = new URLSearchParams();
+  params.set("redirect", currentPath);
+  window.location.href = `/login?${params.toString()}`;
 }
 
 // ── Refresh logic ───────────────────────────────────────────────────────────
