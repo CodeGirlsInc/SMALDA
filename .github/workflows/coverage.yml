@@ -41,10 +41,15 @@ jobs:
         with:
           tool: cargo-llvm-cov
 
-      - name: Generate lcov + coverage.json
+      - name: Generate lcov
         run: |
           cargo llvm-cov --workspace --lcov --output-path coverage.lcov \
-            --json-path coverage.json --ignore-filename-regex 'tests/'
+            --ignore-filename-regex 'tests/'
+
+      - name: Generate coverage.json
+        run: |
+          cargo llvm-cov --workspace --json --output-path coverage.json \
+            --ignore-filename-regex 'tests/'
 
       - name: Print per-module summary
         run: |

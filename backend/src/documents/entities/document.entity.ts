@@ -19,6 +19,7 @@ export enum DocumentStatus {
 
 @Entity('documents')
 @Index('IDX_DOCUMENT_FILE_HASH', ['fileHash'], { unique: true })
+@Index('IDX_DOCUMENT_COORDINATES', ['latitude', 'longitude'])
 export class Document {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -59,6 +60,12 @@ export class Document {
 
   @Column({ name: 'archived', type: 'boolean', default: false })
   archived: boolean;
+
+  @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
+  latitude?: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
+  longitude?: number;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

@@ -30,8 +30,15 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     const { message, error } = this.normalizeResponse(errorResponse, exception);
 
+
+    const requestId =
+      (request as any).requestId || request.headers['x-request-id'] || 'req-id';
+    const errorCode =
+      (errorResponse as any)?.errorCode || error || `ERR_${status}`;
+
     const requestId = request.requestId || 'unknown';
     const errorCode = (errorResponse as any)?.errorCode || error || `ERR_${status}`;
+
 
     const payload = {
       statusCode: status,

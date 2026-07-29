@@ -1,6 +1,10 @@
 import { NestFactory, Reflector } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe, VersioningType, ClassSerializerInterceptor } from '@nestjs/common';
+import {
+  ValidationPipe,
+  VersioningType,
+  ClassSerializerInterceptor,
+} from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
@@ -68,7 +72,10 @@ async function bootstrap() {
       },
       'JWT-auth',
     )
-    .addTag('Authentication', 'Authentication endpoints (login, register, OAuth, etc.)')
+    .addTag(
+      'Authentication',
+      'Authentication endpoints (login, register, OAuth, etc.)',
+    )
     .addTag('Users', 'User management and profile endpoints')
     .addTag('Documents', 'Land document management endpoints')
     .addTag('Risk Assessment', 'Automated document risk evaluation')

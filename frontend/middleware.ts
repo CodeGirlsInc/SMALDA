@@ -1,4 +1,4 @@
-import { createMiddleware, type LocalePrefix } from "next-intl/middleware";
+import createMiddleware from "next-intl/middleware";
 import { routing } from "./i18n/routing";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
@@ -26,7 +26,11 @@ export default function middleware(request: NextRequest) {
 
   // If the first segment looks like a locale but isn't supported,
   // redirect to the default locale rather than showing an error.
-  if (firstSegment && firstSegment.length === 2 && !routing.locales.includes(firstSegment as any)) {
+  if (
+    firstSegment &&
+    firstSegment.length === 2 &&
+    !routing.locales.includes(firstSegment as any)
+  ) {
     const url = request.nextUrl.clone();
     url.pathname = `/${routing.defaultLocale}${pathname}`;
     return NextResponse.redirect(url);
