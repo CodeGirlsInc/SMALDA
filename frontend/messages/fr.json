@@ -41,7 +41,40 @@
       "errorGeneric": "Une erreur est survenue. Veuillez réessayer.",
       "dividerOr": "ou",
       "continueWithGoogle": "Continuer avec Google",
-      "continueWithGithub": "Continuer avec GitHub"
+      "continueWithGithub": "Continuer avec GitHub",
+      "resetSuccessToast": "Votre mot de passe a été réinitialisé. Veuillez vous connecter."
+    },
+    "forgotPassword": {
+      "title": "Réinitialiser votre mot de passe",
+      "subtitle": "Saisissez l'adresse e-mail associée à votre compte et nous vous enverrons un lien pour réinitialiser votre mot de passe.",
+      "emailLabel": "Adresse e-mail",
+      "emailPlaceholder": "vous@exemple.com",
+      "errorRequired": "Veuillez saisir votre adresse e-mail.",
+      "errorGeneric": "Une erreur est survenue. Veuillez réessayer.",
+      "submit": "Envoyer le lien",
+      "submitting": "Envoi en cours…",
+      "confirmTitle": "Vérifiez votre e-mail",
+      "confirmDescription": "Si un compte existe pour {email}, nous avons envoyé un lien pour réinitialiser votre mot de passe.",
+      "backToLogin": "Retour à la connexion"
+    },
+    "resetPassword": {
+      "title": "Définir un nouveau mot de passe",
+      "subtitle": "Choisissez un nouveau mot de passe pour votre compte.",
+      "passwordLabel": "Nouveau mot de passe",
+      "passwordPlaceholder": "Saisissez un nouveau mot de passe",
+      "confirmPasswordLabel": "Confirmer le mot de passe",
+      "confirmPasswordPlaceholder": "Ressaisissez votre nouveau mot de passe",
+      "submit": "Réinitialiser le mot de passe",
+      "submitting": "Réinitialisation…",
+      "errorRequired": "Veuillez saisir et confirmer votre nouveau mot de passe.",
+      "errorMinLength": "Le mot de passe doit contenir au moins 6 caractères.",
+      "errorMismatch": "Les mots de passe ne correspondent pas.",
+      "errorInvalidToken": "Ce lien de réinitialisation est invalide",
+      "errorInvalidTokenDescription": "Ce lien de réinitialisation du mot de passe est invalide ou a expiré. Demandez-en un nouveau pour continuer.",
+      "missingToken": "Ce lien de réinitialisation du mot de passe est manquant ou incorrect. Demandez-en un nouveau pour continuer.",
+      "errorGeneric": "Une erreur est survenue. Veuillez réessayer.",
+      "requestNewLink": "Demander un nouveau lien",
+      "backToLogin": "Retour à la connexion"
     }
   },
   "dashboard": {
@@ -52,11 +85,16 @@
       "total": "Total des documents",
       "verified": "Vérifiés",
       "flagged": "Signalés",
-      "pending": "En attente de vérification"
+      "averageRisk": "Score de risque moyen"
     },
+    "riskDistribution": "Répartition des risques",
+    "recentDocuments": "Documents récents",
     "quickActions": "Actions rapides",
     "uploadDocument": "Téléverser un document",
-    "viewDocuments": "Voir tous les documents"
+    "viewDocuments": "Voir tous les documents",
+    "emptyTitle": "Aucun document pour le moment",
+    "emptyDescription": "Téléversez votre premier document pour voir les statistiques et l'analyse des risques ici.",
+    "loadError": "Échec du chargement des données du tableau de bord"
   },
   "documents": {
     "title": "Tous les documents",

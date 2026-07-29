@@ -41,7 +41,40 @@
       "errorGeneric": "Algo salió mal. Inténtalo de nuevo.",
       "dividerOr": "o",
       "continueWithGoogle": "Continuar con Google",
-      "continueWithGithub": "Continuar con GitHub"
+      "continueWithGithub": "Continuar con GitHub",
+      "resetSuccessToast": "Tu contraseña se ha restablecido. Inicia sesión."
+    },
+    "forgotPassword": {
+      "title": "Restablece tu contraseña",
+      "subtitle": "Introduce el correo electrónico asociado a tu cuenta y te enviaremos un enlace para restablecer tu contraseña.",
+      "emailLabel": "Correo electrónico",
+      "emailPlaceholder": "tu@ejemplo.com",
+      "errorRequired": "Introduce tu correo electrónico.",
+      "errorGeneric": "Algo salió mal. Inténtalo de nuevo.",
+      "submit": "Enviar enlace",
+      "submitting": "Enviando…",
+      "confirmTitle": "Revisa tu correo",
+      "confirmDescription": "Si existe una cuenta para {email}, te hemos enviado un enlace para restablecer tu contraseña.",
+      "backToLogin": "Volver a iniciar sesión"
+    },
+    "resetPassword": {
+      "title": "Establece una nueva contraseña",
+      "subtitle": "Elige una nueva contraseña para tu cuenta.",
+      "passwordLabel": "Nueva contraseña",
+      "passwordPlaceholder": "Introduce una nueva contraseña",
+      "confirmPasswordLabel": "Confirmar contraseña",
+      "confirmPasswordPlaceholder": "Vuelve a introducir tu nueva contraseña",
+      "submit": "Restablecer contraseña",
+      "submitting": "Restableciendo…",
+      "errorRequired": "Introduce y confirma tu nueva contraseña.",
+      "errorMinLength": "La contraseña debe tener al menos 6 caracteres.",
+      "errorMismatch": "Las contraseñas no coinciden.",
+      "errorInvalidToken": "Este enlace de restablecimiento no es válido",
+      "errorInvalidTokenDescription": "Este enlace de restablecimiento de contraseña no es válido o ha caducado. Solicita uno nuevo para continuar.",
+      "missingToken": "Este enlace de restablecimiento de contraseña falta o es incorrecto. Solicita uno nuevo para continuar.",
+      "errorGeneric": "Algo salió mal. Inténtalo de nuevo.",
+      "requestNewLink": "Solicitar un nuevo enlace",
+      "backToLogin": "Volver a iniciar sesión"
     }
   },
   "dashboard": {
@@ -52,11 +85,16 @@
       "total": "Documentos totales",
       "verified": "Verificados",
       "flagged": "Marcados",
-      "pending": "Pendientes de revisión"
+      "averageRisk": "Puntuación de riesgo media"
     },
+    "riskDistribution": "Distribución de riesgo",
+    "recentDocuments": "Documentos recientes",
     "quickActions": "Acciones rápidas",
     "uploadDocument": "Subir un documento",
-    "viewDocuments": "Ver todos los documentos"
+    "viewDocuments": "Ver todos los documentos",
+    "emptyTitle": "Aún no hay documentos",
+    "emptyDescription": "Sube tu primer documento para ver aquí las estadísticas y el análisis de riesgo.",
+    "loadError": "Error al cargar los datos del panel"
   },
   "documents": {
     "title": "Todos los documentos",

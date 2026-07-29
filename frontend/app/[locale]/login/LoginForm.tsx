@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useTranslations } from "next-intl";
@@ -26,6 +26,27 @@ import {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
+function ResetSuccessToast({ message }: { message: string }) {
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setVisible(false), 3500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (!visible) return null;
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed bottom-6 right-6 z-50 rounded-xl bg-green-600 px-5 py-3 text-sm font-medium text-white shadow-lg"
+    >
+      {message}
+    </div>
+  );
+}
+
 /**
  * A failed sign-in splits into two cases the user needs to tell apart:
  * `credentials` is a 401 and means the email/password pair was wrong, so it is
@@ -45,6 +66,18 @@ export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [submitError, setSubmitError] = useState<SubmitError | null>(null);
+  const [showResetToast, setShowResetToast] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get("reset") === "success") {
+      setShowResetToast(true);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("reset");
+      window.history.replaceState({}, "", url.toString());
+    }
+    // Only relevant on first render of the redirect from /reset-password.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const {
     register,
@@ -210,6 +243,10 @@ export function LoginForm() {
           </Link>
         </p>
       </CardContent>
+
+      {showResetToast && (
+        <ResetSuccessToast message={t("resetSuccessToast")} />
+      )}
     </Card>
   );
 }

@@ -1,9 +1,5 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { NextIntlClientProvider } from "next-intl";
-import { getMessages, setRequestLocale } from "next-intl/server";
-import { routing } from "@/i18n/routing";
-import { notFound } from "next/navigation";
 import { ToastProvider } from "@/components/ui/use-toast";
 import { Toaster } from "@/components/ui/toast";
 import "./globals.css";
@@ -23,37 +19,20 @@ export const metadata: Metadata = {
   description: "Secure land document verification and analysis",
 };
 
-export function generateStaticParams() {
-  return routing.locales.map((locale) => ({ locale }));
-}
-
-export default async function RootLayout({
+export default function RootLayout({
   children,
-  params,
 }: Readonly<{
   children: React.ReactNode;
-  params: Promise<{ locale: string }>;
 }>) {
-  const { locale } = await params;
-
-  if (!routing.locales.includes(locale as (typeof routing.locales)[number])) {
-    notFound();
-  }
-
-  setRequestLocale(locale);
-  const messages = await getMessages();
-
   return (
-    <html lang={locale}>
+    <html>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <NextIntlClientProvider locale={locale} messages={messages}>
-          <ToastProvider>
-            {children}
-            <Toaster />
-          </ToastProvider>
-        </NextIntlClientProvider>
+        <ToastProvider>
+          {children}
+          <Toaster />
+        </ToastProvider>
       </body>
     </html>
   );

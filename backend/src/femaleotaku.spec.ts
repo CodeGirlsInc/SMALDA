@@ -6,7 +6,10 @@ describe('femaleotaku Features (BE-149)', () => {
     const interceptor = new IdempotencyInterceptor();
     const mockCtx: any = {
       switchToHttp: () => ({
-        getRequest: () => ({ headers: { 'idempotency-key': 'key-1' }, body: { doc: 'a' } }),
+        getRequest: () => ({
+          headers: { 'idempotency-key': 'key-1' },
+          body: { doc: 'a' },
+        }),
       }),
     };
     const next: any = { handle: () => of({ success: true }) };

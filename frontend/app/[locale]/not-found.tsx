@@ -6,7 +6,8 @@ export default async function NotFound({
 }: {
   params: Promise<{ locale: string }>;
 }) {
-  const { locale } = await params;
+  const resolvedParams = await params;
+  const locale = resolvedParams?.locale ?? "en";
   setRequestLocale(locale);
 
   const t = await getTranslations("notFound");
@@ -14,9 +15,7 @@ export default async function NotFound({
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-4 px-4 text-center">
       <h1 className="text-4xl font-bold text-gray-900">404</h1>
-      <p className="text-sm text-gray-500">
-        {t("description")}
-      </p>
+      <p className="text-sm text-gray-500">{t("description")}</p>
       <Link
         href="/"
         className="text-sm font-medium text-blue-600 hover:text-blue-800"

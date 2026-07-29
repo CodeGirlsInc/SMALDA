@@ -39,9 +39,13 @@ module.exports = async () => {
   const jestConfig = await createJestConfig(config)();
   return {
     ...jestConfig,
+    testEnvironmentOptions: {
+      ...jestConfig.testEnvironmentOptions,
+      customExportConditions: ["node", "node-addons"],
+    },
     transformIgnorePatterns: [
       // next-intl and msw both reach ESM-only packages that Jest must transpile.
-      "/node_modules/(?!(?:\\.pnpm/)?(?:next-intl|use-intl|intl-messageformat|@formatjs|msw|@mswjs|@open-draft|rettime|until-async|headers-polyfill)/)",
+      "/node_modules/(?!(?:\\.pnpm/)?(?:next-intl|use-intl|intl-messageformat|@formatjs|msw|@mswjs|@open-draft|rettime|until-async|strict-event-emitter|outvariant|headers-polyfill)/)",
       "^.+\\.module\\.(css|sass|scss)$",
     ],
   };

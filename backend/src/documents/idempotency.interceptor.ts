@@ -25,14 +25,19 @@ export class IdempotencyInterceptor implements NestInterceptor {
 
     if (cached) {
       if (cached.bodyHash !== currentBodyHash) {
-        throw new ConflictException('Idempotency-Key reused with different request payload');
+        throw new ConflictException(
+          'Idempotency-Key reused with different request payload',
+        );
       }
       return of(cached.response);
     }
 
     return next.handle().pipe(
       tap((res) => {
-        this.cache.set(idempotencyKey, { bodyHash: currentBodyHash, response: res });
+        this.cache.set(idempotencyKey, {
+          bodyHash: currentBodyHash,
+          response: res,
+        });
       }),
     );
   }

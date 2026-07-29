@@ -41,7 +41,40 @@
       "errorGeneric": "Something went wrong. Please try again.",
       "dividerOr": "or",
       "continueWithGoogle": "Continue with Google",
-      "continueWithGithub": "Continue with GitHub"
+      "continueWithGithub": "Continue with GitHub",
+      "resetSuccessToast": "Your password has been reset. Please sign in."
+    },
+    "forgotPassword": {
+      "title": "Reset your password",
+      "subtitle": "Enter the email address associated with your account and we'll send you a link to reset your password.",
+      "emailLabel": "Email address",
+      "emailPlaceholder": "you@example.com",
+      "errorRequired": "Please enter your email address.",
+      "errorGeneric": "Something went wrong. Please try again.",
+      "submit": "Send reset link",
+      "submitting": "Sending…",
+      "confirmTitle": "Check your email",
+      "confirmDescription": "If an account exists for {email}, we've sent a link to reset your password.",
+      "backToLogin": "Back to sign in"
+    },
+    "resetPassword": {
+      "title": "Set a new password",
+      "subtitle": "Choose a new password for your account.",
+      "passwordLabel": "New password",
+      "passwordPlaceholder": "Enter a new password",
+      "confirmPasswordLabel": "Confirm password",
+      "confirmPasswordPlaceholder": "Re-enter your new password",
+      "submit": "Reset password",
+      "submitting": "Resetting…",
+      "errorRequired": "Please enter and confirm your new password.",
+      "errorMinLength": "Password must be at least 6 characters.",
+      "errorMismatch": "Passwords do not match.",
+      "errorInvalidToken": "This reset link is invalid",
+      "errorInvalidTokenDescription": "This password reset link is invalid or has expired. Request a new one to continue.",
+      "missingToken": "This password reset link is missing or malformed. Request a new one to continue.",
+      "errorGeneric": "Something went wrong. Please try again.",
+      "requestNewLink": "Request a new link",
+      "backToLogin": "Back to sign in"
     }
   },
   "dashboard": {
@@ -52,11 +85,16 @@
       "total": "Total documents",
       "verified": "Verified",
       "flagged": "Flagged",
-      "pending": "Pending review"
+      "averageRisk": "Average risk score"
     },
+    "riskDistribution": "Risk distribution",
+    "recentDocuments": "Recent documents",
     "quickActions": "Quick actions",
     "uploadDocument": "Upload a document",
-    "viewDocuments": "View all documents"
+    "viewDocuments": "View all documents",
+    "emptyTitle": "No documents yet",
+    "emptyDescription": "Upload your first document to see stats and risk analysis here.",
+    "loadError": "Failed to load dashboard data"
   },
   "documents": {
     "title": "All Documents",

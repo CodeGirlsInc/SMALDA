@@ -1,11 +1,16 @@
 import { NestFactory, Reflector } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe, VersioningType, ClassSerializerInterceptor } from '@nestjs/common';
+import {
+  ValidationPipe,
+  VersioningType,
+  ClassSerializerInterceptor,
+} from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { WinstonModule } from 'nest-winston';
 import { buildWinstonOptions } from './common/logger.config';
+import { buildCorsOptions } from './common/cors.config';
 import { config as loadEnv } from 'dotenv';
 
 loadEnv({ path: '.env' });
@@ -18,12 +23,9 @@ async function bootstrap() {
 
   const configService = app.get(ConfigService);
 
-  // Enable CORS
-  app.enableCors({
-    origin:
-      configService.get<string>('FRONTEND_URL') || 'http://localhost:3001',
-    credentials: true,
-  });
+  // Enable hardened CORS
+  const { corsOptions } = buildCorsOptions(configService);
+  app.enableCors(corsOptions);
 
   // Global prefix & URI versioning
   app.setGlobalPrefix('api');
@@ -70,7 +72,10 @@ async function bootstrap() {
       },
       'JWT-auth',
     )
-    .addTag('Authentication', 'Authentication endpoints (login, register, OAuth, etc.)')
+    .addTag(
+      'Authentication',
+      'Authentication endpoints (login, register, OAuth, etc.)',
+    )
     .addTag('Users', 'User management and profile endpoints')
     .addTag('Documents', 'Land document management endpoints')
     .addTag('Risk Assessment', 'Automated document risk evaluation')

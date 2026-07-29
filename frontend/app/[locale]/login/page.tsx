@@ -2,9 +2,9 @@ import { Suspense } from "react";
 import { LoginForm } from "./LoginForm";
 
 /**
- * The form reads the `?redirect=` param via `useSearchParams`, which opts the
- * subtree into client rendering — the Suspense boundary keeps the rest of this
- * route prerenderable instead of failing the static build.
+ * The form reads the `?redirect=` and `?reset=` params via `useSearchParams`,
+ * which opts the subtree into client rendering — the Suspense boundary keeps
+ * the rest of this route prerenderable instead of failing the static build.
  */
 export default function LoginPage() {
   return (

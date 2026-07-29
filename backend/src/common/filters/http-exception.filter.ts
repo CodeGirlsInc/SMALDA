@@ -30,8 +30,15 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     const { message, error } = this.normalizeResponse(errorResponse, exception);
 
-    const requestId = (request as any).requestId || request.headers['x-request-id'] || 'req-id';
+
+    const requestId =
+      (request as any).requestId || request.headers['x-request-id'] || 'req-id';
+    const errorCode =
+      (errorResponse as any)?.errorCode || error || `ERR_${status}`;
+
+    const requestId = request.requestId || 'unknown';
     const errorCode = (errorResponse as any)?.errorCode || error || `ERR_${status}`;
+
 
     const payload = {
       statusCode: status,
@@ -43,7 +50,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       path: request.url,
     };
 
-    this.logger.error(`${status} -> `, (exception as Error)?.stack);
+    this.logger.error(`${status} ${request.method} ${request.url} -> ${message}`, (exception as Error)?.stack);
 
     if (!this.isProduction && exception instanceof Error) {
       Object.assign(payload, { stack: exception.stack });

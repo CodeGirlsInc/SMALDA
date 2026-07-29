@@ -27,6 +27,7 @@ export class LoggerMiddleware implements NestMiddleware {
       const httpMethod = req.method;
       const statusCode = res.statusCode;
       const userId = (req as any).user?.id || null;
+      const requestId = (req as any).requestId || null;
 
       const payload: Record<string, unknown> = {
         method: httpMethod,
@@ -36,11 +37,8 @@ export class LoggerMiddleware implements NestMiddleware {
         user_agent: userAgent,
         ip,
         userId,
+        requestId,
       };
-
-      if (req.headers.authorization) {
-        payload.authorization = '[REDACTED]';
-      }
 
       this.logger.info('http-request', payload);
 
