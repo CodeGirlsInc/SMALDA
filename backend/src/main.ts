@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { WinstonModule } from 'nest-winston';
 import { buildWinstonOptions } from './common/logger.config';
+import { buildCorsOptions } from './common/cors.config';
 import { config as loadEnv } from 'dotenv';
 
 loadEnv({ path: '.env' });
@@ -22,12 +23,9 @@ async function bootstrap() {
 
   const configService = app.get(ConfigService);
 
-  // Enable CORS
-  app.enableCors({
-    origin:
-      configService.get<string>('FRONTEND_URL') || 'http://localhost:3001',
-    credentials: true,
-  });
+  // Enable hardened CORS
+  const { corsOptions } = buildCorsOptions(configService);
+  app.enableCors(corsOptions);
 
   // Global prefix & URI versioning
   app.setGlobalPrefix('api');

@@ -6,6 +6,7 @@ import {
   Get,
   NotFoundException,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
   Req,
@@ -13,13 +14,15 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
+  UsePipes,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
-import { createHash } from 'crypto';
-import { promises as fs } from 'fs';
-import { extname, join } from 'path';
+import { createHash, randomUUID } from 'crypto';
+import { createReadStream, promises as fs } from 'fs';
+import { join } from 'path';
+import { lookup } from 'mime-types';
 import * as multer from 'multer';
 
 import { DocumentsService } from './documents.service';
@@ -28,6 +31,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User } from '../users/entities/user.entity';
 import { QueueService } from '../queue/queue.service';
 import { VerificationService } from '../verification/verification.service';
+import { FileValidationPipe } from './pipes/file-validation.pipe';
 import { ListDocumentsDto } from './dto/list-documents.dto';
 import { DocumentResponseDto } from './dto/document-response.dto';
 
@@ -64,6 +68,7 @@ export class DocumentsController {
       limits: { fileSize: MAX_FILE_SIZE_BYTES },
     }),
   )
+  @UsePipes(FileValidationPipe)
   async uploadDocument(
     @UploadedFile() file: Express.Multer.File,
     @Req() req: Request & { user?: User },
@@ -88,8 +93,10 @@ export class DocumentsController {
       this.configService.get<string>('UPLOAD_DIR') || './uploads';
     await fs.mkdir(uploadDir, { recursive: true });
 
-    const extension = extname(file.originalname) || '';
-    const filename = `${fileHash}${extension}`;
+    // Use a randomized storage key; the client filename is never a path component.
+    const storageKey = randomUUID();
+    const safeExtension = this.safeExtension(file.mimetype);
+    const filename = `${storageKey}${safeExtension}`;
     const targetPath = join(uploadDir, filename);
     await fs.writeFile(targetPath, file.buffer);
 
@@ -103,7 +110,7 @@ export class DocumentsController {
       status: DocumentStatus.PENDING,
     });
 
-    await this.queueService.enqueueAnalyze(document.id);
+    await this.queueService.enqueueAnalyze(document.id, req.requestId);
     return res.status(202).send(document);
   }
 
@@ -151,7 +158,11 @@ export class DocumentsController {
 
   @Post(':id/verify')
   @UseGuards(JwtAuthGuard)
-  async verifyDocument(@Param('id') id: string, @Res() res: Response) {
+  async verifyDocument(
+    @Param('id') id: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
     const document = await this.documentsService.findById(id);
     if (!document) {
       throw new NotFoundException('Document not found');
@@ -161,7 +172,7 @@ export class DocumentsController {
       throw new ConflictException('Document has already been verified');
     }
 
-    await this.queueService.enqueueAnchor(document.id);
+    await this.queueService.enqueueAnchor(document.id, req.requestId);
 
     return res.status(202).json({
       message: 'Verification queued',
@@ -185,6 +196,53 @@ export class DocumentsController {
     }
 
     return record;
+  }
+
+  @Get(':id/download')
+  @UseGuards(JwtAuthGuard)
+  async downloadDocument(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request & { user?: User },
+    @Res() res: Response,
+  ) {
+    const document = await this.documentsService.findById(id);
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+
+    const user = req.user;
+    if (!user || document.ownerId !== user.id) {
+      throw new NotFoundException('Document not found');
+    }
+
+    const stream = createReadStream(document.filePath);
+    const contentType =
+      lookup(document.filePath) || document.mimeType || 'application/octet-stream';
+
+    res.set({
+      'Content-Type': contentType,
+      'Content-Disposition': `attachment; filename="${document.title}"`,
+      'X-Content-Type-Options': 'nosniff',
+    });
+
+    stream.on('error', () => {
+      throw new NotFoundException('File not found on disk');
+    });
+
+    stream.pipe(res);
+  }
+
+  private safeExtension(mimeType: string): string {
+    switch (mimeType) {
+      case 'application/pdf':
+        return '.pdf';
+      case 'image/png':
+        return '.png';
+      case 'image/jpeg':
+        return '.jpg';
+      default:
+        return '.bin';
+    }
   }
 }
 

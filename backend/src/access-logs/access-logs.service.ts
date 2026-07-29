@@ -18,6 +18,7 @@ export class AccessLogsService {
 
   constructor(private readonly accessLogRepository: Repository<AccessLog>) {}
 
+
   async logDocumentAccess(
     documentId: string,
     action: string,
@@ -26,6 +27,20 @@ export class AccessLogsService {
     userAgent?: string,
     isDenied = false,
   ): Promise<void> {
+
+  async create(dto: CreateAccessLogDto): Promise<AccessLog> {
+    const log = this.accessLogRepository.create({
+      userId: dto.userId ?? null,
+      routePath: dto.routePath,
+      httpMethod: dto.httpMethod,
+      ipAddress: dto.ipAddress,
+      statusCode: dto.statusCode ?? null,
+    });
+    return this.accessLogRepository.save(log);
+  }
+
+  async logDocumentAccess(documentId: string, action: string, userId?: string, ipAddress?: string, userAgent?: string, isDenied = false): Promise<void> {
+
     try {
       this.logger.log(
         `Document Access Log: docId=${documentId}, action=${action}, user=${userId || 'anonymous'}, denied=${isDenied}`,

@@ -18,6 +18,7 @@ import { AuthService } from './auth.service';
 import { RegisterAuthDto } from './dto/register-auth.dto';
 import { LoginAuthDto } from './dto/login-auth.dto';
 import { RefreshAuthDto } from './dto/refresh-auth.dto';
+import { getFrontendUrl } from '../common/cors.config';
 
 @Controller('auth')
 export class AuthController {
@@ -108,8 +109,7 @@ export class AuthController {
   }
 
   private redirectWithToken(accessToken: string, res: Response) {
-    const frontendUrl =
-      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3001';
+    const frontendUrl = getFrontendUrl(this.configService);
     const redirectUrl = new URL(frontendUrl);
     redirectUrl.searchParams.set('token', accessToken);
     return res.redirect(redirectUrl.toString());
