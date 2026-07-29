@@ -5,7 +5,10 @@ const createJestConfig = nextJest({ dir: "./" });
 /** @type {import('jest').Config} */
 const config = {
   testEnvironment: "jsdom",
-  setupFilesAfterEnv: ["@testing-library/jest-dom", "./test-utils/test-setup.ts"],
+  setupFilesAfterEnv: [
+    "@testing-library/jest-dom",
+    "./test-utils/test-setup.ts",
+  ],
   testMatch: ["**/test-utils/**/*.test.{ts,tsx}"],
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/$1",
@@ -27,8 +30,12 @@ module.exports = async () => {
   const jestConfig = await createJestConfig(config)();
   return {
     ...jestConfig,
+    testEnvironmentOptions: {
+      ...jestConfig.testEnvironmentOptions,
+      customExportConditions: ["node", "node-addons"],
+    },
     transformIgnorePatterns: [
-      "/node_modules/(?!(?:\\.pnpm/)?(?:next-intl|use-intl|intl-messageformat|@formatjs)/)",
+      "/node_modules/(?!(?:\\.pnpm/)?(?:next-intl|use-intl|intl-messageformat|@formatjs|msw|@mswjs|rettime|strict-event-emitter|outvariant|headers-polyfill)/)",
       "^.+\\.module\\.(css|sass|scss)$",
     ],
   };

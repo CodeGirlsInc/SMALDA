@@ -5,7 +5,14 @@ export interface PublicDocumentView {
   timestamp: string;
 }
 
-export function toPublicDocumentView(doc: any): PublicDocumentView {
+interface RawDocument {
+  id: string;
+  documentHash: string;
+  isVerified: boolean | string | number;
+  timestamp?: string;
+}
+
+export function toPublicDocumentView(doc: RawDocument): PublicDocumentView {
   return {
     id: doc.id,
     documentHash: doc.documentHash,

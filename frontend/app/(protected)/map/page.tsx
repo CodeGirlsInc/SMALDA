@@ -3,10 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import "leaflet/dist/leaflet.css";
+import * as L from "leaflet";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
-type DocumentStatus = "VERIFIED" | "PENDING" | "FLAGGED" | "REJECTED" | "ANALYZING";
+type DocumentStatus =
+  | "VERIFIED"
+  | "PENDING"
+  | "FLAGGED"
+  | "REJECTED"
+  | "ANALYZING";
 
 interface DocumentWithLocation {
   id: string;
@@ -34,38 +40,36 @@ const LABEL_CLASSES: Record<DocumentStatus, string> = {
 };
 
 function getAuthHeaders(): HeadersInit {
-  const token = typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
+  const token =
+    typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 const MapContainer = dynamic(
   () => import("react-leaflet").then((m) => m.MapContainer),
-  { ssr: false }
+  { ssr: false },
 );
 
 const TileLayer = dynamic(
   () => import("react-leaflet").then((m) => m.TileLayer),
-  { ssr: false }
+  { ssr: false },
 );
 
-const Marker = dynamic(
-  () => import("react-leaflet").then((m) => m.Marker),
-  { ssr: false }
-);
+const Marker = dynamic(() => import("react-leaflet").then((m) => m.Marker), {
+  ssr: false,
+});
 
-const Popup = dynamic(
-  () => import("react-leaflet").then((m) => m.Popup),
-  { ssr: false }
-);
+const Popup = dynamic(() => import("react-leaflet").then((m) => m.Popup), {
+  ssr: false,
+});
 
 const ZoomControl = dynamic(
   () => import("react-leaflet").then((m) => m.ZoomControl),
-  { ssr: false }
+  { ssr: false },
 );
 
 function createColouredIcon(colour: string) {
   if (typeof window === "undefined") return null;
-  const L = require("leaflet");
   return L.divIcon({
     className: "",
     html: `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="40" viewBox="0 0 24 36"><path fill="${colour}" d="M12 0C5.4 0 0 5.4 0 12c0 9 12 24 12 24s12-15 12-24C24 5.4 18.6 0 12 0zm0 16c-2.2 0-4-1.8-4-4s1.8-4 4-4 4 1.8 4 4-1.8 4-4 4z"/><circle fill="#fff" cx="12" cy="12" r="3"/></svg>`,
@@ -80,7 +84,7 @@ function MapPageContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [userRegion, setUserRegion] = useState<[number, number] | null>(null);
-  const mapRef = useRef<any>(null);
+  const mapRef = useRef<L.Map | null>(null);
 
   const fetchDocuments = useCallback(async () => {
     setLoading(true);
@@ -92,13 +96,15 @@ function MapPageContent() {
       if (!res.ok) throw new Error(`Failed to load documents (${res.status})`);
 
       const data = await res.json();
-      const list = Array.isArray(data) ? data : data?.data ?? [];
+      const list = Array.isArray(data) ? data : (data?.data ?? []);
       const located = list.filter(
-        (d: any) => d.latitude != null && d.longitude != null
+        (d: DocumentWithLocation) => d.latitude != null && d.longitude != null,
       );
       setDocs(located);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load documents.");
+      setError(
+        err instanceof Error ? err.message : "Failed to load documents.",
+      );
     } finally {
       setLoading(false);
     }
@@ -117,7 +123,7 @@ function MapPageContent() {
         },
         () => {
           // fallback to default centre
-        }
+        },
       );
     }
   }, []);
@@ -125,9 +131,8 @@ function MapPageContent() {
   function handleResetView() {
     if (!mapRef.current) return;
     if (docs.length > 0) {
-      const L = require("leaflet");
       const bounds = L.latLngBounds(
-        docs.map((d) => [d.latitude, d.longitude])
+        docs.map((d) => [d.latitude, d.longitude] as [number, number]),
       );
       mapRef.current.fitBounds(bounds, { padding: [50, 50] });
     } else if (userRegion) {
@@ -185,13 +190,26 @@ function MapPageContent() {
             {docs.length === 0 && !loading && (
               <div className="pointer-events-none absolute inset-0 z-[1000] flex items-center justify-center">
                 <div className="pointer-events-auto max-w-sm rounded-xl bg-white p-6 text-center shadow-lg">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto h-10 w-10 text-gray-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="mx-auto h-10 w-10 text-gray-300"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
                     <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
                     <circle cx="12" cy="10" r="3" />
                   </svg>
-                  <h3 className="mt-3 text-sm font-semibold text-gray-900">No location data</h3>
+                  <h3 className="mt-3 text-sm font-semibold text-gray-900">
+                    No location data
+                  </h3>
                   <p className="mt-1 text-xs text-gray-500">
-                    Documents with GPS coordinates will appear on this map. Upload a document with location metadata to see it here.
+                    Documents with GPS coordinates will appear on this map.
+                    Upload a document with location metadata to see it here.
                   </p>
                 </div>
               </div>
@@ -210,7 +228,9 @@ function MapPageContent() {
                   >
                     <Popup>
                       <div className="min-w-[180px]">
-                        <p className="font-semibold text-gray-900">{doc.title}</p>
+                        <p className="font-semibold text-gray-900">
+                          {doc.title}
+                        </p>
                         <span
                           className={`mt-1 inline-block rounded-full border px-2 py-0.5 text-xs font-medium ${LABEL_CLASSES[doc.status] ?? LABEL_CLASSES.PENDING}`}
                         >
@@ -251,16 +271,32 @@ function MapPageContent() {
       <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-gray-500">
         <span className="font-medium">Legend:</span>
         <span className="flex items-center gap-1">
-          <span className="h-3 w-3 rounded-full bg-green-500" aria-hidden="true" /> Verified
+          <span
+            className="h-3 w-3 rounded-full bg-green-500"
+            aria-hidden="true"
+          />{" "}
+          Verified
         </span>
         <span className="flex items-center gap-1">
-          <span className="h-3 w-3 rounded-full bg-yellow-500" aria-hidden="true" /> Flagged
+          <span
+            className="h-3 w-3 rounded-full bg-yellow-500"
+            aria-hidden="true"
+          />{" "}
+          Flagged
         </span>
         <span className="flex items-center gap-1">
-          <span className="h-3 w-3 rounded-full bg-gray-400" aria-hidden="true" /> Pending
+          <span
+            className="h-3 w-3 rounded-full bg-gray-400"
+            aria-hidden="true"
+          />{" "}
+          Pending
         </span>
         <span className="flex items-center gap-1">
-          <span className="h-3 w-3 rounded-full bg-red-500" aria-hidden="true" /> Rejected
+          <span
+            className="h-3 w-3 rounded-full bg-red-500"
+            aria-hidden="true"
+          />{" "}
+          Rejected
         </span>
       </div>
     </div>
