@@ -71,4 +71,12 @@ export class DocumentsService {
   async delete(id: string): Promise<void> {
     await this.documentRepository.delete(id);
   }
+
+  findAllWithCoordinates(): Promise<Document[]> {
+    return this.documentRepository
+      .createQueryBuilder('document')
+      .where('document.latitude IS NOT NULL')
+      .andWhere('document.longitude IS NOT NULL')
+      .getMany();
+  }
 }

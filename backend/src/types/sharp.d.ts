@@ -1,5 +1,13 @@
 declare module 'sharp' {
   interface Sharp {
+
+    metadata(): Promise<Record<string, unknown>>;
+    toBuffer(): Promise<Buffer>;
+    resize(width?: number, height?: number): Sharp;
+  }
+
+  function sharp(input?: Buffer | string): Sharp;
+
     withMetadata(metadata?: Record<string, unknown>): Sharp;
     toBuffer(): Promise<Buffer>;
     jpeg(options?: Record<string, unknown>): Sharp;
@@ -17,6 +25,7 @@ declare module 'sharp' {
   function sharp(input?: Buffer | string | ArrayBufferView, options?: SharpOptions): Sharp;
   function sharp(options: { create: CreateOptions }): Sharp;
   namespace sharp {}
+
 
   export = sharp;
 }

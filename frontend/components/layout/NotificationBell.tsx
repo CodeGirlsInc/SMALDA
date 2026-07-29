@@ -2,11 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "@/i18n/navigation";
+import Link from "next/link";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
-const WS_BASE = (process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:3001").replace(/^http/, "ws");
+const WS_BASE = (
+  process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:3001"
+).replace(/^http/, "ws");
 
-type NotificationType = "risk_alert" | "verification_complete" | "dispute_update";
+type NotificationType =
+  | "risk_alert"
+  | "verification_complete"
+  | "dispute_update";
 
 interface Notification {
   id: string;
@@ -25,7 +31,8 @@ const NOTIFICATION_ICONS: Record<NotificationType, string> = {
 };
 
 function getAuthHeaders(): HeadersInit {
-  const token = typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
+  const token =
+    typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
@@ -86,7 +93,7 @@ export default function NotificationBell() {
 
       if (listRes.ok) {
         const data = await listRes.json();
-        setNotifications(Array.isArray(data) ? data : data?.data ?? []);
+        setNotifications(Array.isArray(data) ? data : (data?.data ?? []));
       }
       if (countRes.ok) {
         const data = await countRes.json();
@@ -213,7 +220,9 @@ export default function NotificationBell() {
           className="absolute right-0 z-50 mt-2 w-80 rounded-xl border border-gray-200 bg-white shadow-lg"
         >
           <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-            <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
+            <h3 className="text-sm font-semibold text-gray-900">
+              Notifications
+            </h3>
             {unreadNotifications.length > 0 && (
               <button
                 type="button"
@@ -229,7 +238,10 @@ export default function NotificationBell() {
             {loading && notifications.length === 0 && (
               <div className="flex flex-col gap-2 p-4">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-12 animate-pulse rounded bg-gray-100" />
+                  <div
+                    key={i}
+                    className="h-12 animate-pulse rounded bg-gray-100"
+                  />
                 ))}
               </div>
             )}
@@ -250,7 +262,9 @@ export default function NotificationBell() {
                   <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
                 </svg>
                 <p className="text-sm text-gray-500">No notifications yet</p>
-                <p className="text-xs text-gray-400">Updates about your documents will appear here.</p>
+                <p className="text-xs text-gray-400">
+                  Updates about your documents will appear here.
+                </p>
               </div>
             )}
 
@@ -273,23 +287,28 @@ export default function NotificationBell() {
                       {n.title}
                     </p>
                     {!n.read && (
-                      <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-blue-500" aria-hidden="true" />
+                      <span
+                        className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-blue-500"
+                        aria-hidden="true"
+                      />
                     )}
                   </div>
                   <p className="line-clamp-2 text-xs text-gray-500">{n.body}</p>
-                  <p className="mt-0.5 text-[11px] text-gray-400">{formatRelativeTime(n.createdAt)}</p>
+                  <p className="mt-0.5 text-[11px] text-gray-400">
+                    {formatRelativeTime(n.createdAt)}
+                  </p>
                 </div>
               </button>
             ))}
           </div>
 
           <div className="border-t border-gray-100 px-4 py-2.5">
-            <a
+            <Link
               href="/settings/notifications"
               className="block text-center text-xs font-medium text-gray-500 hover:text-gray-700"
             >
               View all notifications
-            </a>
+            </Link>
           </div>
         </div>
       )}

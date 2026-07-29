@@ -22,7 +22,7 @@ import { QueueModule } from '../queue/queue.module';
       }),
     }),
     StellarModule,
-    VerificationModule,
+    forwardRef(() => VerificationModule),
     forwardRef(() => QueueModule),
   ],
   controllers: [DocumentsController],
