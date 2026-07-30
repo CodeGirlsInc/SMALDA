@@ -229,3 +229,24 @@ Please:
 1. Fork the repository
 2. Create a feature branch
 3. Submit a pull request with a clear description
+
+## HTTP Security Headers
+
+The API uses Helmet to apply secure HTTP response headers.
+
+Enabled protections include:
+
+- Content Security Policy (CSP)
+- HSTS (production only)
+- X-Frame-Options
+- X-Content-Type-Options
+- Referrer-Policy
+- Removal of the `X-Powered-By` header
+
+Swagger remains accessible at:
+
+```
+/api/docs
+```
+
+HSTS is intentionally disabled during local development.
