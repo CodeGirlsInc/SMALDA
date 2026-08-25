@@ -37,6 +37,7 @@ import { DocumentResponseDto } from './dto/document-response.dto';
 
 const ALLOWED_MIME_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
+const DEFAULT_USER_QUOTA = 20;
 
 const multerStorage = multer.memoryStorage();
 
@@ -83,6 +84,15 @@ export class DocumentsController {
       throw new BadRequestException('Authenticated user is required');
     }
 
+    const userQuota =
+      this.configService.get<number>('USER_DOCUMENT_QUOTA') ?? DEFAULT_USER_QUOTA;
+    const existingDocs = await this.documentsService.findByOwner(user.id);
+    if (existingDocs.length >= userQuota) {
+      throw new BadRequestException(
+        Upload quota exceeded. Each user may store at most  documents.,
+      );
+    }
+
     const fileHash = createHash('sha256').update(file.buffer).digest('hex');
     const existing = await this.documentsService.findByFileHash(fileHash);
     if (existing) {
@@ -96,7 +106,7 @@ export class DocumentsController {
     // Use a randomized storage key; the client filename is never a path component.
     const storageKey = randomUUID();
     const safeExtension = this.safeExtension(file.mimetype);
-    const filename = `${storageKey}${safeExtension}`;
+    const filename = ${storageKey};
     const targetPath = join(uploadDir, filename);
     await fs.writeFile(targetPath, file.buffer);
 
@@ -221,7 +231,7 @@ export class DocumentsController {
 
     res.set({
       'Content-Type': contentType,
-      'Content-Disposition': `attachment; filename="${document.title}"`,
+      'Content-Disposition': ttachment; filename="",
       'X-Content-Type-Options': 'nosniff',
     });
 
