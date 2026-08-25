@@ -13,8 +13,10 @@ pub mod types;
 pub mod webhook;
 
 use axum::{
+    body::Body,
     extract::{Path, State},
     http::{HeaderName, Request, StatusCode},
+    middleware::Next,
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -41,6 +43,27 @@ use stellar::{derive_account_id, StellarClient, TransactionRecord};
 /// name used by the backend.
 pub const REQUEST_ID_HEADER: &str = "x-request-id";
 
+/// Reject requests once the configured rate-limit quota is exhausted (CT-37).
+///
+/// Returns `429 Too Many Requests` with a short JSON body so callers know
+/// to back off, matching the `Retry-After` convention used elsewhere.
+async fn enforce_rate_limit(
+    State(state): State<AppState>,
+    req: Request<Body>,
+    next: Next,
+) -> Response {
+    if state.rate_limiter.check().is_err() {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(ValidationErrorResponse {
+                error: "rate limit exceeded, please retry later".to_string(),
+            }),
+        )
+            .into_response();
+    }
+    next.run(req).await
+}
+
 // Application state
 #[derive(Clone)]
 pub struct AppState {
@@ -48,6 +71,9 @@ pub struct AppState {
     pub cache: Arc<CacheBackend>,
     pub metrics: Arc<MetricsRegistry>,
     pub stellar_secret_key: String,
+    /// Governor-based rate limiter built from `RATE_LIMIT_PER_SECOND` /
+    /// `RATE_LIMIT_BURST` and enforced as a router middleware (CT-37).
+    pub rate_limiter: rate_limit::DefaultRateLimiter,
     /// Comma-separated webhook URLs parsed from `WEBHOOK_URLS` (CT-38).
     pub webhook_urls: Vec<String>,
     /// Shared secret used to sign webhook payloads (CT-38).
@@ -284,6 +310,11 @@ pub fn app(state: AppState) -> Router {
                 // the backend) can confirm which id was used for this op.
                 .layer(PropagateRequestIdLayer::new(request_id_header)),
         )
+        // Apply the configured rate limiter to the whole router (CT-37).
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            enforce_rate_limit,
+        ))
         .with_state(state)
 }
 
