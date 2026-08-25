@@ -59,4 +59,26 @@ describe('buildWinstonOptions', () => {
     expect(line.userId).toBe('user-1');
     expect(line.path).toBe('/api/documents');
   });
+
+  it('should redact stellarSecretKey field', () => {
+    const logger = createLogger(buildWinstonOptions('info'));
+    logger.info('stellar config', {
+      stellarSecretKey: 'SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
+      horizonUrl: 'https://horizon-testnet.stellar.org',
+    });
+
+    const line = lastLogLine();
+    expect(line.stellarSecretKey).toBe('[REDACTED]');
+    expect(line.horizonUrl).toBe('https://horizon-testnet.stellar.org');
+  });
+
+  it('should redact stellar_secret_key field', () => {
+    const logger = createLogger(buildWinstonOptions('info'));
+    logger.info('config dump', {
+      stellar_secret_key: 'SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
+    });
+
+    const line = lastLogLine();
+    expect(line.stellar_secret_key).toBe('[REDACTED]');
+  });
 });
