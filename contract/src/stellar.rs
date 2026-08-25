@@ -893,7 +893,7 @@ mod tests {
         mock.assert();
     }
 
-    // ── anchor_transfer ──────────────────────────────────────────────────────
+    // ── anchor_transfer (CT-35) ──────────────────────────────────────────────
 
     #[tokio::test]
     async fn test_anchor_transfer_submits_transaction() {

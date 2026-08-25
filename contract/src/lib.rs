@@ -1,6 +1,7 @@
 pub mod cache;
 pub mod config;
 pub mod error;
+pub mod event;
 pub mod handlers;
 pub mod hash_validator;
 pub mod metrics;
@@ -9,10 +10,13 @@ pub mod retry;
 pub mod routes;
 pub mod stellar;
 pub mod types;
+pub mod webhook;
 
 use axum::{
+    body::Body,
     extract::{Path, State},
     http::{HeaderName, Request, StatusCode},
+    middleware::Next,
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -29,6 +33,7 @@ use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
 use cache::CacheBackend;
+use event::Event;
 use hash_validator::{HashValidator, ValidationError as HashValidationError};
 use metrics::MetricsRegistry;
 use stellar::{derive_account_id, StellarClient, TransactionRecord};
@@ -38,6 +43,27 @@ use stellar::{derive_account_id, StellarClient, TransactionRecord};
 /// name used by the backend.
 pub const REQUEST_ID_HEADER: &str = "x-request-id";
 
+/// Reject requests once the configured rate-limit quota is exhausted (CT-37).
+///
+/// Returns `429 Too Many Requests` with a short JSON body so callers know
+/// to back off, matching the `Retry-After` convention used elsewhere.
+async fn enforce_rate_limit(
+    State(state): State<AppState>,
+    req: Request<Body>,
+    next: Next,
+) -> Response {
+    if state.rate_limiter.check().is_err() {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(ValidationErrorResponse {
+                error: "rate limit exceeded, please retry later".to_string(),
+            }),
+        )
+            .into_response();
+    }
+    next.run(req).await
+}
+
 // Application state
 #[derive(Clone)]
 pub struct AppState {
@@ -45,6 +71,13 @@ pub struct AppState {
     pub cache: Arc<CacheBackend>,
     pub metrics: Arc<MetricsRegistry>,
     pub stellar_secret_key: String,
+    /// Governor-based rate limiter built from `RATE_LIMIT_PER_SECOND` /
+    /// `RATE_LIMIT_BURST` and enforced as a router middleware (CT-37).
+    pub rate_limiter: rate_limit::DefaultRateLimiter,
+    /// Comma-separated webhook URLs parsed from `WEBHOOK_URLS` (CT-38).
+    pub webhook_urls: Vec<String>,
+    /// Shared secret used to sign webhook payloads (CT-38).
+    pub webhook_secret: Option<String>,
 }
 
 // Request/Response types
@@ -191,6 +224,49 @@ fn map_validation_error(err: HashValidationError) -> (StatusCode, ValidationErro
     )
 }
 
+/// Persist an audit event for a document operation (CT-39).
+///
+/// Events are appended to a single `audit:events` list in the cache backend
+/// and read back by `GET /audit`. Failures are logged, never propagated to
+/// the caller, so auditing can never break the request path.
+async fn record_audit_event(
+    state: &AppState,
+    event_type: &str,
+    aggregate_id: &str,
+    actor: &str,
+    data: serde_json::Value,
+) {
+    const AUDIT_TTL: u64 = 60 * 60 * 24 * 365; // 1 year
+    const AUDIT_KEY: &str = "audit:events";
+
+    let event = Event::new(
+        aggregate_id.to_string(),
+        event_type.to_string(),
+        data,
+        actor.to_string(),
+    );
+
+    let mut events: Vec<Event> = match state.cache.get(AUDIT_KEY).await {
+        Ok(Some(existing)) => existing,
+        _ => Vec::new(),
+    };
+    events.push(event);
+
+    if let Err(e) = state.cache.set(AUDIT_KEY, &events, AUDIT_TTL).await {
+        warn!("Failed to persist audit event: {}", e);
+    }
+}
+
+/// GET /audit — read back emitted audit events, most recent first (CT-39).
+pub async fn audit_log_handler(State(state): State<AppState>) -> Response {
+    let mut events: Vec<Event> = match state.cache.get("audit:events").await {
+        Ok(Some(events)) => events,
+        _ => Vec::new(),
+    };
+    events.reverse();
+    Json(events).into_response()
+}
+
 pub fn app(state: AppState) -> Router {
     let request_id_header = HeaderName::from_static(REQUEST_ID_HEADER);
     let span_header = request_id_header.clone();
@@ -198,6 +274,7 @@ pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health_check))
         .route("/metrics", get(metrics_handler))
+        .route("/audit", get(audit_log_handler))
         .route("/verify", post(verify_document))
         .route("/verify/batch", post(batch_verify_documents))
         .route("/verify/:hash", get(verify_document_by_hash))
@@ -233,6 +310,11 @@ pub fn app(state: AppState) -> Router {
                 // the backend) can confirm which id was used for this op.
                 .layer(PropagateRequestIdLayer::new(request_id_header)),
         )
+        // Apply the configured rate limiter to the whole router (CT-37).
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            enforce_rate_limit,
+        ))
         .with_state(state)
 }
 
@@ -306,6 +388,9 @@ pub async fn record_transfer(
     State(state): State<AppState>,
     Json(req): Json<TransferRequest>,
 ) -> Result<Json<TransferResponse>, StatusCode> {
+    state.metrics.increment_request_count();
+    state.metrics.increment_route_count("transfer");
+
     if !is_valid_iso8601_date(&req.transfer_date) {
         return Err(StatusCode::BAD_REQUEST);
     }
@@ -366,6 +451,27 @@ pub async fn record_transfer(
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
 
+    // Emit an audit event for the transfer (CT-39).
+    record_audit_event(
+        &state,
+        "transfer",
+        &record.document_hash,
+        &req.from_owner,
+        serde_json::json!({ "transfer_hash": transfer_hash.clone() }),
+    )
+    .await;
+
+    // Fire webhooks so integrators can react to a completed transfer.
+    webhook::dispatch(
+        &state.webhook_urls,
+        state.webhook_secret.as_deref(),
+        "transfer",
+        serde_json::json!({
+            "document_hash": req.document_hash,
+            "transfer_hash": transfer_hash.clone(),
+        }),
+    );
+
     Ok(Json(TransferResponse {
         transfer_hash,
         memo,
@@ -402,6 +508,7 @@ pub async fn verify_document(
 
     info!("Verifying document hash: {}", normalized_hash);
     state.metrics.increment_request_count();
+    state.metrics.increment_route_count("verify");
 
     // Check cache first
     if let Ok(Some(cached)) = state.cache.get::<VerifyResponse>(&normalized_hash).await {
@@ -435,6 +542,16 @@ pub async fn verify_document(
         }
     };
 
+    // Emit an audit event for the verification (CT-39).
+    record_audit_event(
+        &state,
+        "verify",
+        &normalized_hash,
+        "public",
+        serde_json::json!({ "verified": result.anchored }),
+    )
+    .await;
+
     let response = VerifyResponse {
         verified: result.anchored,
         transaction_id: result.transaction_id,
@@ -443,6 +560,17 @@ pub async fn verify_document(
         revoked: None,
         revoked_at: None,
     };
+
+    // Fire webhooks so integrators can react to a successful verification.
+    webhook::dispatch(
+        &state.webhook_urls,
+        state.webhook_secret.as_deref(),
+        "verify",
+        serde_json::json!({
+            "document_hash": normalized_hash,
+            "verified": result.anchored,
+        }),
+    );
 
     Json(response).into_response()
 }
@@ -520,6 +648,7 @@ pub async fn batch_verify_documents(
 
     info!("Batch verifying {} document hashes", req.hashes.len());
     state.metrics.increment_request_count();
+    state.metrics.increment_route_count("verify_batch");
 
     // Process all hashes concurrently
     let verification_futures: Vec<_> = req
@@ -689,6 +818,7 @@ pub async fn submit_document(
         normalized_hash, req.submitter
     );
     state.metrics.increment_request_count();
+    state.metrics.increment_route_count("submit");
 
     match state
         .stellar
@@ -720,6 +850,28 @@ pub async fn submit_document(
                 "Document hash {} anchored in ledger {} (tx: {})",
                 normalized_hash, result.ledger, result.tx_hash
             );
+
+            // Emit an audit event for the submission (CT-39).
+            record_audit_event(
+                &state,
+                "submit",
+                &normalized_hash,
+                &req.submitter,
+                serde_json::json!({ "transaction_id": result.tx_hash.clone() }),
+            )
+            .await;
+
+            // Fire webhooks so integrators can react to a successful anchor.
+            webhook::dispatch(
+                &state.webhook_urls,
+                state.webhook_secret.as_deref(),
+                "submit",
+                serde_json::json!({
+                    "document_hash": normalized_hash,
+                    "transaction_id": result.tx_hash,
+                }),
+            );
+
             Json(response).into_response()
         }
         Err(e) => {
@@ -784,6 +936,7 @@ pub async fn revoke_document(
         normalized_hash, req.revoked_by
     );
     state.metrics.increment_request_count();
+    state.metrics.increment_route_count("revoke");
 
     let revoked_at = Utc::now().timestamp();
 
@@ -829,6 +982,27 @@ pub async fn revoke_document(
             info!(
                 "Document {} revoked in ledger {} (tx: {})",
                 normalized_hash, result.ledger, result.tx_hash
+            );
+
+            // Emit an audit event for the revocation (CT-39).
+            record_audit_event(
+                &state,
+                "revoke",
+                &normalized_hash,
+                &req.revoked_by,
+                serde_json::json!({ "transaction_id": result.tx_hash.clone() }),
+            )
+            .await;
+
+            // Fire webhooks so integrators can react to a revocation.
+            webhook::dispatch(
+                &state.webhook_urls,
+                state.webhook_secret.as_deref(),
+                "revoke",
+                serde_json::json!({
+                    "document_hash": normalized_hash,
+                    "transaction_id": result.tx_hash.clone(),
+                }),
             );
 
             Json(RevokeResponse {
