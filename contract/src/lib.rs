@@ -9,6 +9,7 @@ pub mod retry;
 pub mod routes;
 pub mod stellar;
 pub mod types;
+pub mod webhook;
 
 use axum::{
     extract::{Path, State},
@@ -45,6 +46,10 @@ pub struct AppState {
     pub cache: Arc<CacheBackend>,
     pub metrics: Arc<MetricsRegistry>,
     pub stellar_secret_key: String,
+    /// Comma-separated webhook URLs parsed from `WEBHOOK_URLS` (CT-38).
+    pub webhook_urls: Vec<String>,
+    /// Shared secret used to sign webhook payloads (CT-38).
+    pub webhook_secret: Option<String>,
 }
 
 // Request/Response types
@@ -366,6 +371,17 @@ pub async fn record_transfer(
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
 
+    // Fire webhooks so integrators can react to a completed transfer.
+    webhook::dispatch(
+        &state.webhook_urls,
+        state.webhook_secret.as_deref(),
+        "transfer",
+        serde_json::json!({
+            "document_hash": req.document_hash,
+            "transfer_hash": transfer_hash.clone(),
+        }),
+    );
+
     Ok(Json(TransferResponse {
         transfer_hash,
         memo,
@@ -443,6 +459,17 @@ pub async fn verify_document(
         revoked: None,
         revoked_at: None,
     };
+
+    // Fire webhooks so integrators can react to a successful verification.
+    webhook::dispatch(
+        &state.webhook_urls,
+        state.webhook_secret.as_deref(),
+        "verify",
+        serde_json::json!({
+            "document_hash": normalized_hash,
+            "verified": result.anchored,
+        }),
+    );
 
     Json(response).into_response()
 }
@@ -720,6 +747,18 @@ pub async fn submit_document(
                 "Document hash {} anchored in ledger {} (tx: {})",
                 normalized_hash, result.ledger, result.tx_hash
             );
+
+            // Fire webhooks so integrators can react to a successful anchor.
+            webhook::dispatch(
+                &state.webhook_urls,
+                state.webhook_secret.as_deref(),
+                "submit",
+                serde_json::json!({
+                    "document_hash": normalized_hash,
+                    "transaction_id": result.tx_hash,
+                }),
+            );
+
             Json(response).into_response()
         }
         Err(e) => {
@@ -829,6 +868,17 @@ pub async fn revoke_document(
             info!(
                 "Document {} revoked in ledger {} (tx: {})",
                 normalized_hash, result.ledger, result.tx_hash
+            );
+
+            // Fire webhooks so integrators can react to a revocation.
+            webhook::dispatch(
+                &state.webhook_urls,
+                state.webhook_secret.as_deref(),
+                "revoke",
+                serde_json::json!({
+                    "document_hash": normalized_hash,
+                    "transaction_id": result.tx_hash.clone(),
+                }),
             );
 
             Json(RevokeResponse {
