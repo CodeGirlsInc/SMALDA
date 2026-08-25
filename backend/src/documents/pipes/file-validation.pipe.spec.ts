@@ -1,8 +1,4 @@
 import { BadRequestException } from '@nestjs/common';
-
-import { FileValidationPipe } from './file-validation.pipe';
-
-
 import { PDFDocument } from 'pdf-lib';
 import sharp = require('sharp');
 import { FileValidationPipe } from './file-validation.pipe';
@@ -82,6 +78,7 @@ describe('FileValidationPipe', () => {
   it('should throw for disallowed mime types', () => {
     const file = createMockFile({ mimetype: 'text/plain' });
     expect(() => pipe.transform(file)).toThrow(/Invalid file type/);
+  });
 
   it('should accept a valid PDF by content', async () => {
     const buffer = await createValidPdf();
@@ -138,6 +135,5 @@ describe('FileValidationPipe', () => {
     const result = await pipe.transform(file);
     expect(result.buffer.length).toBeGreaterThan(0);
     expect(result.mimetype).toBe('image/jpeg');
-
   });
 });
