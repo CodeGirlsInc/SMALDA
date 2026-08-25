@@ -75,6 +75,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cache: cache.clone(),
         metrics,
         stellar_secret_key: config.stellar_secret_key.clone().unwrap_or_default(),
+        webhook_urls: config.webhook_urls.clone(),
+        webhook_secret: config.webhook_secret.clone(),
     };
     let app = app(state);
 
