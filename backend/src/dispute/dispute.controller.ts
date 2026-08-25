@@ -42,7 +42,10 @@ export class DisputeController {
   }
 
   @Get(':id')
-  async getDispute(@Param('id') id: string): Promise<DisputeResponseDto> {
-    return this.disputeService.findOne(id);
+  async getDispute(
+    @Param('id') id: string,
+    @Req() req: Request & { user?: User },
+  ): Promise<DisputeResponseDto> {
+    return this.disputeService.findOne(id, req.user!.id);
   }
 }
