@@ -1,9 +1,17 @@
 import {
-  Column,
-  CreateDateColumn,
   Entity,
   PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Index,
 } from 'typeorm';
+
+export enum ValidationType {
+  LAND_REGISTRY = 'LAND_REGISTRY',
+  GOVERNMENT_ID = 'GOVERNMENT_ID',
+  BUSINESS_REGISTRATION = 'BUSINESS_REGISTRATION',
+}
 
 export enum ValidationStatus {
   PENDING = 'PENDING',
@@ -16,16 +24,13 @@ export enum ValidationStatus {
 export enum ValidationResult {
   VALID = 'VALID',
   INVALID = 'INVALID',
+  UNSURE = 'UNSURE',
   ERROR = 'ERROR',
 }
 
-export enum ValidationType {
-  LAND_REGISTRY = 'LAND_REGISTRY',
-  GOVERNMENT_ID = 'GOVERNMENT_ID',
-  BUSINESS_REGISTRATION = 'BUSINESS_REGISTRATION',
-}
-
 @Entity('validation_requests')
+@Index('IDX_VALIDATION_DOCUMENT', ['documentId'])
+@Index('IDX_VALIDATION_STATUS', ['status'])
 export class ValidationRequest {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -36,20 +41,13 @@ export class ValidationRequest {
   @Column({ type: 'enum', enum: ValidationType })
   validationType: ValidationType;
 
-  @Column({ type: 'jsonb', nullable: true })
+  @Column({ type: 'jsonb' })
   requestPayload: Record<string, any>;
 
   @Column()
   requestedBy: string;
 
-  @Column({ type: 'jsonb', nullable: true })
-  metadata: Record<string, any>;
-
-  @Column({
-    type: 'enum',
-    enum: ValidationStatus,
-    default: ValidationStatus.PENDING,
-  })
+  @Column({ type: 'enum', enum: ValidationStatus })
   status: ValidationStatus;
 
   @Column({ type: 'enum', enum: ValidationResult, nullable: true })
@@ -58,42 +56,18 @@ export class ValidationRequest {
   @Column({ type: 'jsonb', nullable: true })
   responsePayload: Record<string, any> | null;
 
-  @Column({ type: 'jsonb', nullable: true })
-  validationDetails: Record<string, any> | null;
-
-  @Column({ type: 'timestamptz', nullable: true })
-  validatedAt: Date | null;
-
-  @Column({ type: 'timestamptz', nullable: true })
-  expiresAt: Date | null;
-
-  @Column({ type: 'float', nullable: true })
-  confidenceScore: number | null;
-
-  @Column({ nullable: true })
-  externalReferenceId: string | null;
-
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   errorMessage: string | null;
 
-  @CreateDateColumn()
-  createdAt: Date;
-}
-
-@Entity('validation_providers')
-export class ValidationProvider {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
-
-  @Column()
-  name: string;
-
-  @Column({ type: 'enum', enum: ValidationType })
-  validationType: ValidationType;
-
-  @Column({ default: true })
-  isActive: boolean;
+  @Column({ type: 'jsonb', nullable: true })
+  metadata: Record<string, any> | null;
 
   @CreateDateColumn()
   createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+
+  @Column({ nullable: true })
+  validatedAt: Date | null;
 }
