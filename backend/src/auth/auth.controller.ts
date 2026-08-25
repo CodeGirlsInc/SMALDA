@@ -19,6 +19,7 @@ import { RegisterAuthDto } from './dto/register-auth.dto';
 import { LoginAuthDto } from './dto/login-auth.dto';
 import { RefreshAuthDto } from './dto/refresh-auth.dto';
 import { getFrontendUrl } from '../common/cors.config';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -40,6 +41,17 @@ export class AuthController {
   @Post('refresh')
   refresh(@Body() dto: RefreshAuthDto) {
     return this.authService.refreshToken(dto);
+  }
+
+  @Post('logout')
+  @UseGuards(JwtAuthGuard)
+  async logout(@Req() req: Request) {
+    const authHeader = req.headers.authorization;
+    if (authHeader) {
+      const token = authHeader.replace('Bearer ', '');
+      await this.authService.logout(token);
+    }
+    return { message: 'Logged out successfully' };
   }
 
   @Get('google')
