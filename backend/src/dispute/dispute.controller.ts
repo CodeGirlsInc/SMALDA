@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -14,6 +15,7 @@ import { User } from '../users/entities/user.entity';
 import { CreateDisputeDto } from './dto/create-dispute.dto';
 import { DisputeResponseDto } from './dto/dispute-response.dto';
 import { DisputeService } from './dispute.service';
+import { DisputeStatus } from './entities/dispute.entity';
 
 @Controller('disputes')
 @UseGuards(JwtAuthGuard)
@@ -44,5 +46,14 @@ export class DisputeController {
   @Get(':id')
   async getDispute(@Param('id') id: string): Promise<DisputeResponseDto> {
     return this.disputeService.findOne(id);
+  }
+
+  @Patch(':id/status')
+  async updateDisputeStatus(
+    @Param('id') id: string,
+    @Body('status') status: DisputeStatus,
+    @Req() req: Request & { user?: User },
+  ): Promise<DisputeResponseDto> {
+    return this.disputeService.updateStatus(id, status, req.user!.id);
   }
 }

@@ -7,6 +7,7 @@ import {
   NotFoundException,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Req,
@@ -196,6 +197,26 @@ export class DocumentsController {
     }
 
     return record;
+  }
+
+  @Patch(':id/revoke')
+  @UseGuards(JwtAuthGuard)
+  async revokeAccess(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request & { user?: User },
+  ) {
+    const document = await this.documentsService.findById(id);
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+
+    const user = req.user!;
+    if (document.ownerId !== user.id && user.role !== 'admin') {
+      throw new ForbiddenException('Access denied');
+    }
+
+    const updated = await this.documentsService.revokeAccess(id);
+    return { message: 'Access revoked', documentId: updated?.id, status: updated?.status };
   }
 
   @Get(':id/download')
