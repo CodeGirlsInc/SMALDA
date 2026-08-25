@@ -852,32 +852,6 @@ pub async fn revoke_document(
     }
 }
 
-pub async fn transfer_document(Json(req): Json<TransferRequest>) -> impl IntoResponse {
-    let normalized_hash = HashValidator::normalize(&req.document_hash);
-    if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
-        let (status, body) = map_validation_error(err);
-        return (status, Json(body));
-    }
-
-    // Basic date validation: expect YYYY-MM-DD
-    if chrono::NaiveDate::parse_from_str(&req.transfer_date, "%Y-%m-%d").is_err() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ValidationErrorResponse {
-                error: "invalid date format, expected YYYY-MM-DD".to_string(),
-            }),
-        );
-    }
-
-    // Endpoint behavior not yet implemented; for now respond with BAD_REQUEST.
-    (
-        StatusCode::BAD_REQUEST,
-        Json(ValidationErrorResponse {
-            error: "transfer endpoint not yet implemented".to_string(),
-        }),
-    )
-}
-
 /// Calculates Levenshtein distance between two strings
 pub fn levenshtein_distance(s1: &str, s2: &str) -> usize {
     let len1 = s1.len();

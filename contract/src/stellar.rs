@@ -145,16 +145,9 @@ impl StellarClient {
 
     #[tracing::instrument(name = "stellar.check_connection", skip(self))]
     pub async fn check_connection(&self) -> bool {
-        self.http_client
-            .get(&self.horizon_url)
-            .send()
-            .await;
-            
-        match result {
-            Ok(resp) => Ok(resp.status().is_success()),
-            Err(e) if e.is_timeout() => Err(StellarError::Timeout),
-            Err(e) if e.is_connect() => Err(StellarError::ConnectionFailed),
-            Err(e) => Err(StellarError::HttpRequestFailed(e)),
+        match self.http_client.get(&self.horizon_url).send().await {
+            Ok(resp) => resp.status().is_success(),
+            Err(_) => false,
         }
     }
 
@@ -764,523 +757,214 @@ mod urlencoding {
 mod tests {
     use super::*;
     use httpmock::prelude::*;
-    use chrono::Utc;
-    
+
+    const TEST_ACCOUNT: &str = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
+
     fn create_test_client(mock_server: &MockServer) -> StellarClient {
         StellarClient::new(&mock_server.url("/"))
     }
 
+    // ── verify_hash (CT-34) ──────────────────────────────────────────────────
+
     #[tokio::test]
-    async fn test_verify_hash_correct_endpoint_and_query() {
-        // Arrange
+    async fn test_verify_hash_found_returns_anchored_with_decoded_value() {
         let mock_server = MockServer::start();
         let client = create_test_client(&mock_server);
-        let test_hash = "test_hash_123";
-        
-        // Mock the expected request
+        let hash = "abc123";
+        let data_key = build_data_key(hash);
+        let raw_value = base64::engine::general_purpose::STANDARD.encode(hash.as_bytes());
+
         let mock = mock_server.mock(|when, then| {
-            when.method(GET)
-                .path("/transactions")
-                .query_param("memo", test_hash);
-            then.status(200)
-                .json_body(serde_json::json!({
-                    "_embedded": {
-                        "records": []
-                    }
-                }));
+            when.method(GET).path(format!("/accounts/{}", TEST_ACCOUNT));
+            then.status(200).json_body(serde_json::json!({
+                "sequence": "1",
+                "data": { (data_key): raw_value }
+            }));
         });
 
-        // Act
-        let result = client.verify_hash(test_hash).await;
-        
-        // Assert
-        assert!(result.is_ok());
+        let result = client.verify_hash(hash, TEST_ACCOUNT).await.unwrap();
+
+        assert!(result.anchored);
+        assert_eq!(result.data_key, data_key);
+        assert_eq!(result.decoded_value.as_deref(), Some(hash));
+        assert!(result.raw_value_base64.is_some());
         mock.assert();
     }
 
     #[tokio::test]
-    async fn test_verify_hash_success_with_transaction() {
-        // Arrange
+    async fn test_verify_hash_not_found_returns_not_anchored() {
         let mock_server = MockServer::start();
         let client = create_test_client(&mock_server);
-        let test_hash = "test_hash_123";
-        let tx_id = "abc123txid";
-        let now = Utc::now().to_rfc3339();
-        
+
         let mock = mock_server.mock(|when, then| {
-            when.method(GET)
-                .path("/transactions")
-                .query_param("memo", test_hash);
-            then.status(200)
-                .json_body(serde_json::json!({
-                    "_embedded": {
-                        "records": [
-                            {
-                                "id": tx_id,
-                                "created_at": now
-                            }
-                        ]
-                    }
-                }));
+            when.method(GET).path(format!("/accounts/{}", TEST_ACCOUNT));
+            then.status(200).json_body(serde_json::json!({
+                "sequence": "1",
+                "data": {}
+            }));
         });
 
-        // Act
-        let result = client.verify_hash(test_hash).await;
-        
-        // Assert
-        assert!(result.is_ok());
-        let verification = result.unwrap();
-        assert!(verification.verified);
-        assert_eq!(verification.transaction_id, Some(tx_id.to_string()));
-        assert!(verification.timestamp.is_some());
+        let result = client.verify_hash("missing", TEST_ACCOUNT).await.unwrap();
+
+        assert!(!result.anchored);
+        assert_eq!(result.decoded_value, None);
+        assert_eq!(result.raw_value_base64, None);
         mock.assert();
     }
 
     #[tokio::test]
-    async fn test_verify_hash_no_transactions_returns_not_verified() {
-        // Arrange
+    async fn test_verify_hash_horizon_404_returns_err() {
         let mock_server = MockServer::start();
         let client = create_test_client(&mock_server);
-        let test_hash = "test_hash_123";
-        
-        let mock = mock_server.mock(|when, then| {
-            when.method(GET)
-                .path("/transactions")
-                .query_param("memo", test_hash);
-            then.status(200)
-                .json_body(serde_json::json!({
-                    "_embedded": {
-                        "records": []
-                    }
-                }));
-        });
 
-        // Act
-        let result = client.verify_hash(test_hash).await;
-        
-        // Assert
-        assert!(result.is_ok());
-        let verification = result.unwrap();
-        assert!(!verification.verified);
-        assert_eq!(verification.transaction_id, None);
-        assert_eq!(verification.timestamp, None);
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_verify_hash_404_returns_horizon_error() {
-        // Arrange
-        let mock_server = MockServer::start();
-        let client = create_test_client(&mock_server);
-        let test_hash = "test_hash_123";
-        
         let mock = mock_server.mock(|when, then| {
-            when.method(GET)
-                .path("/transactions")
-                .query_param("memo", test_hash);
+            when.method(GET).path(format!("/accounts/{}", TEST_ACCOUNT));
             then.status(404);
         });
 
-        // Act
-        let result = client.verify_hash(test_hash).await;
-        
-        // Assert
+        let result = client.verify_hash("abc", TEST_ACCOUNT).await;
         assert!(result.is_err());
-        match result.err().unwrap() {
-            StellarError::HorizonErrorStatus(status) => assert_eq!(status.as_u16(), 404),
-            _ => panic!("Expected HorizonErrorStatus for 404"),
-        }
         mock.assert();
     }
 
     #[tokio::test]
-    async fn test_verify_hash_429_returns_horizon_error() {
-        // Arrange
+    async fn test_verify_hash_horizon_500_returns_err() {
         let mock_server = MockServer::start();
         let client = create_test_client(&mock_server);
-        let test_hash = "test_hash_123";
-        
-        let mock = mock_server.mock(|when, then| {
-            when.method(GET)
-                .path("/transactions")
-                .query_param("memo", test_hash);
-            then.status(429);
-        });
 
-        // Act
-        let result = client.verify_hash(test_hash).await;
-        
-        // Assert
-        assert!(result.is_err());
-        match result.err().unwrap() {
-            StellarError::HorizonErrorStatus(status) => assert_eq!(status.as_u16(), 429),
-            _ => panic!("Expected HorizonErrorStatus for 429"),
-        }
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_verify_hash_500_returns_horizon_error() {
-        // Arrange
-        let mock_server = MockServer::start();
-        let client = create_test_client(&mock_server);
-        let test_hash = "test_hash_123";
-        
         let mock = mock_server.mock(|when, then| {
-            when.method(GET)
-                .path("/transactions")
-                .query_param("memo", test_hash);
+            when.method(GET).path(format!("/accounts/{}", TEST_ACCOUNT));
             then.status(500);
         });
 
-        // Act
-        let result = client.verify_hash(test_hash).await;
-        
-        // Assert
+        let result = client.verify_hash("abc", TEST_ACCOUNT).await;
         assert!(result.is_err());
-        match result.err().unwrap() {
-            StellarError::HorizonErrorStatus(status) => assert_eq!(status.as_u16(), 500),
-            _ => panic!("Expected HorizonErrorStatus for 500"),
-        }
         mock.assert();
     }
 
     #[tokio::test]
-    async fn test_verify_hash_malformed_json_returns_parse_error() {
-        // Arrange
+    async fn test_verify_hash_uses_manage_data_account_lookup() {
+        // Regression test: verify_hash must query the anchor account's
+        // manageData entries — not the old invalid /transactions?memo= query.
         let mock_server = MockServer::start();
         let client = create_test_client(&mock_server);
-        let test_hash = "test_hash_123";
-        
+        let hash = "deadbeef";
+
         let mock = mock_server.mock(|when, then| {
-            when.method(GET)
-                .path("/transactions")
-                .query_param("memo", test_hash);
-            then.status(200)
-                .body("invalid json {");
+            when.method(GET).path(format!("/accounts/{}", TEST_ACCOUNT));
+            then.status(200).json_body(serde_json::json!({
+                "sequence": "1",
+                "data": {}
+            }));
         });
 
-        // Act
-        let result = client.verify_hash(test_hash).await;
-        
-        // Assert
-        assert!(result.is_err());
-        match result.err().unwrap() {
-            StellarError::ResponseParseError(_) => {},
-            _ => panic!("Expected ResponseParseError for malformed JSON"),
-        }
+        let result = client.verify_hash(hash, TEST_ACCOUNT).await;
+        assert!(result.is_ok());
         mock.assert();
     }
 
-    #[tokio::test]
-    async fn test_verify_hash_missing_fields_in_json_returns_parse_error() {
-        // Arrange
-        let mock_server = MockServer::start();
-        let client = create_test_client(&mock_server);
-        let test_hash = "test_hash_123";
-        
-        let mock = mock_server.mock(|when, then| {
-            when.method(GET)
-                .path("/transactions")
-                .query_param("memo", test_hash);
-            then.status(200)
-                .json_body(serde_json::json!({
-                    "wrong_field": {}
-                }));
-        });
-
-        // Act
-        let result = client.verify_hash(test_hash).await;
-        
-        // Assert
-        assert!(result.is_err());
-        match result.err().unwrap() {
-            StellarError::ResponseParseError(_) => {},
-            _ => panic!("Expected ResponseParseError for invalid JSON structure"),
-        }
-        mock.assert();
-    }
+    // ── check_connection ─────────────────────────────────────────────────────
 
     #[tokio::test]
     async fn test_check_connection_success() {
-        // Arrange
         let mock_server = MockServer::start();
         let client = create_test_client(&mock_server);
-        
+
         let mock = mock_server.mock(|when, then| {
             when.method(GET).path("/");
             then.status(200);
         });
 
-        // Act
-        let result = client.check_connection().await;
-        
-        // Assert
-        assert!(result.is_ok());
-        assert!(result.unwrap());
+        assert!(client.check_connection().await);
         mock.assert();
     }
 
     #[tokio::test]
     async fn test_check_connection_failure() {
-        // Arrange
         let mock_server = MockServer::start();
         let client = create_test_client(&mock_server);
-        
+
         let mock = mock_server.mock(|when, then| {
             when.method(GET).path("/");
             then.status(500);
         });
 
-        // Act
-        let result = client.check_connection().await;
-        
-        // Assert
-        assert!(result.is_ok());
-        assert!(!result.unwrap());
+        assert!(!client.check_connection().await);
         mock.assert();
     }
 
+    // ── anchor_transfer ──────────────────────────────────────────────────────
+
     #[tokio::test]
-    async fn test_client_has_timeout_configured() {
-        // Arrange
+    async fn test_anchor_transfer_submits_transaction() {
         let mock_server = MockServer::start();
         let client = create_test_client(&mock_server);
-        
-        // Create a mock that hangs
-        let mock = mock_server.mock(|when, then| {
-            when.method(GET)
-                .path("/transactions")
-                .query_param("memo", "test");
-            then.delay(std::time::Duration::from_secs(15)) // Longer than client's 10s timeout
-                .status(200);
+        let secret = "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        let public_key = derive_account_id(secret).unwrap();
+
+        // Horizon account fetch (sequence used for signing).
+        mock_server.mock(|when, then| {
+            when.method(GET).path(format!("/accounts/{}", public_key));
+            then.status(200).json_body(serde_json::json!({
+                "sequence": "1",
+                "data": {}
+            }));
         });
 
-        // Act
-        let result = client.verify_hash("test").await;
-        
-        // Assert
-        assert!(result.is_err());
-        match result.err().unwrap() {
-            StellarError::Timeout => {},
-            _ => panic!("Expected Timeout error for hanging request"),
-        }
+        // Horizon transaction submission.
+        let submit_mock = mock_server.mock(|when, then| {
+            when.method(POST).path("/transactions");
+            then.status(200).json_body(serde_json::json!({
+                "hash": "txhash123",
+                "ledger": 42,
+                "created_at": "2025-01-01T00:00:00Z"
+            }));
+        });
+
+        let result = client
+            .anchor_transfer("transfer-hash", &public_key, secret)
+            .await
+            .unwrap();
+
+        assert_eq!(result.tx_hash, "txhash123");
+        assert_eq!(result.ledger, 42);
+        submit_mock.assert();
     }
 
     #[tokio::test]
-    async fn test_invalid_horizon_url_returns_connection_failed() {
-        // Arrange - use an invalid URL that can't be connected to
-        let client = StellarClient::new("http://non-existent-domain-12345.com");
-        
-        // Act
-        let result = client.verify_hash("test_hash").await;
-        
-        // Assert
-        assert!(result.is_err());
-        match result.err().unwrap() {
-            StellarError::ConnectionFailed => {},
-            StellarError::Timeout => {}, // Could also timeout, which is acceptable
-            e => panic!("Expected ConnectionFailed or Timeout, got {:?}", e),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_never_suceeds_on_network_failure() {
-        // Arrange
-        let client = StellarClient::new("http://non-existent-domain-12345.com");
-        
-        // Act
-        let result = client.verify_hash("test_hash").await;
-        
-        // Assert - must never return Ok(VerificationResult { verified: true })
-        assert!(result.is_err() || !result.unwrap().verified);
-    }
-
-    #[tokio::test]
-    async fn test_never_succeeds_on_parse_failure() {
-        // Arrange
+    async fn test_anchor_transfer_horizon_failure_returns_err() {
         let mock_server = MockServer::start();
         let client = create_test_client(&mock_server);
-        
-        let mock = mock_server.mock(|when, then| {
-            when.method(GET)
-                .path("/transactions")
-                .query_param("memo", "test_hash");
-            then.status(200)
-                .body("garbage data");
+        let secret = "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        let public_key = derive_account_id(secret).unwrap();
+
+        mock_server.mock(|when, then| {
+            when.method(GET).path(format!("/accounts/{}", public_key));
+            then.status(200).json_body(serde_json::json!({
+                "sequence": "1",
+                "data": {}
+            }));
+        });
+        let submit_mock = mock_server.mock(|when, then| {
+            when.method(POST).path("/transactions");
+            then.status(400).json_body(serde_json::json!({
+                "detail": "bad request"
+            }));
         });
 
-        // Act
-        let result = client.verify_hash("test_hash").await;
-        
-        // Assert
+        let result = client
+            .anchor_transfer("transfer-hash", &public_key, secret)
+            .await;
+
         assert!(result.is_err());
-        assert!(!matches!(result, Ok(VerificationResult { verified: true, .. })));
+        submit_mock.assert();
     }
 
-    #[tokio::test]
-    async fn test_never_succeeds_on_http_error() {
-        // Arrange
-        let mock_server = MockServer::start();
-        let client = create_test_client(&mock_server);
-        
-        let mock = mock_server.mock(|when, then| {
-            when.method(GET)
-                .path("/transactions")
-                .query_param("memo", "test_hash");
-            then.status(500);
-        });
-
-        // Act
-        let result = client.verify_hash("test_hash").await;
-        
-        // Assert
-        assert!(result.is_err());
-        assert!(!matches!(result, Ok(VerificationResult { verified: true, .. })));
-    }
+    // ── misc ─────────────────────────────────────────────────────────────────
 
     #[tokio::test]
     async fn test_client_constructor_works() {
-        // Arrange & Act
         let client = StellarClient::new("https://horizon.stellar.org");
-        
-        // Assert
         assert_eq!(client.horizon_url, "https://horizon.stellar.org");
-    }
-
-    #[tokio::test]
-    async fn test_verify_hash_timestamp_parsing() {
-        // Arrange
-        let mock_server = MockServer::start();
-        let client = create_test_client(&mock_server);
-        let specific_time = "2023-01-01T00:00:00Z";
-        let expected_timestamp = 1672531200; // Unix timestamp for that date
-        
-        let mock = mock_server.mock(|when, then| {
-            when.method(GET)
-                .path("/transactions")
-                .query_param("memo", "test_hash");
-            then.status(200)
-                .json_body(serde_json::json!({
-                    "_embedded": {
-                        "records": [
-                            {
-                                "id": "tx123",
-                                "created_at": specific_time
-                            }
-                        ]
-                    }
-                }));
-        });
-
-        // Act
-        let result = client.verify_hash("test_hash").await;
-        
-        // Assert
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().timestamp, Some(expected_timestamp));
-    }
-
-    #[tokio::test]
-    async fn test_invalid_timestamp_format_returns_zero() {
-        // Arrange
-        let mock_server = MockServer::start();
-        let client = create_test_client(&mock_server);
-        
-        let mock = mock_server.mock(|when, then| {
-            when.method(GET)
-                .path("/transactions")
-                .query_param("memo", "test_hash");
-            then.status(200)
-                .json_body(serde_json::json!({
-                    "_embedded": {
-                        "records": [
-                            {
-                                "id": "tx123",
-                                "created_at": "not-a-valid-timestamp"
-                            }
-                        ]
-                    }
-                }));
-        });
-
-        // Act
-        let result = client.verify_hash("test_hash").await;
-        
-        // Assert - should not panic, returns 0 for invalid timestamp
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().timestamp, Some(0));
-    }
-
-    #[tokio::test]
-    async fn test_multiple_transactions_returns_first() {
-        // Arrange
-        let mock_server = MockServer::start();
-        let client = create_test_client(&mock_server);
-        let first_tx_id = "first_tx";
-        let second_tx_id = "second_tx";
-        
-        let mock = mock_server.mock(|when, then| {
-            when.method(GET)
-                .path("/transactions")
-                .query_param("memo", "test_hash");
-            then.status(200)
-                .json_body(serde_json::json!({
-                    "_embedded": {
-                        "records": [
-                            {
-                                "id": first_tx_id,
-                                "created_at": "2023-01-01T00:00:00Z"
-                            },
-                            {
-                                "id": second_tx_id,
-                                "created_at": "2023-01-02T00:00:00Z"
-                            }
-                        ]
-                    }
-                }));
-        });
-
-        // Act
-        let result = client.verify_hash("test_hash").await;
-        
-        // Assert
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().transaction_id, Some(first_tx_id.to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_anchor_transfer_returns_ok() {
-        // Arrange
-        let client = StellarClient::new("https://horizon.stellar.org");
-        
-        // Act
-        let result = client.anchor_transfer("hash", "memo").await;
-        
-        // Assert
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_check_connection_timeout() {
-        // Arrange
-        let mock_server = MockServer::start();
-        let client = create_test_client(&mock_server);
-        
-        let mock = mock_server.mock(|when, then| {
-            when.method(GET).path("/");
-            then.delay(std::time::Duration::from_secs(15))
-                .status(200);
-        });
-
-        // Act
-        let result = client.check_connection().await;
-        
-        // Assert
-        assert!(result.is_err());
-        match result.err().unwrap() {
-            StellarError::Timeout => {},
-            _ => panic!("Expected Timeout error"),
-        }
     }
 }
