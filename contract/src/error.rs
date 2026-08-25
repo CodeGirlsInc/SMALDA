@@ -10,6 +10,16 @@ use serde::Serialize;
 
 use crate::types::ValidationErrorResponse;
 
+/// Error type used by the audit `event` module (CT-39).
+#[derive(Debug, thiserror::Error)]
+pub enum AuditError {
+    #[error("event serialization failed: {0}")]
+    SerializationError(String),
+}
+
+/// Convenience alias used across the audit module.
+pub type Result<T> = std::result::Result<T, AuditError>;
+
 /// Structured 503 response payload returned when upstream Horizon is
 /// unreachable after the retry budget is exhausted or the circuit breaker
 /// is open. Stable JSON contract: `{ status: "indeterminate", message, attempt_count }`.

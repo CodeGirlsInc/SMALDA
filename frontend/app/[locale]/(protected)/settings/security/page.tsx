@@ -257,6 +257,73 @@ function ActiveSessionsList() {
   );
 }
 
+function DangerZone() {
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleDelete() {
+    setDeleting(true);
+    setError(null);
+    try {
+      // Replace with: await api.delete('/users/me')
+      await new Promise((r) => setTimeout(r, 800));
+      // On success the auth layer should clear the session and redirect.
+      window.location.href = "/login";
+    } catch {
+      setError("Failed to delete account. Please try again.");
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div>
+      {confirming ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+          <p className="text-sm font-medium text-red-800">
+            Are you sure? This action cannot be undone.
+          </p>
+          <p className="mt-1 text-xs text-red-700">
+            Your account, documents and dispute records will be permanently
+            deleted.
+          </p>
+          <div className="mt-3 flex gap-3">
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={deleting}
+              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              {deleting ? "Deleting…" : "Yes, delete my account"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirming(false)}
+              disabled={deleting}
+              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+          {error && (
+            <p role="alert" className="mt-3 text-sm text-red-700">
+              {error}
+            </p>
+          )}
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setConfirming(true)}
+          className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+        >
+          Delete account…
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────
 // Page
 // ─────────────────────────────────────────────
@@ -288,6 +355,13 @@ export default function SecuritySettingsPage() {
           description="These devices are currently signed in to your account. Revoke any session you don't recognise."
         >
           <ActiveSessionsList />
+        </SectionCard>
+
+        <SectionCard
+          title="Danger Zone"
+          description="Permanently delete your account and all associated data."
+        >
+          <DangerZone />
         </SectionCard>
       </div>
     </main>

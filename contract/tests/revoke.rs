@@ -28,6 +28,8 @@ fn test_state(horizon_url: &str) -> AppState {
         metrics: Arc::new(MetricsRegistry::new()),
         stellar_secret_key: SECRET.to_string(),
         rate_limiter: build_rate_limiter(100, 100),
+        webhook_urls: Vec::new(),
+        webhook_secret: None,
     }
 }
 

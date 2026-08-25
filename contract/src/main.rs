@@ -80,6 +80,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             config.rate_limit_per_second,
             config.rate_limit_burst,
         ),
+        webhook_urls: config.webhook_urls.clone(),
+        webhook_secret: config.webhook_secret.clone(),
     };
     let app = app(state);
 
