@@ -30,20 +30,20 @@ export const ConfigValidationSchema = Joi.object({
     .default('development'),
 
   // ── Server ─────────────────────────────────────────────────────────────────
-  APP_PORT: Joi.number().default(3001),
+  APP_PORT: Joi.number().positive().default(3001),
   APP_URL: Joi.string().uri().required(),
   FRONTEND_URL: Joi.string().uri().required(),
 
   // ── Database ───────────────────────────────────────────────────────────────
   DATABASE_HOST: Joi.string().required(),
-  DATABASE_PORT: Joi.number().default(5432),
+  DATABASE_PORT: Joi.number().positive().default(5432),
   DATABASE_USER: Joi.string().required(),
   DATABASE_PASSWORD: Joi.string().required(),
   DATABASE_NAME: Joi.string().required(),
 
   // ── Redis ──────────────────────────────────────────────────────────────────
   REDIS_HOST: Joi.string().default('localhost'),
-  REDIS_PORT: Joi.number().default(6379),
+  REDIS_PORT: Joi.number().positive().default(6379),
   REDIS_PASSWORD: Joi.string().allow('').optional(),
 
   // ── Stellar ────────────────────────────────────────────────────────────────
@@ -121,7 +121,7 @@ export const ConfigValidationSchema = Joi.object({
 
   // ── Mail ───────────────────────────────────────────────────────────────────
   MAIL_HOST: Joi.string().required(),
-  MAIL_PORT: Joi.number().default(587),
+  MAIL_PORT: Joi.number().positive().default(587),
   MAIL_USER: Joi.string().when('NODE_ENV', {
     is: 'production',
     then: notPlaceholder.required(),
@@ -142,8 +142,8 @@ export const ConfigValidationSchema = Joi.object({
   SMTP_FROM: Joi.string().default(Joi.ref('MAIL_FROM')),
 
   // ── Rate Limiting ─────────────────────────────────────────────────────────
-  THROTTLE_TTL: Joi.number().default(60),
-  THROTTLE_LIMIT: Joi.number().default(10),
+  THROTTLE_TTL: Joi.number().positive().default(60),
+  THROTTLE_LIMIT: Joi.number().positive().default(10),
 
   // ── File Upload ────────────────────────────────────────────────────────────
   UPLOAD_DIR: Joi.string().default('./uploads'),
