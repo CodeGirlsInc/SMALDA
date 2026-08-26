@@ -62,6 +62,7 @@ function createColouredIcon(colour: string) {
 
 export default function MapPageContent() {
   const [docs, setDocs] = useState<DocumentWithLocation[]>([]);
+  const [missingLocationCount, setMissingLocationCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [userRegion, setUserRegion] = useState<[number, number] | null>(null);
@@ -82,6 +83,9 @@ export default function MapPageContent() {
         (d: DocumentWithLocation) => d.latitude != null && d.longitude != null,
       );
       setDocs(located);
+      // Documents without coordinates are excluded from the map but their
+      // count is still surfaced (FE-58).
+      setMissingLocationCount(Math.max(0, list.length - located.length));
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to load documents.",
@@ -245,6 +249,14 @@ export default function MapPageContent() {
             Retry
           </button>
         </div>
+      )}
+
+      {missingLocationCount > 0 && (
+        <p className="mt-4 text-xs text-gray-500">
+          {missingLocationCount} document
+          {missingLocationCount !== 1 ? "s" : ""} without location data
+          (excluded from the map).
+        </p>
       )}
 
       <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-gray-500">

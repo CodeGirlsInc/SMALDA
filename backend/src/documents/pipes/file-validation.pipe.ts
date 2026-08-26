@@ -1,6 +1,10 @@
-import { BadRequestException, Injectable, PipeTransform } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  PipeTransform,
+} from '@nestjs/common';
 import { PDFDocument, PDFName } from 'pdf-lib';
-import sharp = require('sharp');
+const sharp = require('sharp') as (...args: any[]) => any;
 
 const ALLOWED_MIME_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
@@ -43,9 +47,10 @@ const BLOCKED_EXTENSIONS = [
 ];
 
 @Injectable()
-export class FileValidationPipe
-  implements PipeTransform<Express.Multer.File, Promise<Express.Multer.File>>
-{
+export class FileValidationPipe implements PipeTransform<
+  Express.Multer.File,
+  Promise<Express.Multer.File>
+> {
   async transform(file: Express.Multer.File): Promise<Express.Multer.File> {
     if (!file) {
       throw new BadRequestException('File is required');
@@ -162,9 +167,7 @@ export class FileValidationPipe
     const lower = originalname.toLowerCase();
     for (const ext of BLOCKED_EXTENSIONS) {
       if (lower.endsWith(ext)) {
-        throw new BadRequestException(
-          `File extension ${ext} is not allowed`,
-        );
+        throw new BadRequestException(`File extension ${ext} is not allowed`);
       }
     }
   }
@@ -196,8 +199,7 @@ export class FileValidationPipe
 
       for (const page of pdf.getPages()) {
         const node = page.node as any;
-        const actions =
-          node.get(PDFName.of('A')) || node.get(PDFName.of('AA'));
+        const actions = node.get(PDFName.of('A')) || node.get(PDFName.of('AA'));
         if (actions) {
           throw new BadRequestException(
             'PDF contains active content (JavaScript/actions) and is not allowed',

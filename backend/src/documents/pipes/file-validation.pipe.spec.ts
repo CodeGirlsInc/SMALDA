@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { PDFDocument } from 'pdf-lib';
-import * as sharpLib from 'sharp';
+const sharp = require('sharp') as (...args: any[]) => any;
 import { FileValidationPipe } from './file-validation.pipe';
 
 function createFile(
@@ -29,7 +29,7 @@ async function createValidPdf(): Promise<Buffer> {
 }
 
 async function createValidJpeg(): Promise<Buffer> {
-  return (sharpLib as any)({
+  return sharp({
     create: { width: 10, height: 10, channels: 3, background: 'white' },
   })
     .jpeg()
@@ -37,7 +37,7 @@ async function createValidJpeg(): Promise<Buffer> {
 }
 
 async function createValidPng(): Promise<Buffer> {
-  return (sharpLib as any)({
+  return sharp({
     create: { width: 10, height: 10, channels: 3, background: 'white' },
   })
     .png()
@@ -112,5 +112,24 @@ describe('FileValidationPipe', () => {
     const buffer = await createValidPdf();
     const file = createFile(buffer, 'application/pdf', 'script.sh');
     await expect(pipe.transform(file)).rejects.toThrow(BadRequestException);
+  });
+
+  it('should reject files that exceed the maximum size', async () => {
+    const jpeg = await createValidJpeg();
+    const buffer = Buffer.alloc(21 * 1024 * 1024, 0xff);
+    jpeg.copy(buffer);
+    buffer[0] = 0xff;
+    buffer[1] = 0xd8;
+    buffer[2] = 0xff;
+    const file = createFile(buffer, 'image/jpeg', 'huge.jpg');
+    await expect(pipe.transform(file)).rejects.toThrow(BadRequestException);
+  });
+
+  it('should strip metadata from a JPEG', async () => {
+    const buffer = await createValidJpeg();
+    const file = createFile(buffer, 'image/jpeg', 'photo.jpg');
+    const result = await pipe.transform(file);
+    expect(result.buffer.length).toBeGreaterThan(0);
+    expect(result.mimetype).toBe('image/jpeg');
   });
 });
