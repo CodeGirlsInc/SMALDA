@@ -44,7 +44,6 @@ async function createValidPng(): Promise<Buffer> {
     .toBuffer();
 }
 
-
 describe('FileValidationPipe', () => {
   let pipe: FileValidationPipe;
 
@@ -52,39 +51,29 @@ describe('FileValidationPipe', () => {
     pipe = new FileValidationPipe();
   });
 
-
-  const createMockFile = (overrides: Partial<Express.Multer.File> = {}) =>
-    ({
-      size: 1024,
-      mimetype: 'application/pdf',
-      originalname: 'test.pdf',
-      ...overrides,
-    }) as Express.Multer.File;
-
-  it('should pass a valid file through', () => {
-    const file = createMockFile();
-    expect(pipe.transform(file)).toBe(file);
-  });
-
-  it('should throw if file is missing', () => {
-    expect(() => pipe.transform(null)).toThrow(BadRequestException);
-  });
-
-  it('should throw if file exceeds max size', () => {
-    const file = createMockFile({ size: 20 * 1024 * 1024 });
-    expect(() => pipe.transform(file)).toThrow(/File size exceeds/);
-  });
-
-  it('should throw for disallowed mime types', () => {
-    const file = createMockFile({ mimetype: 'text/plain' });
-    expect(() => pipe.transform(file)).toThrow(/Invalid file type/);
-  });
-
-  it('should accept a valid PDF by content', async () => {
+  it('should pass a valid PDF file through', async () => {
     const buffer = await createValidPdf();
-    const file = createFile(buffer, 'application/pdf', 'deed.pdf');
+    const file = createFile(buffer, 'application/pdf', 'test.pdf');
     const result = await pipe.transform(file);
     expect(result.mimetype).toBe('application/pdf');
+  });
+
+  it('should throw if file is missing', async () => {
+    await expect(pipe.transform(null as any)).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('should throw if file exceeds max size', async () => {
+    const buffer = Buffer.alloc(21 * 1024 * 1024, 0xff);
+    buffer[0] = 0x25;
+    buffer[1] = 0x50;
+    buffer[2] = 0x44;
+    buffer[3] = 0x46;
+    const file = createFile(buffer, 'application/pdf', 'huge.pdf');
+    await expect(pipe.transform(file)).rejects.toThrow(
+      /File exceeds maximum size/,
+    );
   });
 
   it('should accept a valid PNG by content', async () => {
@@ -94,6 +83,13 @@ describe('FileValidationPipe', () => {
     expect(result.mimetype).toBe('image/png');
   });
 
+  it('should accept a valid JPEG by content', async () => {
+    const buffer = await createValidJpeg();
+    const file = createFile(buffer, 'image/jpeg', 'photo.jpg');
+    const result = await pipe.transform(file);
+    expect(result.mimetype).toBe('image/jpeg');
+  });
+
   it('should reject an executable renamed to .pdf', async () => {
     const buffer = Buffer.from('MZ\x90\x00');
     const file = createFile(buffer, 'application/pdf', 'malware.pdf');
@@ -101,7 +97,7 @@ describe('FileValidationPipe', () => {
   });
 
   it('should reject a zip archive by content regardless of extension', async () => {
-    const buffer = Buffer.from('PK\x03\x04');
+    const buffer = Buffer.from('PK\x03\x04test');
     const file = createFile(buffer, 'application/pdf', 'archive.pdf');
     await expect(pipe.transform(file)).rejects.toThrow(BadRequestException);
   });
