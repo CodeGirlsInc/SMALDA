@@ -15,9 +15,47 @@ export enum RiskFlag {
   UNKNOWN_ISSUER = 'UNKNOWN_ISSUER',
 }
 
+export const RISK_FLAG_DESCRIPTIONS: Record<RiskFlag, Record<string, string>> = {
+  [RiskFlag.MISSING_PARCEL_ID]: {
+    en: 'No parcel identifier (APN/PIN) was found in the document.',
+    fr: "Aucun identifiant de parcelle (APN/PIN) n'a été trouvé dans le document.",
+    es: 'No se encontró ningún identificador de parcela (APN/PIN) en el documento.',
+  },
+  [RiskFlag.OVERLAPPING_CLAIM]: {
+    en: 'This document covers land already claimed by another filing.',
+    fr: 'Ce document couvre un terrain déjà revendiqué par une autre déclaration.',
+    es: 'Este documento cubre tierras ya reclamadas por otra declaración.',
+  },
+  [RiskFlag.FORGED_SIGNATURE_INDICATOR]: {
+    en: 'Heuristic analysis suggests the signature may have been forged.',
+    fr: "L'analyse heuristique suggère que la signature a pu être falsifiée.",
+    es: 'El análisis heurístico sugiere que la firma puede haber sido falsificada.',
+  },
+  [RiskFlag.EXPIRED_DOCUMENT]: {
+    en: 'The document has passed its stated expiry or validity date.',
+    fr: 'Le document a dépassé sa date d\'expiration ou de validité.',
+    es: 'El documento ha pasado su fecha de vencimiento o validez.',
+  },
+  [RiskFlag.INCOMPLETE_OWNERSHIP_CHAIN]: {
+    en: 'The ownership chain is incomplete or the title is too short.',
+    fr: 'La chaîne de propriété est incomplète ou le titre est trop court.',
+    es: 'La cadena de propiedad está incompleta o el título es demasiado corto.',
+  },
+  [RiskFlag.UNKNOWN_ISSUER]: {
+    en: 'The issuing authority could not be verified against known registries.',
+    fr: "L'autorité émettrice n'a pas pu être vérifiée auprès des registres connus.",
+    es: 'No se pudo verificar la autoridad emisora contra los registros conocidos.',
+  },
+};
+
+export interface RiskFlagResult {
+  flag: RiskFlag;
+  description: string;
+}
+
 export interface RiskResult {
   score: number;
-  flags: RiskFlag[];
+  flags: RiskFlagResult[];
   contentAnalysisPossible: boolean;
 }
 
@@ -59,7 +97,7 @@ export class RiskAssessmentService {
       : DEFAULT_KNOWN_ISSUERS;
   }
 
-  async assessDocument(documentId: string): Promise<RiskResult> {
+  async assessDocument(documentId: string, lang?: string): Promise<RiskResult> {
     const document = await this.documentsService.findById(documentId);
     if (!document) {
       throw new NotFoundException('Document not found');
@@ -70,9 +108,15 @@ export class RiskAssessmentService {
 
     await this.documentsService.updateRisk(documentId, score, flags);
 
+    const locale = lang || 'en';
+    const flagResults: RiskFlagResult[] = flags.map((flag) => ({
+      flag,
+      description: RISK_FLAG_DESCRIPTIONS[flag]?.[locale] || RISK_FLAG_DESCRIPTIONS[flag]?.['en'] || flag,
+    }));
+
     return {
       score,
-      flags,
+      flags: flagResults,
       contentAnalysisPossible: document.mimeType === 'application/pdf',
     };
   }

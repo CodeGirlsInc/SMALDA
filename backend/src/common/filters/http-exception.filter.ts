@@ -8,6 +8,24 @@ import {
 } from '@nestjs/common';
 import { Response, Request } from 'express';
 
+const SENSITIVE_ERROR_PATTERNS = [
+  /password/i,
+  /secret/i,
+  /token/i,
+  /jwt/i,
+  /hash/i,
+  /bcrypt/i,
+  /e\.?r\.?r\.?o\.?r\.?/i,
+  /ENOENT/i,
+  /EACCES/i,
+  /connect.*refused/i,
+  /database/i,
+  /sql/i,
+  /query.*failed/i,
+  /constraint/i,
+  /duplicate/i,
+];
+
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
@@ -26,21 +44,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     const errorResponse = isHttp
       ? exception.getResponse()
-      : { message: (exception as Error)?.message }; // fallback message
+      : { message: 'An unexpected error occurred' };
 
     const { message, error } = this.normalizeResponse(errorResponse, exception);
-
 
     const requestId =
       (request as any).requestId || request.headers['x-request-id'] || 'req-id';
     const errorCode =
       (errorResponse as any)?.errorCode || error || `ERR_${status}`;
 
-    const requestId = request.requestId || 'unknown';
-    const errorCode = (errorResponse as any)?.errorCode || error || `ERR_${status}`;
-
-
-    const payload = {
+    const payload: Record<string, unknown> = {
       statusCode: status,
       errorCode,
       message,
@@ -50,7 +63,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
       path: request.url,
     };
 
-    this.logger.error(`${status} ${request.method} ${request.url} -> ${message}`, (exception as Error)?.stack);
+    this.logger.error(
+      `${status} ${request.method} ${request.url} -> ${message}`,
+      (exception as Error)?.stack,
+    );
 
     if (!this.isProduction && exception instanceof Error) {
       Object.assign(payload, { stack: exception.stack });
@@ -67,24 +83,36 @@ export class HttpExceptionFilter implements ExceptionFilter {
     let error = HttpStatus.INTERNAL_SERVER_ERROR.toString();
 
     if (typeof response === 'string') {
-      message = response;
+      message = this.sanitizeMessage(response);
     } else if (response && typeof response === 'object') {
       const body = response as Record<string, any>;
       if (body.message) {
-        message = Array.isArray(body.message)
+        const raw = Array.isArray(body.message)
           ? body.message.join(', ')
           : body.message;
+        message = this.sanitizeMessage(raw);
       } else if (exception instanceof Error && exception.message) {
-        message = exception.message;
+        message = this.sanitizeMessage(exception.message);
       }
 
       if (body.error) {
         error = body.error;
       }
     } else if (exception instanceof Error) {
-      message = exception.message;
+      message = this.sanitizeMessage(exception.message);
     }
 
     return { message, error };
+  }
+
+  private sanitizeMessage(raw: string): string {
+    if (!this.isProduction) return raw;
+
+    for (const pattern of SENSITIVE_ERROR_PATTERNS) {
+      if (pattern.test(raw)) {
+        return 'An unexpected error occurred. Please try again later.';
+      }
+    }
+    return raw;
   }
 }
