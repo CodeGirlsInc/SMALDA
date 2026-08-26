@@ -25,7 +25,12 @@ const SENSITIVE_KEYS = new Set([
 ]);
 
 function isSensitiveKey(key: string): boolean {
-  const lower = key.toLowerCase();
+  // Normalize camelCase to snake_case so 'stellarSecretKey' matches the same
+  // rules as 'stellar_secret_key' - object keys in JS/TS code are
+  // conventionally camelCase even when the underlying env var is snake_case.
+  const lower = key
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .toLowerCase();
   return (
     SENSITIVE_KEYS.has(lower) ||
     lower.endsWith('_token') ||

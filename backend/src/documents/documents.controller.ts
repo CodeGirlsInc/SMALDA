@@ -38,6 +38,7 @@ import { DocumentResponseDto } from './dto/document-response.dto';
 
 const ALLOWED_MIME_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
+const DEFAULT_USER_QUOTA = 20;
 
 const multerStorage = multer.memoryStorage();
 
@@ -82,6 +83,15 @@ export class DocumentsController {
     const user = req.user;
     if (!user) {
       throw new BadRequestException('Authenticated user is required');
+    }
+
+    const userQuota =
+      this.configService.get<number>('USER_DOCUMENT_QUOTA') ?? DEFAULT_USER_QUOTA;
+    const existingDocs = await this.documentsService.findByOwner(user.id);
+    if (existingDocs.length >= userQuota) {
+      throw new BadRequestException(
+        `Upload quota exceeded. Each user may store at most ${userQuota} documents.`,
+      );
     }
 
     const fileHash = createHash('sha256').update(file.buffer).digest('hex');

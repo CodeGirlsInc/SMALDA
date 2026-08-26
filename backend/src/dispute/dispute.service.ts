@@ -1,7 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Dispute, DisputeStatus } from './entities/dispute.entity';
+import { Dispute, DisputeStatus, ALLOWED_DISPUTE_TRANSITIONS } from './entities/dispute.entity';
 import { DisputeReasonClassifierService } from './dispute-reason-classifier.service';
 import { CreateDisputeDto } from './dto/create-dispute.dto';
 import { DisputeResponseDto } from './dto/dispute-response.dto';
@@ -51,6 +51,13 @@ export class DisputeService {
       throw new NotFoundException(`Dispute ${id} not found`);
     }
 
+    const allowed = ALLOWED_DISPUTE_TRANSITIONS[dispute.status];
+    if (!allowed.includes(newStatus)) {
+      throw new BadRequestException(
+        `Invalid status transition from '${dispute.status}' to '${newStatus}'. Allowed: [${allowed.join(', ')}]`,
+      );
+    }
+
     const oldStatus = dispute.status;
     dispute.status = newStatus;
     await this.disputeRepo.save(dispute);
@@ -96,8 +103,8 @@ export class DisputeService {
       documentId: dispute.documentId,
       description: dispute.description,
       reason: dispute.reason,
-      filedBy: dispute.filedBy,
       status: dispute.status,
+      filedBy: dispute.filedBy,
       createdAt: dispute.createdAt,
     };
   }

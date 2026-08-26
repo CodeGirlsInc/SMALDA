@@ -16,6 +16,13 @@ export enum DisputeStatus {
   DISMISSED = 'dismissed',
 }
 
+export const ALLOWED_DISPUTE_TRANSITIONS: Record<DisputeStatus, DisputeStatus[]> = {
+  [DisputeStatus.OPEN]: [DisputeStatus.IN_REVIEW, DisputeStatus.DISMISSED],
+  [DisputeStatus.IN_REVIEW]: [DisputeStatus.RESOLVED, DisputeStatus.DISMISSED],
+  [DisputeStatus.RESOLVED]: [],
+  [DisputeStatus.DISMISSED]: [],
+};
+
 @Entity('disputes')
 @Index('IDX_DISPUTE_DOCUMENT', ['documentId'])
 @Index('IDX_DISPUTE_FILED_BY', ['filedBy'])

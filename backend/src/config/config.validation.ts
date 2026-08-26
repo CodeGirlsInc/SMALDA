@@ -157,4 +157,33 @@ export const ConfigValidationSchema = Joi.object({
       then: Joi.string().default('warn'),
       otherwise: Joi.string().default('debug'),
     }),
+
+  // ── Per-user upload quota ─────────────────────────────────────────────────
+  USER_DOCUMENT_QUOTA: Joi.number().default(20),
 });
+
+const REDACTED = '[REDACTED]';
+const SECRET_CONFIG_KEYS = new Set([
+  'STELLAR_SECRET_KEY',
+  'JWT_SECRET',
+  'JWT_REFRESH_SECRET',
+  'DATABASE_PASSWORD',
+  'REDIS_PASSWORD',
+  'MAIL_PASSWORD',
+  'SMTP_PASS',
+  'GOOGLE_CLIENT_SECRET',
+  'GITHUB_CLIENT_SECRET',
+]);
+
+/**
+ * Returns a safe copy of a validated config object with all sensitive keys
+ * replaced by '[REDACTED]'. Use this whenever the config must be serialized
+ * (e.g. for debug logging or error messages) so secrets never appear in logs.
+ */
+export function safeSerializeConfig(config: Record<string, unknown>): string {
+  const safe: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(config)) {
+    safe[key] = SECRET_CONFIG_KEYS.has(key) ? REDACTED : value;
+  }
+  return JSON.stringify(safe);
+}
