@@ -1,19 +1,14 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::IntoResponse,
     Json,
 };
 use chrono::{NaiveDate, Utc};
 use sha2::{Digest, Sha256};
 use tracing::warn;
 
-use crate::hash_validator::HashValidator;
 use crate::stellar::derive_account_id;
-use crate::types::{
-    map_validation_error, AppState, TransferRecord, TransferRequest, TransferResponse,
-    ValidationErrorResponse,
-};
+use crate::types::{AppState, TransferRecord, TransferRequest, TransferResponse};
 
 /// Compute deterministic transfer hash from core fields.
 ///
@@ -135,29 +130,4 @@ pub async fn get_transfer_history(
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
-}
-
-pub async fn transfer_document(Json(req): Json<TransferRequest>) -> impl IntoResponse {
-    let normalized_hash = HashValidator::normalize(&req.document_hash);
-    if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
-        let (status, body) = map_validation_error(err);
-        return (status, Json(body));
-    }
-
-    // Basic date validation: expect YYYY-MM-DD
-    if chrono::NaiveDate::parse_from_str(&req.transfer_date, "%Y-%m-%d").is_err() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ValidationErrorResponse {
-                error: "invalid date format, expected YYYY-MM-DD".to_string(),
-            }),
-        );
-    }
-
-    (
-        StatusCode::BAD_REQUEST,
-        Json(ValidationErrorResponse {
-            error: "transfer endpoint not yet implemented".to_string(),
-        }),
-    )
 }

@@ -1,0 +1,77 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { AuthController } from './auth.controller';
+import { AuthService } from './auth.service';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { RolesGuard } from './guards/roles.guard';
+
+describe('AuthController', () => {
+  let controller: AuthController;
+  let authService: AuthService;
+
+  const mockAuthService = {
+    register: jest.fn(),
+    login: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [AuthController],
+      providers: [
+        {
+          provide: AuthService,
+          useValue: mockAuthService,
+        },
+      ],
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(RolesGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
+
+    controller = module.get<AuthController>(AuthController);
+    authService = module.get<AuthService>(AuthService);
+  });
+
+  it('should be defined', () => {
+    expect(controller).toBeDefined();
+  });
+
+  describe('register', () => {
+    it('should call authService.register with the provided dto', async () => {
+      const registerDto = {
+        email: 'test@example.com',
+        password: 'password123',
+        name: 'Test User',
+      };
+      const user = { id: '1', ...registerDto };
+      mockAuthService.register.mockResolvedValue(user);
+
+      const result = await controller.register(registerDto);
+
+      expect(authService.register).toHaveBeenCalledWith(registerDto);
+      expect(result).toEqual(user);
+    });
+  });
+
+  describe('login', () => {
+    it('should call authService.login and return a token', async () => {
+      const req = { user: { id: '1', email: 'test@example.com' } };
+      const token = { access_token: 'jwt-token' };
+      mockAuthService.login.mockResolvedValue(token);
+
+      const result = await controller.login(req);
+
+      expect(authService.login).toHaveBeenCalledWith(req.user);
+      expect(result).toEqual(token);
+    });
+  });
+
+  describe('getProfile', () => {
+    it('should return the user from the request', () => {
+      const req = { user: { id: '1', email: 'test@example.com' } };
+      const result = controller.getProfile(req);
+      expect(result).toEqual(req.user);
+    });
+  });
+});

@@ -1,6 +1,10 @@
-import { BadRequestException, Injectable, PipeTransform } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  PipeTransform,
+} from '@nestjs/common';
 import { PDFDocument, PDFName } from 'pdf-lib';
-import sharp = require('sharp');
+const sharp = require('sharp') as (...args: any[]) => any;
 
 const ALLOWED_MIME_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;

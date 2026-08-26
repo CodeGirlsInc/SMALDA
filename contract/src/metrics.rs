@@ -1,4 +1,4 @@
-use prometheus::{Counter, Encoder, Gauge, Registry, TextEncoder};
+use prometheus::{opts, Counter, Encoder, Gauge, IntCounterVec, Registry, TextEncoder};
 
 #[derive(Clone)]
 pub struct MetricsRegistry {
@@ -7,6 +7,9 @@ pub struct MetricsRegistry {
     cache_hits: Counter,
     cache_misses: Counter,
     error_count: Counter,
+    /// Per-route request counts so /metrics can distinguish verify vs submit
+    /// vs revoke vs transfer volume, not just a single global counter (CT-40).
+    request_count_by_route: IntCounterVec,
     /// Horizon calls that triggered a retry (each retry occurrence counted).
     horizon_retries_total: Counter,
     /// Times the Horizon circuit breaker transitioned into the `Open` state.
@@ -28,6 +31,11 @@ impl MetricsRegistry {
         let cache_hits = Counter::new("cache_hits_total", "Total cache hits").unwrap();
         let cache_misses = Counter::new("cache_misses_total", "Total cache misses").unwrap();
         let error_count = Counter::new("errors_total", "Total errors").unwrap();
+        let request_count_by_route = IntCounterVec::new(
+            opts!("requests_total_by_route", "Total requests by route"),
+            &["route"],
+        )
+        .unwrap();
         let horizon_retries_total = Counter::new(
             "horizon_retries_total",
             "Total Horizon call retries triggered by the retry policy",
@@ -49,6 +57,9 @@ impl MetricsRegistry {
         registry.register(Box::new(cache_misses.clone())).unwrap();
         registry.register(Box::new(error_count.clone())).unwrap();
         registry
+            .register(Box::new(request_count_by_route.clone()))
+            .unwrap();
+        registry
             .register(Box::new(horizon_retries_total.clone()))
             .unwrap();
         registry
@@ -64,6 +75,7 @@ impl MetricsRegistry {
             cache_hits,
             cache_misses,
             error_count,
+            request_count_by_route,
             horizon_retries_total,
             horizon_circuit_opens_total,
             horizon_circuit_state,
@@ -72,6 +84,11 @@ impl MetricsRegistry {
 
     pub fn increment_request_count(&self) {
         self.request_count.inc();
+    }
+
+    /// Increment the per-route request counter (e.g. "verify", "submit").
+    pub fn increment_route_count(&self, route: &str) {
+        self.request_count_by_route.with_label_values(&[route]).inc();
     }
 
     pub fn increment_cache_hits(&self) {
@@ -159,6 +176,28 @@ mod tests {
         metrics.increment_error_count();
         let output = metrics.render();
         assert!(output.contains("errors_total 4"));
+    }
+
+    #[test]
+    fn test_increment_route_count() {
+        let metrics = MetricsRegistry::new();
+        metrics.increment_route_count("verify");
+        metrics.increment_route_count("verify");
+        metrics.increment_route_count("submit");
+        let output = metrics.render();
+        assert!(output.contains("requests_total_by_route{route=\"verify\"} 2"));
+        assert!(output.contains("requests_total_by_route{route=\"submit\"} 1"));
+    }
+
+    #[test]
+    fn test_route_counts_are_isolated_per_route() {
+        let metrics = MetricsRegistry::new();
+        metrics.increment_route_count("verify");
+        metrics.increment_route_count("transfer");
+        metrics.increment_route_count("transfer");
+        let output = metrics.render();
+        assert!(output.contains("requests_total_by_route{route=\"verify\"} 1"));
+        assert!(output.contains("requests_total_by_route{route=\"transfer\"} 2"));
     }
 
     #[test]
