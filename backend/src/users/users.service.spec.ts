@@ -92,4 +92,25 @@ describe('UsersService', () => {
       expect(userRepository.softDelete).toHaveBeenCalledWith('1');
     });
   });
+
+  describe('checkRateLimit()', () => {
+    it('should allow first request', () => {
+      expect(service.checkRateLimit('user-1')).toBe(true);
+    });
+
+    it('should block after exceeding rate limit', () => {
+      for (let i = 0; i < 30; i++) {
+        service.checkRateLimit('rate-limited-user');
+      }
+      expect(service.checkRateLimit('rate-limited-user')).toBe(false);
+    });
+
+    it('should track different users separately', () => {
+      for (let i = 0; i < 30; i++) {
+        service.checkRateLimit('user-a');
+      }
+      expect(service.checkRateLimit('user-a')).toBe(false);
+      expect(service.checkRateLimit('user-b')).toBe(true);
+    });
+  });
 });

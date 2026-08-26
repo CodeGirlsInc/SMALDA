@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -16,6 +17,7 @@ import { DocumentsService } from '../documents/documents.service';
 import { CreateDisputeDto } from './dto/create-dispute.dto';
 import { DisputeResponseDto } from './dto/dispute-response.dto';
 import { DisputeService } from './dispute.service';
+import { DisputeStatus } from './entities/dispute.entity';
 
 @Controller('disputes')
 @UseGuards(JwtAuthGuard)
@@ -72,5 +74,21 @@ export class DisputeController {
     }
 
     return dispute;
+  }
+
+  @Patch(':id/status')
+  async updateDisputeStatus(
+    @Param('id') id: string,
+    @Body('status') status: DisputeStatus,
+    @Req() req: Request & { user?: User },
+  ): Promise<DisputeResponseDto> {
+    const user = req.user!;
+    if (user.role !== 'admin') {
+      throw new ForbiddenException(
+        'Only administrators can update a dispute status',
+      );
+    }
+
+    return this.disputeService.updateStatus(id, status, user.id);
   }
 }
