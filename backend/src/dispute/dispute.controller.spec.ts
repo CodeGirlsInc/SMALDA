@@ -52,6 +52,7 @@ describe('DisputeController', () => {
       .compile();
 
     controller = module.get<DisputeController>(DisputeController);
+    service = module.get<DisputeService>(DisputeService);
   });
 
   it('should be defined', () => {

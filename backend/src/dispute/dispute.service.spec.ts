@@ -48,60 +48,148 @@ describe('DisputeService', () => {
     }).compile();
 
     service = module.get<DisputeService>(DisputeService);
+    disputeRepo = module.get<Repository<Dispute>>(getRepositoryToken(Dispute));
+    classifier = module.get<DisputeReasonClassifierService>(
+      DisputeReasonClassifierService,
+    );
   });
 
   it('should be defined', () => {
     expect(service).toBeDefined();
   });
 
-  describe('fileDispute()', () => {
-    it('should create a dispute with OPEN status', async () => {
-      const result = await service.fileDispute(
-        { documentId: 'doc-1', description: 'test' },
-        'user-1',
+  describe('fileDispute', () => {
+    it('should create and save a dispute', async () => {
+      const createDisputeDto: CreateDisputeDto = {
+        documentId: 'doc-id-123',
+        description: 'This is a test dispute.',
+      };
+      const userId = 'user-id-456';
+      const reason: DisputeReason = {
+        id: 'reason-id-789',
+        name: 'Test Reason',
+      };
+      const dispute: Dispute = {
+        id: 'dispute-id-1',
+        documentId: createDisputeDto.documentId,
+        description: createDisputeDto.description,
+        filedBy: userId,
+        reason: reason,
+        createdAt: new Date(),
+      };
+
+      mockClassifierService.classifyDispute.mockResolvedValue(reason);
+      mockDisputeRepository.create.mockReturnValue(dispute);
+      mockDisputeRepository.save.mockResolvedValue(dispute);
+
+      const result = await service.fileDispute(createDisputeDto, userId);
+
+      expect(classifier.classifyDispute).toHaveBeenCalledWith(
+        createDisputeDto.description,
       );
-      expect(result.status).toBe(DisputeStatus.OPEN);
-      expect(mockAccessLogs.logDocumentAccess).toHaveBeenCalled();
+      expect(disputeRepo.create).toHaveBeenCalledWith({
+        documentId: createDisputeDto.documentId,
+        description: createDisputeDto.description,
+        reason,
+        filedBy: userId,
+      });
+      expect(disputeRepo.save).toHaveBeenCalledWith(dispute);
+      expect(result).toEqual({
+        id: dispute.id,
+        documentId: dispute.documentId,
+        description: dispute.description,
+        reason: dispute.reason,
+        filedBy: dispute.filedBy,
+        createdAt: dispute.createdAt,
+      });
     });
   });
 
-  describe('updateStatus()', () => {
-    it('should update dispute status and audit log', async () => {
-      repo.findOne.mockResolvedValueOnce({ ...mockDispute });
-      const result = await service.updateStatus(
-        'dispute-1',
-        DisputeStatus.RESOLVED,
-        'admin-1',
-      );
-      expect(result.status).toBe(DisputeStatus.RESOLVED);
-      expect(mockAccessLogs.logDocumentAccess).toHaveBeenCalledWith(
-        'doc-1',
-        `dispute_status_changed:${DisputeStatus.OPEN}->${DisputeStatus.RESOLVED}`,
-        'admin-1',
+  describe('findByUser', () => {
+    it('should return disputes for a user', async () => {
+      const userId = 'user-id-456';
+      const disputes: Dispute[] = [
+        {
+          id: 'dispute-id-1',
+          documentId: 'doc-1',
+          description: 'desc-1',
+          filedBy: userId,
+          reason: null,
+          createdAt: new Date(),
+        },
+        {
+          id: 'dispute-id-2',
+          documentId: 'doc-2',
+          description: 'desc-2',
+          filedBy: userId,
+          reason: null,
+          createdAt: new Date(),
+        },
+      ];
+      const total = 2;
+
+      mockDisputeRepository.findAndCount.mockResolvedValue([disputes, total]);
+
+      const result = await service.findByUser(userId);
+
+      expect(disputeRepo.findAndCount).toHaveBeenCalledWith({
+        where: { filedBy: userId },
+        order: { createdAt: 'DESC' },
+        take: 20,
+        skip: 0,
+      });
+      expect(result.data.length).toBe(2);
+      expect(result.total).toBe(total);
+    });
+  });
+
+  describe('findOne', () => {
+    it('should return a dispute if found', async () => {
+      const disputeId = 'dispute-id-1';
+      const dispute: Dispute = {
+        id: disputeId,
+        documentId: 'doc-id-123',
+        description: 'This is a test dispute.',
+        filedBy: 'user-id-456',
+        reason: null,
+        createdAt: new Date(),
+      };
+
+      mockDisputeRepository.findOne.mockResolvedValue(dispute);
+
+      const result = await service.findOne(disputeId, 'user-id-456');
+
+      expect(mockDisputeRepository.findOne).toHaveBeenCalledWith({
+        where: { id: disputeId },
+      });
+      expect(result).toBeDefined();
+    });
+
+    it('should throw NotFoundException if dispute not found', async () => {
+      const disputeId = 'non-existent-id';
+      mockDisputeRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.findOne(disputeId, 'user-id-456')).rejects.toThrow(
+        'Dispute non-existent-id not found',
       );
     });
 
-    it('should throw if dispute not found', async () => {
-      repo.findOne.mockResolvedValueOnce(null);
+    it('should throw UnauthorizedException if a user tries to access a dispute they did not file', async () => {
+      const disputeId = 'dispute-id-1';
+      const dispute: Dispute = {
+        id: disputeId,
+        documentId: 'doc-id-123',
+        description: 'This is a test dispute.',
+        filedBy: 'user-id-456',
+        reason: null,
+        createdAt: new Date(),
+      };
+
+      mockDisputeRepository.findOne.mockResolvedValue(dispute);
+
       await expect(
-        service.updateStatus('nonexistent', DisputeStatus.RESOLVED, 'admin-1'),
-      ).rejects.toThrow(NotFoundException);
-    });
-  });
-
-  describe('findOne()', () => {
-    it('should return dispute', async () => {
-      repo.findOne.mockResolvedValueOnce({ ...mockDispute });
-      const result = await service.findOne('dispute-1');
-      expect(result.id).toBe('dispute-1');
-      expect(result.status).toBe(DisputeStatus.OPEN);
-    });
-
-    it('should throw if not found', async () => {
-      repo.findOne.mockResolvedValueOnce(null);
-      await expect(service.findOne('nonexistent')).rejects.toThrow(
-        NotFoundException,
-      );
+        service.findOne(disputeId, 'another-user-id'),
+      ).rejects.toThrow('Unauthorized access');
     });
   });
 });

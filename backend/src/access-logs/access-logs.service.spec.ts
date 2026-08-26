@@ -41,12 +41,16 @@ describe('AccessLogsService', () => {
         AccessLogsService,
         {
           provide: getRepositoryToken(AccessLog),
+          useValue: mockAccessLogRepository,
           useValue: mockRepository,
         },
       ],
     }).compile();
 
     service = module.get<AccessLogsService>(AccessLogsService);
+    repository = module.get<Repository<AccessLog>>(
+      getRepositoryToken(AccessLog),
+    );
     jest.clearAllMocks();
   });
 

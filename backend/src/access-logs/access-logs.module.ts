@@ -1,3 +1,4 @@
+```
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AccessLog } from './entities/access-log.entity';
@@ -6,8 +7,10 @@ import { AccessLogsController } from './access-logs.controller';
 
 @Module({
   imports: [TypeOrmModule.forFeature([AccessLog])],
-  controllers: [AccessLogsController],
   providers: [AccessLogsService],
+  controllers: [AccessLogsController],
   exports: [AccessLogsService],
 })
 export class AccessLogsModule {}
+
+```;

@@ -1,3 +1,8 @@
+import {
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -89,10 +94,13 @@ export class DisputeService {
     };
   }
 
-  async findOne(id: string): Promise<DisputeResponseDto> {
+  async findOne(id: string, userId: string): Promise<DisputeResponseDto> {
     const dispute = await this.disputeRepo.findOne({ where: { id } });
     if (!dispute) {
       throw new NotFoundException(`Dispute ${id} not found`);
+    }
+    if (dispute.filedBy !== userId) {
+      throw new UnauthorizedException('Unauthorized access');
     }
     return this.toResponseDto(dispute);
   }
