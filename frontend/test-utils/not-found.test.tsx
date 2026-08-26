@@ -34,6 +34,7 @@ describe("not-found boundaries", () => {
 
     expect(screen.getByText("The page you are looking for could not be found.")).toBeInTheDocument();
     expect(screen.getByText("The requested document was not found.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Go back home" })).toHaveAttribute("href", "/fr");
   });
 
   it("renders the document boundary with the same branded structure", () => {

@@ -16,6 +16,7 @@ export default async function NotFound({
     <NotFoundContent
       description={t("description")}
       homeLabel={t("home")}
+      homeHref={locale === "en" ? "/" : `/${locale}`}
       detailDescription={t("docNotFoundDescription")}
     />
   );
