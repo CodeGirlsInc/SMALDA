@@ -176,4 +176,8 @@ export class AuthService {
   private getRefreshExpiration() {
     return this.configService.get<string>('JWT_REFRESH_EXPIRATION') ?? '7d';
   }
+
+  private getAccessExpiration() {
+    return this.configService.get<string>('JWT_EXPIRATION') ?? '15m';
+  }
 }

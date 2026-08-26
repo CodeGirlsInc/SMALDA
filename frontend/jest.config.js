@@ -18,6 +18,7 @@ const config = {
     "**/test-utils/**/*.test.{ts,tsx}",
     "**/components/**/*.test.{ts,tsx}",
     "**/lib/**/*.test.{ts,tsx}",
+    "**/i18n/**/*.test.{ts,tsx}",
   ],
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/$1",
