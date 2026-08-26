@@ -87,4 +87,12 @@ export class ActivityTrackerService {
       order: { timestamp: 'DESC' },
     });
   }
+
+  async findAll(action:string):promise<Activity {
+    return this.activityRepository.find({
+      where: { actionType },
+      order: { timestamp: 'DESC' },
+    });
+
+  }
 }
