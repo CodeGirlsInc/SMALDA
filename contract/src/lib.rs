@@ -217,6 +217,7 @@ fn map_validation_error(err: HashValidationError) -> (StatusCode, ValidationErro
             "hash contains invalid character '{}' at position {}",
             character, position
         ),
+        HashValidationError::InvalidUtf8 => "hash contains invalid UTF-8 bytes".to_string(),
     };
 
     (
@@ -733,6 +734,7 @@ async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
                 "hash contains invalid character '{}' at position {}",
                 character, position
             ),
+            HashValidationError::InvalidUtf8 => "hash contains invalid UTF-8 bytes".to_string(),
         };
 
         return BatchVerifyItem {

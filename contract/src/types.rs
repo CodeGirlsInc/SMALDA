@@ -149,6 +149,7 @@ pub fn map_validation_error(err: HashValidationError) -> (StatusCode, Validation
             "hash contains invalid character '{}' at position {}",
             character, position
         ),
+        HashValidationError::InvalidUtf8 => "hash contains invalid UTF-8 bytes".to_string(),
     };
 
     (
