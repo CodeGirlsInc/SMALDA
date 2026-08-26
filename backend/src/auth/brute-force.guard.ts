@@ -10,11 +10,11 @@ import Redis from 'ioredis';
 const LOCKOUT_PREFIX = 'brute:lock:';
 const ATTEMPTS_PREFIX = 'brute:attempts:';
 const MAX_ATTEMPTS = 5;
-const LOCK_TIME_SECONDS = 15 * 60; // 15 minutes
 
 @Injectable()
 export class BruteForceGuard implements CanActivate {
   private readonly redis: Redis;
+  private readonly lockTimeSeconds: number;
 
   constructor(private readonly configService: ConfigService) {
     const host = this.configService.get<string>('REDIS_HOST') || '127.0.0.1';
@@ -22,6 +22,12 @@ export class BruteForceGuard implements CanActivate {
     const password =
       this.configService.get<string>('REDIS_PASSWORD') || undefined;
     this.redis = new Redis({ host, port, password });
+
+    const lockMinutes = parseInt(
+      this.configService.get<string>('BRUTE_FORCE_LOCK_MINUTES', '15'),
+      10,
+    );
+    this.lockTimeSeconds = lockMinutes * 60;
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -44,11 +50,11 @@ export class BruteForceGuard implements CanActivate {
   async recordFailedLogin(email: string): Promise<void> {
     const attemptsKey = `${ATTEMPTS_PREFIX}${email}`;
     const count = await this.redis.incr(attemptsKey);
-    await this.redis.expire(attemptsKey, LOCK_TIME_SECONDS);
+    await this.redis.expire(attemptsKey, this.lockTimeSeconds);
 
     if (count >= MAX_ATTEMPTS) {
       const lockKey = `${LOCKOUT_PREFIX}${email}`;
-      await this.redis.setex(lockKey, LOCK_TIME_SECONDS, 'locked');
+      await this.redis.setex(lockKey, this.lockTimeSeconds, 'locked');
     }
   }
 

@@ -14,8 +14,8 @@ export class RiskAssessmentController {
 
   @Get(':id/risk')
   @UseGuards(JwtAuthGuard)
-  async getRisk(@Param('id') id: string) {
-    return this.riskService.assessDocument(id);
+  async getRisk(@Param('id') id: string, @Query('lang') lang?: string) {
+    return this.riskService.assessDocument(id, lang);
   }
 
   @Get('risk-assessments')

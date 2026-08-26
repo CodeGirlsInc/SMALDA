@@ -21,7 +21,11 @@ jest.mock('typeorm', () => ({
   Index: () => () => {},
 }));
 
-import { RiskAssessmentService, RiskFlag } from './risk-assessment.service';
+import {
+  RiskAssessmentService,
+  RiskFlag,
+  RISK_FLAG_DESCRIPTIONS,
+} from './risk-assessment.service';
 import { DocumentsService } from '../documents/documents.service';
 import { DocumentStatus } from '../documents/entities/document.entity';
 
@@ -157,7 +161,7 @@ describe('RiskAssessmentService', () => {
       mockDocumentsService.findById.mockResolvedValue(doc);
 
       const result = await service.assessDocument('doc-1');
-      expect(result.flags).toContain(RiskFlag.MISSING_PARCEL_ID);
+      expect(result.flags.map((f: any) => f.flag)).toContain(RiskFlag.MISSING_PARCEL_ID);
     });
 
     it('should not flag a document whose title contains digits (non-PDF fallback)', async () => {
@@ -168,7 +172,7 @@ describe('RiskAssessmentService', () => {
       mockDocumentsService.findById.mockResolvedValue(doc);
 
       const result = await service.assessDocument('doc-1');
-      expect(result.flags).not.toContain(RiskFlag.MISSING_PARCEL_ID);
+      expect(result.flags.map((f: any) => f.flag)).not.toContain(RiskFlag.MISSING_PARCEL_ID);
     });
   });
 
@@ -185,7 +189,7 @@ describe('RiskAssessmentService', () => {
       ]);
 
       const result = await service.assessDocument('doc-1');
-      expect(result.flags).toContain(RiskFlag.OVERLAPPING_CLAIM);
+      expect(result.flags.map((f: any) => f.flag)).toContain(RiskFlag.OVERLAPPING_CLAIM);
     });
 
     it('should not flag when owner has no other documents', async () => {
@@ -197,7 +201,7 @@ describe('RiskAssessmentService', () => {
       mockDocumentsService.findByOwner.mockResolvedValue([doc]);
 
       const result = await service.assessDocument('doc-1');
-      expect(result.flags).not.toContain(RiskFlag.OVERLAPPING_CLAIM);
+      expect(result.flags.map((f: any) => f.flag)).not.toContain(RiskFlag.OVERLAPPING_CLAIM);
     });
 
     it('should flag when a nearby document exists within proximity radius', async () => {
@@ -217,7 +221,7 @@ describe('RiskAssessmentService', () => {
       ]);
 
       const result = await service.assessDocument('doc-1');
-      expect(result.flags).toContain(RiskFlag.OVERLAPPING_CLAIM);
+      expect(result.flags.map((f: any) => f.flag)).toContain(RiskFlag.OVERLAPPING_CLAIM);
     });
 
     it('should not flag when no other documents are nearby', async () => {
@@ -237,7 +241,7 @@ describe('RiskAssessmentService', () => {
       ]);
 
       const result = await service.assessDocument('doc-1');
-      expect(result.flags).not.toContain(RiskFlag.OVERLAPPING_CLAIM);
+      expect(result.flags.map((f: any) => f.flag)).not.toContain(RiskFlag.OVERLAPPING_CLAIM);
     });
   });
 
@@ -250,7 +254,7 @@ describe('RiskAssessmentService', () => {
       mockDocumentsService.findById.mockResolvedValue(doc);
 
       const result = await service.assessDocument('doc-1');
-      expect(result.flags).toContain(RiskFlag.FORGED_SIGNATURE_INDICATOR);
+      expect(result.flags.map((f: any) => f.flag)).toContain(RiskFlag.FORGED_SIGNATURE_INDICATOR);
     });
 
     it('should not flag a normal-sized PDF', async () => {
@@ -261,7 +265,7 @@ describe('RiskAssessmentService', () => {
       mockDocumentsService.findById.mockResolvedValue(doc);
 
       const result = await service.assessDocument('doc-1');
-      expect(result.flags).not.toContain(RiskFlag.FORGED_SIGNATURE_INDICATOR);
+      expect(result.flags.map((f: any) => f.flag)).not.toContain(RiskFlag.FORGED_SIGNATURE_INDICATOR);
     });
   });
 
@@ -274,7 +278,7 @@ describe('RiskAssessmentService', () => {
       mockDocumentsService.findById.mockResolvedValue(doc);
 
       const result = await service.assessDocument('doc-1');
-      expect(result.flags).toContain(RiskFlag.EXPIRED_DOCUMENT);
+      expect(result.flags.map((f: any) => f.flag)).toContain(RiskFlag.EXPIRED_DOCUMENT);
     });
 
     it('should not flag a non-PDF document without "expired" in title', async () => {
@@ -285,7 +289,7 @@ describe('RiskAssessmentService', () => {
       mockDocumentsService.findById.mockResolvedValue(doc);
 
       const result = await service.assessDocument('doc-1');
-      expect(result.flags).not.toContain(RiskFlag.EXPIRED_DOCUMENT);
+      expect(result.flags.map((f: any) => f.flag)).not.toContain(RiskFlag.EXPIRED_DOCUMENT);
     });
   });
 
@@ -295,7 +299,7 @@ describe('RiskAssessmentService', () => {
       mockDocumentsService.findById.mockResolvedValue(doc);
 
       const result = await service.assessDocument('doc-1');
-      expect(result.flags).toContain(RiskFlag.INCOMPLETE_OWNERSHIP_CHAIN);
+      expect(result.flags.map((f: any) => f.flag)).toContain(RiskFlag.INCOMPLETE_OWNERSHIP_CHAIN);
     });
 
     it('should not flag when title is long enough (>= 12 chars)', async () => {
@@ -315,7 +319,7 @@ describe('RiskAssessmentService', () => {
       mockDocumentsService.findById.mockResolvedValue(doc);
 
       const result = await service.assessDocument('doc-1');
-      expect(result.flags).toContain(RiskFlag.INCOMPLETE_OWNERSHIP_CHAIN);
+      expect(result.flags.map((f: any) => f.flag)).toContain(RiskFlag.INCOMPLETE_OWNERSHIP_CHAIN);
     });
   });
 
@@ -328,7 +332,7 @@ describe('RiskAssessmentService', () => {
       mockDocumentsService.findById.mockResolvedValue(doc);
 
       const result = await service.assessDocument('doc-1');
-      expect(result.flags).toContain(RiskFlag.UNKNOWN_ISSUER);
+      expect(result.flags.map((f: any) => f.flag)).toContain(RiskFlag.UNKNOWN_ISSUER);
     });
 
     it('should not flag a non-PDF document whose title contains "issued"', async () => {
@@ -339,7 +343,7 @@ describe('RiskAssessmentService', () => {
       mockDocumentsService.findById.mockResolvedValue(doc);
 
       const result = await service.assessDocument('doc-1');
-      expect(result.flags).not.toContain(RiskFlag.UNKNOWN_ISSUER);
+      expect(result.flags.map((f: any) => f.flag)).not.toContain(RiskFlag.UNKNOWN_ISSUER);
     });
   });
 
@@ -377,9 +381,9 @@ describe('RiskAssessmentService', () => {
       mockDocumentsService.findByOwner.mockResolvedValue([doc]);
 
       const result = await service.assessDocument('doc-1');
-      expect(result.flags).toContain(RiskFlag.INCOMPLETE_OWNERSHIP_CHAIN);
-      expect(result.flags).toContain(RiskFlag.UNKNOWN_ISSUER);
-      expect(result.flags).not.toContain(RiskFlag.MISSING_PARCEL_ID);
+      expect(result.flags.map((f: any) => f.flag)).toContain(RiskFlag.INCOMPLETE_OWNERSHIP_CHAIN);
+      expect(result.flags.map((f: any) => f.flag)).toContain(RiskFlag.UNKNOWN_ISSUER);
+      expect(result.flags.map((f: any) => f.flag)).not.toContain(RiskFlag.MISSING_PARCEL_ID);
       expect(result.score).toBe(20);
     });
 
@@ -486,5 +490,35 @@ describe('RiskAssessmentService', () => {
       expect(result.flags.length).toBeGreaterThanOrEqual(4);
       expect(result.score).toBeGreaterThan(0);
     });
+  });
+});
+
+// ───────────────────────────────────────────────────────────
+// Risk flag localization
+// ───────────────────────────────────────────────────────────
+
+describe('Risk flag localization', () => {
+  it('should have descriptions for all risk flags', () => {
+    const flags = Object.values(RiskFlag);
+    for (const flag of flags) {
+      expect(RISK_FLAG_DESCRIPTIONS[flag]).toBeDefined();
+      expect(RISK_FLAG_DESCRIPTIONS[flag]['en']).toBeDefined();
+      expect(RISK_FLAG_DESCRIPTIONS[flag]['fr']).toBeDefined();
+      expect(RISK_FLAG_DESCRIPTIONS[flag]['es']).toBeDefined();
+    }
+  });
+
+  it('should have non-empty descriptions', () => {
+    for (const [flag, descriptions] of Object.entries(RISK_FLAG_DESCRIPTIONS)) {
+      for (const [lang, desc] of Object.entries(descriptions)) {
+        expect(desc.trim().length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('should return English description for unknown locale', () => {
+    const desc = RISK_FLAG_DESCRIPTIONS[RiskFlag.MISSING_PARCEL_ID];
+    expect(desc['xx']).toBeUndefined();
+    expect(desc['en']).toContain('parcel');
   });
 });
