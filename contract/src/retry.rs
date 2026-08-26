@@ -184,20 +184,25 @@ impl CircuitBreaker {
     /// Decide whether a call may proceed:
     ///
     /// * `Closed` -> admit.
-    /// * `Open` & cooldown elapsed -> transition to `HalfOpen` and admit.
+    /// * `Open` & cooldown elapsed -> atomically transition to `HalfOpen` and admit (single probe).
     /// * `Open` & cooldown not elapsed -> reject.
-    /// * `HalfOpen` -> admit (probe).
+    /// * `HalfOpen` -> reject (a trial request is already in-flight; prevents flood).
     pub fn try_admit(&self) -> bool {
         match self.state() {
             CircuitState::Closed => true,
-            CircuitState::HalfOpen => true,
+            CircuitState::HalfOpen => false,
             CircuitState::Open => {
                 let opened = self.opened_at_ms.load(Ordering::Acquire);
                 let now_ms = unix_ms();
                 if now_ms.saturating_sub(opened) >= self.cooldown.as_millis() as u64 {
                     self.state
-                        .store(CircuitState::HalfOpen.as_u8(), Ordering::Release);
-                    true
+                        .compare_exchange(
+                            CircuitState::Open.as_u8(),
+                            CircuitState::HalfOpen.as_u8(),
+                            Ordering::AcqRel,
+                            Ordering::Acquire,
+                        )
+                        .is_ok()
                 } else {
                     false
                 }
@@ -213,11 +218,13 @@ impl CircuitBreaker {
     }
 
     /// Record a failed invocation; on `failure_threshold` consecutive
-    /// failures the breaker opens and records the timestamp.
+    /// failures (or when failing a probe in `HalfOpen`), the breaker opens
+    /// and records the timestamp.
     /// Returns `true` if this call opened the breaker.
     pub fn on_failure(&self) -> bool {
         let n = self.consecutive_failures.fetch_add(1, Ordering::AcqRel) + 1;
-        if n >= self.failure_threshold && self.state() != CircuitState::Open {
+        let is_half_open = self.state() == CircuitState::HalfOpen;
+        if (n >= self.failure_threshold || is_half_open) && self.state() != CircuitState::Open {
             self.state
                 .store(CircuitState::Open.as_u8(), Ordering::Release);
             self.opened_at_ms.store(unix_ms(), Ordering::Release);
@@ -228,6 +235,14 @@ impl CircuitBreaker {
 
     pub fn is_open(&self) -> bool {
         self.state() == CircuitState::Open
+    }
+
+    pub fn is_half_open(&self) -> bool {
+        self.state() == CircuitState::HalfOpen
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.state() == CircuitState::Closed
     }
 
     pub fn failures(&self) -> u32 {
@@ -421,6 +436,115 @@ mod tests {
         assert!(cb.try_admit());
         assert!(cb.on_failure());
         assert_eq!(cb.state(), CircuitState::Open);
+    }
+
+    #[tokio::test]
+    async fn circuit_half_open_transition_closed_to_open_to_half_open_to_closed() {
+        let cb = CircuitBreaker::new(3, Duration::from_millis(50));
+        assert_eq!(cb.state(), CircuitState::Closed);
+        assert!(cb.is_closed());
+
+        // 1. Drive Closed -> Open via failures
+        assert!(!cb.on_failure());
+        assert!(!cb.on_failure());
+        assert!(cb.on_failure());
+        assert_eq!(cb.state(), CircuitState::Open);
+        assert!(cb.is_open());
+
+        // During cooldown, all calls rejected
+        assert!(!cb.try_admit());
+
+        // Wait for cooldown to elapse
+        tokio::time::sleep(Duration::from_millis(60)).await;
+
+        // 2. First call transitions Open -> HalfOpen and is admitted as single trial request
+        assert!(cb.try_admit());
+        assert_eq!(cb.state(), CircuitState::HalfOpen);
+        assert!(cb.is_half_open());
+        assert_eq!(cb.state_label(), "half_open");
+
+        // 3. Assert ONLY ONE trial request is allowed through during HalfOpen (prevent flood)
+        for _ in 0..20 {
+            assert!(
+                !cb.try_admit(),
+                "HalfOpen state must reject subsequent calls while trial request is in-flight"
+            );
+        }
+
+        // 4. On trial success, breaker transitions HalfOpen -> Closed
+        cb.on_success();
+        assert_eq!(cb.state(), CircuitState::Closed);
+        assert!(cb.is_closed());
+        assert_eq!(cb.failures(), 0);
+
+        // Calls now flow through freely
+        for _ in 0..10 {
+            assert!(cb.try_admit());
+        }
+    }
+
+    #[tokio::test]
+    async fn circuit_half_open_transition_closed_to_open_to_half_open_back_to_open() {
+        let cb = CircuitBreaker::new(3, Duration::from_millis(50));
+        assert_eq!(cb.state(), CircuitState::Closed);
+
+        // 1. Drive Closed -> Open via failures
+        cb.on_failure();
+        cb.on_failure();
+        cb.on_failure();
+        assert_eq!(cb.state(), CircuitState::Open);
+
+        // Wait for cooldown
+        tokio::time::sleep(Duration::from_millis(60)).await;
+
+        // 2. Single trial request admitted -> HalfOpen
+        assert!(cb.try_admit());
+        assert_eq!(cb.state(), CircuitState::HalfOpen);
+
+        // Flood attempts while in HalfOpen are rejected
+        assert!(!cb.try_admit());
+        assert!(!cb.try_admit());
+
+        // 3. On trial failure, breaker transitions back to Open
+        assert!(cb.on_failure());
+        assert_eq!(cb.state(), CircuitState::Open);
+        assert!(cb.is_open());
+
+        // Re-opens and rejects requests during the new cooldown
+        assert!(!cb.try_admit());
+    }
+
+    #[tokio::test]
+    async fn circuit_half_open_concurrent_flood_admits_strictly_one_trial_request() {
+        let cb = CircuitBreaker::new(2, Duration::from_millis(50));
+        cb.on_failure();
+        cb.on_failure();
+        assert_eq!(cb.state(), CircuitState::Open);
+
+        tokio::time::sleep(Duration::from_millis(60)).await;
+
+        // Launch 50 concurrent tasks trying to admit simultaneously
+        let mut handles = Vec::new();
+        for _ in 0..50 {
+            let cb_clone = cb.clone();
+            handles.push(tokio::spawn(async move {
+                cb_clone.try_admit()
+            }));
+        }
+
+        let mut admitted = 0;
+        for h in handles {
+            if h.await.unwrap() {
+                admitted += 1;
+            }
+        }
+
+        // Exactly one trial request is admitted
+        assert_eq!(
+            admitted, 1,
+            "Only one trial request must be admitted during half-open, not a flood"
+        );
+        assert_eq!(cb.state(), CircuitState::HalfOpen);
     }
 
     #[tokio::test]

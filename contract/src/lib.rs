@@ -392,6 +392,12 @@ pub async fn record_transfer(
     state.metrics.increment_request_count();
     state.metrics.increment_route_count("transfer");
 
+    let normalized_hash = HashValidator::normalize(&req.document_hash);
+    if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
+        let (status, body) = map_validation_error(err);
+        return Err((status, Json(body)));
+    }
+
     if !is_valid_iso8601_date(&req.transfer_date) {
         return Err((
             StatusCode::BAD_REQUEST,

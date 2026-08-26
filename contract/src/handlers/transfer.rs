@@ -7,6 +7,7 @@ use chrono::{NaiveDate, Utc};
 use sha2::{Digest, Sha256};
 use tracing::warn;
 
+use crate::hash_validator::HashValidator;
 use crate::stellar::derive_account_id;
 use crate::types::{AppState, TransferRecord, TransferRequest, TransferResponse};
 
@@ -49,6 +50,11 @@ pub async fn record_transfer(
     State(state): State<AppState>,
     Json(req): Json<TransferRequest>,
 ) -> Result<Json<TransferResponse>, StatusCode> {
+    let normalized_hash = HashValidator::normalize(&req.document_hash);
+    if HashValidator::validate_sha256(&normalized_hash).is_err() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
     if !is_valid_iso8601_date(&req.transfer_date) {
         return Err(StatusCode::BAD_REQUEST);
     }
