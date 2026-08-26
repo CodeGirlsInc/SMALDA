@@ -19,6 +19,10 @@ describe('RolesGuard', () => {
     guard = new RolesGuard(reflector, null as any, null as any);
   });
 
+  it('should be defined', () => {
+    expect(guard).toBeDefined();
+  });
+
   it('should allow access when no roles are required', async () => {
     jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(undefined);
     expect(await guard.canActivate(mockContext({ role: 'user' }))).toBe(true);
