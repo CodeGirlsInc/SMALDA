@@ -5,6 +5,7 @@
   Index,
   ManyToOne,
   PrimaryGeneratedColumn,
+  Unique,
 } from 'typeorm';
 import { Document } from '../../documents/entities/document.entity';
 
@@ -16,6 +17,7 @@ export enum VerificationStatus {
 
 @Entity('verification_records')
 @Index('IDX_VERIFICATION_RECORD_DOCUMENT', ['documentId'])
+@Unique('UQ_VERIFICATION_ACTIVE_DOCUMENT', ['documentId', 'status'])
 export class VerificationRecord {
   @PrimaryGeneratedColumn('uuid')
   id: string;

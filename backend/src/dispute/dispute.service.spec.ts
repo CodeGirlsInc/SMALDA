@@ -1,40 +1,49 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Dispute } from './entities/dispute.entity';
 import { DisputeService } from './dispute.service';
+import { Dispute, DisputeStatus } from './entities/dispute.entity';
 import { DisputeReasonClassifierService } from './dispute-reason-classifier.service';
-import { CreateDisputeDto } from './dto/create-dispute.dto';
-import { DisputeReason } from './entities/dispute-reason.entity';
+import { AccessLogsService } from '../access-logs/access-logs.service';
+import { NotFoundException } from '@nestjs/common';
+
+const mockDispute = {
+  id: 'dispute-1',
+  documentId: 'doc-1',
+  description: 'Invalid signature',
+  reason: null,
+  filedBy: 'user-1',
+  status: DisputeStatus.OPEN,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+
+const mockRepo = () => ({
+  create: jest.fn().mockReturnValue(mockDispute),
+  save: jest.fn().mockResolvedValue(mockDispute),
+  findAndCount: jest.fn().mockResolvedValue([[mockDispute], 1]),
+  findOne: jest.fn().mockResolvedValue(null),
+});
+
+const mockClassifier = {
+  classifyDispute: jest.fn().mockResolvedValue(null),
+};
+
+const mockAccessLogs = {
+  logDocumentAccess: jest.fn().mockResolvedValue(undefined),
+};
 
 describe('DisputeService', () => {
   let service: DisputeService;
-  let disputeRepo: Repository<Dispute>;
-  let classifier: DisputeReasonClassifierService;
-
-  const mockDisputeRepository = {
-    create: jest.fn(),
-    save: jest.fn(),
-    findAndCount: jest.fn(),
-    findOne: jest.fn(),
-  };
-
-  const mockClassifierService = {
-    classifyDispute: jest.fn(),
-  };
+  let repo: ReturnType<typeof mockRepo>;
 
   beforeEach(async () => {
+    repo = mockRepo();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DisputeService,
-        {
-          provide: getRepositoryToken(Dispute),
-          useValue: mockDisputeRepository,
-        },
-        {
-          provide: DisputeReasonClassifierService,
-          useValue: mockClassifierService,
-        },
+        { provide: getRepositoryToken(Dispute), useValue: repo },
+        { provide: DisputeReasonClassifierService, useValue: mockClassifier },
+        { provide: AccessLogsService, useValue: mockAccessLogs },
       ],
     }).compile();
 

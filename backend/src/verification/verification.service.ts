@@ -1,4 +1,4 @@
-﻿import { Injectable } from '@nestjs/common';
+﻿import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
@@ -14,7 +14,22 @@ export class VerificationService {
     private readonly verificationRepository: Repository<VerificationRecord>,
   ) {}
 
-  create(payload: Partial<VerificationRecord>): Promise<VerificationRecord> {
+  async create(payload: Partial<VerificationRecord>): Promise<VerificationRecord> {
+    if (payload.status === VerificationStatus.CONFIRMED) {
+      const existing = await this.verificationRepository.findOne({
+        where: {
+          documentId: payload.documentId,
+          status: VerificationStatus.CONFIRMED,
+        },
+      });
+
+      if (existing) {
+        throw new ConflictException(
+          'Document already has an active verification record',
+        );
+      }
+    }
+
     const record = this.verificationRepository.create(payload);
     return this.verificationRepository.save(record);
   }

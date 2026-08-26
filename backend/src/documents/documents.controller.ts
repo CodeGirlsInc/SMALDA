@@ -7,6 +7,7 @@ import {
   NotFoundException,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Req,
@@ -37,6 +38,7 @@ import { DocumentResponseDto } from './dto/document-response.dto';
 
 const ALLOWED_MIME_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
+const DEFAULT_USER_QUOTA = 20;
 
 const multerStorage = multer.memoryStorage();
 
@@ -83,6 +85,15 @@ export class DocumentsController {
       throw new BadRequestException('Authenticated user is required');
     }
 
+    const userQuota =
+      this.configService.get<number>('USER_DOCUMENT_QUOTA') ?? DEFAULT_USER_QUOTA;
+    const existingDocs = await this.documentsService.findByOwner(user.id);
+    if (existingDocs.length >= userQuota) {
+      throw new BadRequestException(
+        `Upload quota exceeded. Each user may store at most ${userQuota} documents.`,
+      );
+    }
+
     const fileHash = createHash('sha256').update(file.buffer).digest('hex');
     const existing = await this.documentsService.findByFileHash(fileHash);
     if (existing) {
@@ -110,7 +121,7 @@ export class DocumentsController {
       status: DocumentStatus.PENDING,
     });
 
-    await this.queueService.enqueueAnalyze(document.id, req.requestId);
+    await this.queueService.enqueueAnalyze(document.id, (req as any).requestId);
     return res.status(202).send(document);
   }
 
@@ -172,7 +183,7 @@ export class DocumentsController {
       throw new ConflictException('Document has already been verified');
     }
 
-    await this.queueService.enqueueAnchor(document.id, req.requestId);
+    await this.queueService.enqueueAnchor(document.id, (req as any).requestId);
 
     return res.status(202).json({
       message: 'Verification queued',
@@ -196,6 +207,26 @@ export class DocumentsController {
     }
 
     return record;
+  }
+
+  @Patch(':id/revoke')
+  @UseGuards(JwtAuthGuard)
+  async revokeAccess(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request & { user?: User },
+  ) {
+    const document = await this.documentsService.findById(id);
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+
+    const user = req.user!;
+    if (document.ownerId !== user.id && user.role !== 'admin') {
+      throw new ForbiddenException('Access denied');
+    }
+
+    const updated = await this.documentsService.revokeAccess(id);
+    return { message: 'Access revoked', documentId: updated?.id, status: updated?.status };
   }
 
   @Get(':id/download')
