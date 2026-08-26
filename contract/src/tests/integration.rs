@@ -365,3 +365,39 @@ async fn revoke_unanchored_hash_returns_404_without_leaking() {
     assert_no_internal_detail(&raw);
     assert!(raw.contains("request_id"));
 }
+
+#[tokio::test]
+async fn transfer_of_revoked_hash_returns_409() {
+    let state = make_state("http://127.0.0.1:1");
+    state
+        .cache
+        .set(
+            &format!("stellar:verify:{SAMPLE_HASH}"),
+            &json!({
+                "verified": true,
+                "transaction_id": null,
+                "timestamp": null,
+                "cached": false,
+                "revoked": true,
+                "revoked_at": 1
+            }),
+            3600,
+        )
+        .await
+        .unwrap();
+    let server = TestServer::new(app(state)).unwrap();
+
+    let resp = server
+        .post("/transfer")
+        .json(&json!({
+            "document_hash": SAMPLE_HASH,
+            "from_owner": "Alice",
+            "to_owner": "Bob",
+            "transfer_date": "2025-01-01",
+            "transfer_reference": "REF"
+        }))
+        .await;
+
+    resp.assert_status(StatusCode::CONFLICT);
+    assert!(resp.text().contains("has been revoked"));
+}

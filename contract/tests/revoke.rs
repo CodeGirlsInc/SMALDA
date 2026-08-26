@@ -67,6 +67,32 @@ async fn revoke_unanchored_hash_returns_404() {
 }
 
 #[tokio::test]
+async fn revoke_already_revoked_hash_returns_409() {
+    let state = test_state("https://horizon-testnet.stellar.org");
+    state
+        .cache
+        .set(
+            &format!("stellar:verify:{}", valid_hash()),
+            &VerifyResponse {
+                verified: true,
+                transaction_id: Some("txhash".to_string()),
+                timestamp: Some(1),
+                cached: false,
+                revoked: Some(true),
+                revoked_at: Some(2),
+            },
+            3600,
+        )
+        .await
+        .unwrap();
+    let server = TestServer::new(app(state)).unwrap();
+
+    let response = server.post("/revoke").json(&revoke_body(&valid_hash())).await;
+    assert_eq!(response.status_code(), 409);
+    assert!(response.text().contains("already revoked"));
+}
+
+#[tokio::test]
 async fn revoke_then_verify_shows_revoked_state() {
     let mock_server = MockServer::start();
 

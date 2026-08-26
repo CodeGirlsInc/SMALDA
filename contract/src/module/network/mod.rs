@@ -10,6 +10,7 @@ use std::env;
 
 use axum::{http::StatusCode, response::IntoResponse, Json};
 use serde::Serialize;
+use url::Url;
 
 // ────────────────────────────────────────────────────────────────────────────
 // Public types
@@ -78,6 +79,23 @@ pub fn network_from_env() -> Result<StellarNetwork, String> {
             e
         )
     })
+}
+
+pub fn validate_horizon_url(network: &StellarNetwork, horizon_url: &str) -> Result<(), String> {
+    let parsed_url = Url::parse(horizon_url)
+        .map_err(|_| format!("STELLAR_HORIZON_URL must be a valid URL, got '{}'", horizon_url))?;
+    let host = parsed_url.host_str().unwrap_or_default();
+    let other_host = match network {
+        StellarNetwork::Testnet => "horizon.stellar.org",
+        StellarNetwork::Mainnet => "horizon-testnet.stellar.org",
+    };
+    if host == other_host {
+        return Err(format!(
+            "STELLAR_NETWORK '{}' does not match STELLAR_HORIZON_URL '{}'; expected {}",
+            network.as_str(), horizon_url, network.horizon_url()
+        ));
+    }
+    Ok(())
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -175,5 +193,15 @@ mod tests {
             StellarNetwork::Mainnet.horizon_url(),
             "https://horizon.stellar.org"
         );
+    }
+
+    #[test]
+    fn mismatched_horizon_url_is_rejected() {
+        let error = validate_horizon_url(
+            &StellarNetwork::Mainnet,
+            "https://horizon-testnet.stellar.org",
+        )
+        .unwrap_err();
+        assert!(error.contains("does not match"));
     }
 }

@@ -5,6 +5,7 @@ pub mod event;
 pub mod handlers;
 pub mod hash_validator;
 pub mod metrics;
+pub mod module;
 pub mod rate_limit;
 pub mod retry;
 pub mod routes;
@@ -387,12 +388,29 @@ fn build_transfer_memo(transfer_hash: &str) -> String {
 pub async fn record_transfer(
     State(state): State<AppState>,
     Json(req): Json<TransferRequest>,
-) -> Result<Json<TransferResponse>, StatusCode> {
+) -> Result<Json<TransferResponse>, (StatusCode, Json<ValidationErrorResponse>)> {
     state.metrics.increment_request_count();
     state.metrics.increment_route_count("transfer");
 
     if !is_valid_iso8601_date(&req.transfer_date) {
-        return Err(StatusCode::BAD_REQUEST);
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ValidationErrorResponse {
+                error: "transfer_date must be a valid ISO 8601 date".to_string(),
+            }),
+        ));
+    }
+
+    let verify_key = format!("stellar:verify:{}", req.document_hash);
+    if let Ok(Some(verification)) = state.cache.get::<VerifyResponse>(&verify_key).await {
+        if verification.revoked == Some(true) {
+            return Err((
+                StatusCode::CONFLICT,
+                Json(ValidationErrorResponse {
+                    error: "document hash has been revoked; cannot transfer".to_string(),
+                }),
+            ));
+        }
     }
 
     let transfer_hash = compute_transfer_hash(&req);
@@ -401,7 +419,12 @@ pub async fn record_transfer(
     let anchor_account_id = derive_account_id(&state.stellar_secret_key).map_err(|e| {
         warn!("Failed to derive anchor account id: {}", e);
         state.metrics.increment_error_count();
-        StatusCode::INTERNAL_SERVER_ERROR
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ValidationErrorResponse {
+                error: "failed to prepare transfer".to_string(),
+            }),
+        )
     })?;
 
     if let Err(e) = state
@@ -415,7 +438,12 @@ pub async fn record_transfer(
     {
         warn!("Failed to anchor transfer on Stellar: {}", e);
         state.metrics.increment_error_count();
-        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ValidationErrorResponse {
+                error: "failed to anchor transfer".to_string(),
+            }),
+        ));
     }
 
     let record = TransferRecord {
@@ -437,18 +465,28 @@ pub async fn record_transfer(
         Err(e) => {
             warn!("Failed to read transfer history from cache: {}", e);
             state.metrics.increment_error_count();
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ValidationErrorResponse {
+                    error: "failed to read transfer history".to_string(),
+                }),
+            ));
         }
     };
 
-    history.push(record);
+    history.push(record.clone());
 
     // Set a long but finite TTL (10 years) to keep an auditable history
     const TEN_YEARS_SECONDS: u64 = 60 * 60 * 24 * 365 * 10;
     if let Err(e) = state.cache.set(&key, &history, TEN_YEARS_SECONDS).await {
         warn!("Failed to persist transfer history: {}", e);
         state.metrics.increment_error_count();
-        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ValidationErrorResponse {
+                error: "failed to persist transfer history".to_string(),
+            }),
+        ));
     }
 
     // Emit an audit event for the transfer (CT-39).
@@ -913,6 +951,18 @@ pub async fn revoke_document(
     }
 
     let anchor_key = format!("stellar:verify:{}", normalized_hash);
+
+    if let Ok(Some(verification)) = state.cache.get::<VerifyResponse>(&anchor_key).await {
+        if verification.revoked == Some(true) {
+            return (
+                StatusCode::CONFLICT,
+                Json(ValidationErrorResponse {
+                    error: "document hash is already revoked; cannot revoke again".to_string(),
+                }),
+            )
+                .into_response();
+        }
+    }
 
     // Ensure the document was previously anchored before revoking.
     let existing: Option<SubmitResponse> = state
