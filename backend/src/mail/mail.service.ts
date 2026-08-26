@@ -49,6 +49,22 @@ export class MailService {
     });
   }
 
+  async sendVerificationEmail(to: string, token: string): Promise<void> {
+    const appUrl = this.configService.get<string>('APP_URL') || 'http://localhost:6004';
+    const verificationUrl = `${appUrl}/api/auth/verify-email?token=${token}`;
+
+    await this.sendMail({
+      to,
+      subject: 'Verify your new email address',
+      text: `Please verify your new email address by clicking the following link:\n\n${verificationUrl}\n\nIf you did not request this change, please ignore this email.`,
+      html: `
+        <p>Please verify your new email address by clicking the link below:</p>
+        <p><a href="${verificationUrl}">Verify Email Address</a></p>
+        <p>If you did not request this change, please ignore this email.</p>
+      `,
+    });
+  }
+
   async sendWelcome(to: string, name: string): Promise<void> {
     await this.sendMail({
       to,

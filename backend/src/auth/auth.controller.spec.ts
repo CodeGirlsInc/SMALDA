@@ -42,36 +42,28 @@ describe('AuthController', () => {
       const registerDto = {
         email: 'test@example.com',
         password: 'password123',
-        name: 'Test User',
+        fullName: 'Test User',
       };
-      const user = { id: '1', ...registerDto };
-      mockAuthService.register.mockResolvedValue(user);
+      const token = { access_token: 'jwt-token' };
+      mockAuthService.register.mockResolvedValue(token);
 
       const result = await controller.register(registerDto);
 
       expect(authService.register).toHaveBeenCalledWith(registerDto);
-      expect(result).toEqual(user);
-    });
-  });
-
-  describe('login', () => {
-    it('should call authService.login and return a token', async () => {
-      const req = { user: { id: '1', email: 'test@example.com' } };
-      const token = { access_token: 'jwt-token' };
-      mockAuthService.login.mockResolvedValue(token);
-
-      const result = await controller.login(req);
-
-      expect(authService.login).toHaveBeenCalledWith(req.user);
       expect(result).toEqual(token);
     });
   });
 
-  describe('getProfile', () => {
-    it('should return the user from the request', () => {
-      const req = { user: { id: '1', email: 'test@example.com' } };
-      const result = controller.getProfile(req);
-      expect(result).toEqual(req.user);
+  describe('login', () => {
+    it('should call authService.login with the provided dto', async () => {
+      const loginDto = { email: 'test@example.com', password: 'password123' };
+      const token = { access_token: 'jwt-token', refresh_token: 'refresh-token' };
+      mockAuthService.login.mockResolvedValue(token);
+
+      const result = await controller.login(loginDto);
+
+      expect(authService.login).toHaveBeenCalledWith(loginDto);
+      expect(result).toEqual(token);
     });
   });
 });

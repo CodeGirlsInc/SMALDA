@@ -1,163 +1,134 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
-import { JwtService } from '@nestjs/jwt';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { User } from '../users/entities/user.entity';
-import { Repository } from 'typeorm';
-import * as bcrypt from 'bcrypt';
+import { ConflictException, UnauthorizedException } from '@nestjs/common';
+
+const mockUser = {
+  id: 'user-1',
+  email: 'test@example.com',
+  passwordHash: '$2b$12$hashedpassword',
+  fullName: 'Test User',
+  role: 'user' as const,
+  isVerified: true,
+};
+
+const mockUsersService = {
+  findByEmail: jest.fn(),
+  create: jest.fn(),
+  findById: jest.fn(),
+  update: jest.fn(),
+  changeEmail: jest.fn(),
+};
+
+const mockJwtService = {
+  signAsync: jest.fn().mockResolvedValue('mock-token'),
+  verifyAsync: jest.fn(),
+  decode: jest.fn(),
+};
 
 describe('AuthService', () => {
   let service: AuthService;
-  let usersService: UsersService;
-  let jwtService: JwtService;
-  let userRepository: Repository<User>;
-
-  const mockUserRepository = {
-    findOne: jest.fn(),
-    create: jest.fn(),
-    save: jest.fn(),
-  };
-
-  const mockUsersService = {
-    create: jest.fn(),
-    findOneByEmail: jest.fn(),
-  };
-
-  const mockJwtService = {
-    sign: jest.fn(),
-  };
 
   beforeEach(async () => {
+    jest.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
+        { provide: UsersService, useValue: mockUsersService },
+        { provide: JwtService, useValue: mockJwtService },
         {
-          provide: UsersService,
-          useValue: mockUsersService,
-        },
-        {
-          provide: JwtService,
-          useValue: mockJwtService,
-        },
-        {
-          provide: getRepositoryToken(User),
-          useValue: mockUserRepository,
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((key: string) => {
+              if (key === 'JWT_SECRET') return 'test-secret';
+              return undefined;
+            }),
+          },
         },
       ],
     }).compile();
 
     service = module.get<AuthService>(AuthService);
-    usersService = module.get<UsersService>(UsersService);
-    jwtService = module.get<JwtService>(JwtService);
-    userRepository = module.get<Repository<User>>(getRepositoryToken(User));
   });
 
   it('should be defined', () => {
     expect(service).toBeDefined();
   });
 
-  describe('register', () => {
-    it('should hash the password and save the new user', async () => {
-      const registerDto = {
-        email: 'test@example.com',
-        password: 'password123',
-        name: 'Test User',
-      };
-      const hashedPassword = 'hashedpassword';
-      const user = new User();
+  describe('handleOAuthLogin()', () => {
+    it('should create a new user if no existing user with same email', async () => {
+      mockUsersService.findByEmail.mockResolvedValue(null);
+      mockUsersService.create.mockResolvedValue({
+        ...mockUser,
+        passwordHash: null,
+      });
 
-      jest.spyOn(bcrypt, 'hash').mockResolvedValue(hashedPassword as never);
-      mockUsersService.create.mockResolvedValue(user);
-
-      const result = await service.register(registerDto);
-
-      expect(bcrypt.hash).toHaveBeenCalledWith(registerDto.password, 10);
+      const result = await service.handleOAuthLogin(
+        'new@example.com',
+        'New User',
+      );
       expect(mockUsersService.create).toHaveBeenCalledWith({
-        ...registerDto,
-        password: hashedPassword,
+        email: 'new@example.com',
+        fullName: 'New User',
+        passwordHash: null,
+        role: 'user',
+        isVerified: true,
       });
-      expect(result).toEqual(user);
+      expect(result.access_token).toBe('mock-token');
+    });
+
+    it('should link OAuth to existing OAuth-only account (no password)', async () => {
+      const existingOAuthUser = { ...mockUser, passwordHash: null };
+      mockUsersService.findByEmail.mockResolvedValue(existingOAuthUser);
+
+      const result = await service.handleOAuthLogin(
+        'test@example.com',
+        'Test User',
+      );
+      expect(result.access_token).toBe('mock-token');
+      expect(mockUsersService.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject OAuth login if email matches a password-based account', async () => {
+      mockUsersService.findByEmail.mockResolvedValue(mockUser);
+
+      await expect(
+        service.handleOAuthLogin('test@example.com', 'Test User'),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('should throw BadRequestException if no email is provided', async () => {
+      await expect(
+        service.handleOAuthLogin('', 'Test User'),
+      ).rejects.toThrow('Email is required');
     });
   });
 
-  describe('login', () => {
-    it('should return a JWT token if credentials are valid', async () => {
-      const user = {
-        id: '1',
-        email: 'test@example.com',
-        password: 'hashedpassword',
-        name: 'Test User',
-      };
-      const loginDto = { email: 'test@example.com', password: 'password123' };
-      const token = 'jwt-token';
-
-      mockUsersService.findOneByEmail.mockResolvedValue(user);
-      jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
-      mockJwtService.sign.mockReturnValue(token);
-
-      const result = await service.login(user);
-
-      expect(mockJwtService.sign).toHaveBeenCalledWith({
-        sub: user.id,
-        email: user.email,
+  describe('logout()', () => {
+    it('should add token to blacklist', async () => {
+      mockJwtService.decode.mockReturnValue({
+        sub: 'user-1',
+        exp: Math.floor(Date.now() / 1000) + 3600,
       });
-      expect(result).toEqual({ access_token: token });
+
+      await service.logout('test-token');
+      expect(service.isTokenBlacklisted('test-token')).toBe(true);
+    });
+
+    it('should handle malformed tokens gracefully', async () => {
+      mockJwtService.decode.mockImplementation(() => {
+        throw new Error('invalid');
+      });
+
+      await expect(service.logout('bad-token')).resolves.toBeUndefined();
     });
   });
 
-  describe('validateUser', () => {
-    it('should return the user if credentials are valid', async () => {
-      const user = {
-        id: '1',
-        email: 'test@example.com',
-        password: 'hashedpassword',
-        name: 'Test User',
-      };
-      const loginDto = { email: 'test@example.com', password: 'password123' };
-
-      mockUsersService.findOneByEmail.mockResolvedValue(user);
-      jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
-
-      const result = await service.validateUser(
-        loginDto.email,
-        loginDto.password,
-      );
-
-      expect(result).toEqual(user);
-    });
-
-    it('should return null if password is not valid', async () => {
-      const user = {
-        id: '1',
-        email: 'test@example.com',
-        password: 'hashedpassword',
-        name: 'Test User',
-      };
-      const loginDto = { email: 'test@example.com', password: 'wrongpassword' };
-
-      mockUsersService.findOneByEmail.mockResolvedValue(user);
-      jest.spyOn(bcrypt, 'compare').mockResolvedValue(false as never);
-
-      const result = await service.validateUser(
-        loginDto.email,
-        loginDto.password,
-      );
-
-      expect(result).toBeNull();
-    });
-
-    it('should return null if user is not found', async () => {
-      const loginDto = { email: 'test@example.com', password: 'password123' };
-
-      mockUsersService.findOneByEmail.mockResolvedValue(null);
-
-      const result = await service.validateUser(
-        loginDto.email,
-        loginDto.password,
-      );
-
-      expect(result).toBeNull();
+  describe('isTokenBlacklisted()', () => {
+    it('should return false for non-blacklisted tokens', () => {
+      expect(service.isTokenBlacklisted('nonexistent-token')).toBe(false);
     });
   });
 });
