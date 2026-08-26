@@ -27,6 +27,7 @@ use crate::{
     app,
     cache::{CacheBackend, InMemoryCache},
     metrics::MetricsRegistry,
+    rate_limit::build_rate_limiter,
     stellar::StellarClient,
     AppState,
 };
@@ -47,6 +48,11 @@ fn make_state(horizon_url: &str) -> AppState {
         cache: Arc::new(CacheBackend::InMemory(InMemoryCache::new())),
         metrics: Arc::new(MetricsRegistry::new()),
         stellar_secret_key: STELLAR_SECRET_KEY.to_string(),
+        // Generous enough that the rate limiter never interferes with these
+        // functional/integration tests (some exercise batch/concurrent calls).
+        rate_limiter: build_rate_limiter(10_000, 10_000),
+        webhook_urls: Vec::new(),
+        webhook_secret: None,
     }
 }
 
