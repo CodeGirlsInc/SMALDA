@@ -1,6 +1,6 @@
 ﻿import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 import { Document, DocumentStatus } from './entities/document.entity';
 
 @Injectable()
@@ -68,6 +68,14 @@ export class DocumentsService {
     return this.findById(id);
   }
 
+  async revokeAccess(id: string): Promise<Document | null> {
+    await this.documentRepository.update(id, {
+      status: DocumentStatus.REJECTED,
+      archived: true,
+    });
+    return this.findById(id);
+  }
+
   async delete(id: string): Promise<void> {
     await this.documentRepository.delete(id);
   }
@@ -78,5 +86,50 @@ export class DocumentsService {
       .where('document.latitude IS NOT NULL')
       .andWhere('document.longitude IS NOT NULL')
       .getMany();
+  }
+
+  async findByRiskFilters(filters: {
+    page: number;
+    limit: number;
+    minScore?: number;
+    maxScore?: number;
+    startDate?: Date;
+    endDate?: Date;
+    sortOrder: 'ASC' | 'DESC';
+  }): Promise<{ data: Document[]; total: number }> {
+    const qb = this.documentRepository.createQueryBuilder('document');
+
+    qb.where('document.risk_score IS NOT NULL');
+
+    if (filters.minScore !== undefined) {
+      qb.andWhere('document.risk_score >= :minScore', {
+        minScore: filters.minScore,
+      });
+    }
+
+    if (filters.maxScore !== undefined) {
+      qb.andWhere('document.risk_score <= :maxScore', {
+        maxScore: filters.maxScore,
+      });
+    }
+
+    if (filters.startDate) {
+      qb.andWhere('document.created_at >= :startDate', {
+        startDate: filters.startDate,
+      });
+    }
+
+    if (filters.endDate) {
+      qb.andWhere('document.created_at <= :endDate', {
+        endDate: filters.endDate,
+      });
+    }
+
+    qb.orderBy('document.risk_score', filters.sortOrder);
+    qb.skip((filters.page - 1) * filters.limit);
+    qb.take(filters.limit);
+
+    const [data, total] = await qb.getManyAndCount();
+    return { data, total };
   }
 }

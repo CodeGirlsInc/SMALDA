@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { type Repository, Between, type FindOptionsWhere } from 'typeorm';
-import type { AccessLog } from './entities/access-log.entity';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, Between, FindOptionsWhere } from 'typeorm';
+import { AccessLog } from './entities/access-log.entity';
 import type { CreateAccessLogDto } from './dto/create-access-log.dto';
 import type { FilterAccessLogsDto } from './dto/filter-access-logs.dto';
 
@@ -16,17 +17,10 @@ export interface PaginatedAccessLogs {
 export class AccessLogsService {
   private readonly logger = new Logger(AccessLogsService.name);
 
-  constructor(private readonly accessLogRepository: Repository<AccessLog>) {}
-
-
-  async logDocumentAccess(
-    documentId: string,
-    action: string,
-    userId?: string,
-    ipAddress?: string,
-    userAgent?: string,
-    isDenied = false,
-  ): Promise<void> {
+  constructor(
+    @InjectRepository(AccessLog)
+    private readonly accessLogRepository: Repository<AccessLog>,
+  ) {}
 
   async create(dto: CreateAccessLogDto): Promise<AccessLog> {
     const log = this.accessLogRepository.create({
@@ -39,21 +33,21 @@ export class AccessLogsService {
     return this.accessLogRepository.save(log);
   }
 
-  async logDocumentAccess(documentId: string, action: string, userId?: string, ipAddress?: string, userAgent?: string, isDenied = false): Promise<void> {
-
+  async logDocumentAccess(
+    documentId: string,
+    action: string,
+    userId?: string,
+    ipAddress?: string,
+    userAgent?: string,
+    isDenied = false,
+  ): Promise<void> {
     try {
       this.logger.log(
         `Document Access Log: docId=${documentId}, action=${action}, user=${userId || 'anonymous'}, denied=${isDenied}`,
       );
-      // Asynchronously record log without blocking the main thread
     } catch (err) {
       this.logger.error('Failed to log document access', err);
     }
-  }
-
-  async create(dto: CreateAccessLogDto): Promise<AccessLog> {
-    const log = this.accessLogRepository.create(dto);
-    return this.accessLogRepository.save(log);
   }
 
   async findAll(filterDto: FilterAccessLogsDto): Promise<PaginatedAccessLogs> {
@@ -66,7 +60,6 @@ export class AccessLogsService {
 
     const where: FindOptionsWhere<AccessLog> = {};
 
-    // Apply filters
     if (filters.userId) {
       where.userId = filters.userId;
     }
@@ -83,7 +76,6 @@ export class AccessLogsService {
       where.ipAddress = filters.ipAddress;
     }
 
-    // Date range filter
     if (filters.startDate || filters.endDate) {
       const startDate = filters.startDate
         ? new Date(filters.startDate)
