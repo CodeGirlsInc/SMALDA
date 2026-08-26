@@ -110,7 +110,7 @@ export class DocumentsController {
       status: DocumentStatus.PENDING,
     });
 
-    await this.queueService.enqueueAnalyze(document.id, req.requestId);
+    await this.queueService.enqueueAnalyze(document.id, (req as any).requestId);
     return res.status(202).send(document);
   }
 
@@ -172,7 +172,7 @@ export class DocumentsController {
       throw new ConflictException('Document has already been verified');
     }
 
-    await this.queueService.enqueueAnchor(document.id, req.requestId);
+    await this.queueService.enqueueAnchor(document.id, (req as any).requestId);
 
     return res.status(202).json({
       message: 'Verification queued',
