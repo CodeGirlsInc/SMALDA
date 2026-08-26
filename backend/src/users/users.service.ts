@@ -1,4 +1,4 @@
-﻿import { Injectable } from '@nestjs/common';
+﻿import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
@@ -50,6 +50,22 @@ export class UsersService {
 
   async update(id: string, updates: Partial<User>): Promise<User | null> {
     await this.userRepository.update(id, updates);
+    return this.findById(id);
+  }
+
+  async changeEmail(
+    id: string,
+    newEmail: string,
+  ): Promise<User | null> {
+    const existing = await this.findByEmail(newEmail);
+    if (existing && existing.id !== id) {
+      return null;
+    }
+
+    await this.userRepository.update(id, {
+      email: newEmail,
+      isVerified: false,
+    });
     return this.findById(id);
   }
 

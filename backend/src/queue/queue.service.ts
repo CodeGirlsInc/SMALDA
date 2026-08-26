@@ -38,6 +38,10 @@ export class QueueService implements OnModuleDestroy {
     return this.connection;
   }
 
+  getQueue(): Queue {
+    return this.queue;
+  }
+
   async enqueueAnalyze(documentId: string, requestId?: string) {
     this.logger.debug(
       `Queueing analyze job for document ${documentId} (request ${requestId ?? 'none'})`,

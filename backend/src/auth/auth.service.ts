@@ -17,6 +17,8 @@ import { User, UserRole } from '../users/entities/user.entity';
 
 @Injectable()
 export class AuthService {
+  private readonly tokenBlacklist = new Set<string>();
+
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
@@ -57,7 +59,13 @@ export class AuthService {
     }
 
     let user = await this.usersService.findByEmail(email);
-    if (!user) {
+    if (user) {
+      if (user.passwordHash) {
+        throw new ConflictException(
+          'An account with this email already exists. Please log in with your password.',
+        );
+      }
+    } else {
       user = await this.usersService.create({
         email,
         fullName: fullName || email,
@@ -95,6 +103,25 @@ export class AuthService {
     } catch {
       throw new UnauthorizedException('Invalid refresh token');
     }
+  }
+
+  async logout(accessToken: string): Promise<void> {
+    try {
+      const payload = this.jwtService.decode<JwtPayload>(accessToken);
+      if (payload?.exp) {
+        const ttl = payload.exp - Math.floor(Date.now() / 1000);
+        if (ttl > 0) {
+          this.tokenBlacklist.add(accessToken);
+          setTimeout(() => this.tokenBlacklist.delete(accessToken), ttl * 1000);
+        }
+      }
+    } catch {
+      // Token is malformed, nothing to blacklist
+    }
+  }
+
+  isTokenBlacklisted(token: string): boolean {
+    return this.tokenBlacklist.has(token);
   }
 
   private async validateCredentials(email: string, password: string) {

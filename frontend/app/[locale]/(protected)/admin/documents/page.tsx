@@ -107,11 +107,13 @@ export default function AdminDocumentsPage() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   const fetchDocuments = useCallback(
     async (currentPage: number, f: Filters) => {
       setLoading(true);
       setError(null);
+      setAccessDenied(false);
 
       const params = new URLSearchParams({
         page: String(currentPage),
@@ -141,6 +143,11 @@ export default function AdminDocumentsPage() {
           }
         );
 
+        if (res.status === 403) {
+          // FE-44 admin guard — non-admins must not see the listing.
+          setAccessDenied(true);
+          return;
+        }
         if (!res.ok) {
           throw new Error(`Request failed: ${res.status}`);
         }
@@ -197,6 +204,20 @@ export default function AdminDocumentsPage() {
   };
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
+
+  if (accessDenied) {
+    return (
+      <main className="p-6 space-y-6">
+        <h1 className="text-2xl font-bold">{t("title")}</h1>
+        <div className="rounded-xl border border-red-200 bg-red-50 p-6">
+          <p className="font-medium text-red-800">Admin access required</p>
+          <p className="mt-1 text-sm text-red-700">
+            You need an administrator account to review documents.
+          </p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="p-6 space-y-6">
