@@ -17,8 +17,10 @@ const mockRepository = {
   save: jest.fn().mockResolvedValue(mockDocument),
   findOne: jest.fn().mockResolvedValue(mockDocument),
   find: jest.fn().mockResolvedValue([mockDocument]),
+  findAndCount: jest.fn().mockResolvedValue([[mockDocument], 1]),
   update: jest.fn().mockResolvedValue({ affected: 1 }),
   delete: jest.fn().mockResolvedValue({ affected: 1 }),
+  createQueryBuilder: jest.fn(),
 };
 
 describe('DocumentsService', () => {
@@ -41,6 +43,10 @@ describe('DocumentsService', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
+
+  // ───────────────────────────────────────────────────────────
+  // Existing coverage (kept intact)
+  // ───────────────────────────────────────────────────────────
 
   describe('create()', () => {
     it('should persist and return document with PENDING status', async () => {
@@ -120,6 +126,127 @@ describe('DocumentsService', () => {
     it('should remove the document record', async () => {
       await service.delete('doc-123');
       expect(mockRepository.delete).toHaveBeenCalledWith('doc-123');
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────
+  // New coverage — gap closures
+  // ───────────────────────────────────────────────────────────
+
+  describe('findById()', () => {
+    it('should return a document by id', async () => {
+      const result = await service.findById('doc-123');
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 'doc-123' },
+      });
+      expect(result).toEqual(mockDocument);
+    });
+
+    it('should return null when id does not exist', async () => {
+      mockRepository.findOne.mockResolvedValueOnce(null);
+      const result = await service.findById('nonexistent-id');
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('findByOwnerPaginated()', () => {
+    it('should return paginated results with default params', async () => {
+      mockRepository.findAndCount.mockResolvedValueOnce([[mockDocument], 1]);
+
+      const result = await service.findByOwnerPaginated('user-456', 1, 20);
+
+      expect(mockRepository.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { ownerId: 'user-456' },
+          skip: 0,
+          take: 20,
+        }),
+      );
+      expect(result.data).toEqual([mockDocument]);
+      expect(result.total).toBe(1);
+      expect(result.page).toBe(1);
+      expect(result.limit).toBe(20);
+    });
+
+    it('should apply status filter when provided', async () => {
+      mockRepository.findAndCount.mockResolvedValueOnce([[], 0]);
+
+      const result = await service.findByOwnerPaginated(
+        'user-456',
+        2,
+        10,
+        DocumentStatus.VERIFIED,
+      );
+
+      expect(mockRepository.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { ownerId: 'user-456', status: DocumentStatus.VERIFIED },
+          skip: 10,
+          take: 10,
+        }),
+      );
+      expect(result.data).toEqual([]);
+      expect(result.total).toBe(0);
+      expect(result.page).toBe(2);
+    });
+
+    it('should compute correct skip for page 3 with limit 5', async () => {
+      mockRepository.findAndCount.mockResolvedValueOnce([[], 0]);
+
+      await service.findByOwnerPaginated('user-456', 3, 5);
+
+      expect(mockRepository.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 10, take: 5 }),
+      );
+    });
+
+    it('should order results by createdAt descending', async () => {
+      mockRepository.findAndCount.mockResolvedValueOnce([[], 0]);
+
+      await service.findByOwnerPaginated('user-456', 1, 20);
+
+      expect(mockRepository.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({ order: { createdAt: 'DESC' } }),
+      );
+    });
+  });
+
+  describe('findAllWithCoordinates()', () => {
+    it('should return documents that have latitude and longitude', async () => {
+      const docWithCoords = {
+        ...mockDocument,
+        latitude: 37.7749,
+        longitude: -122.4194,
+      };
+      const mockQb = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([docWithCoords]),
+      };
+      mockRepository.createQueryBuilder.mockReturnValue(mockQb);
+
+      const result = await service.findAllWithCoordinates();
+
+      expect(mockRepository.createQueryBuilder).toHaveBeenCalledWith('document');
+      expect(result).toEqual([docWithCoords]);
+    });
+  });
+
+  describe('edge cases', () => {
+    it('should return null when updating a non-existent document', async () => {
+      mockRepository.update.mockResolvedValueOnce({ affected: 0 });
+      mockRepository.findOne.mockResolvedValueOnce(null);
+
+      const result = await service.updateStatus(
+        'nonexistent-id',
+        DocumentStatus.VERIFIED,
+      );
+      expect(result).toBeNull();
+    });
+
+    it('should handle delete of a non-existent document without throwing', async () => {
+      mockRepository.delete.mockResolvedValueOnce({ affected: 0 });
+      await expect(service.delete('nonexistent-id')).resolves.toBeUndefined();
     });
   });
 });
