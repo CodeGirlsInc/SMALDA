@@ -7,6 +7,7 @@ import {
   NotFoundException,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Req,
@@ -89,7 +90,7 @@ export class DocumentsController {
     const existingDocs = await this.documentsService.findByOwner(user.id);
     if (existingDocs.length >= userQuota) {
       throw new BadRequestException(
-        Upload quota exceeded. Each user may store at most  documents.,
+        `Upload quota exceeded. Each user may store at most ${userQuota} documents.`,
       );
     }
 
@@ -106,7 +107,7 @@ export class DocumentsController {
     // Use a randomized storage key; the client filename is never a path component.
     const storageKey = randomUUID();
     const safeExtension = this.safeExtension(file.mimetype);
-    const filename = ${storageKey};
+    const filename = `${storageKey}${safeExtension}`;
     const targetPath = join(uploadDir, filename);
     await fs.writeFile(targetPath, file.buffer);
 
@@ -120,7 +121,7 @@ export class DocumentsController {
       status: DocumentStatus.PENDING,
     });
 
-    await this.queueService.enqueueAnalyze(document.id, req.requestId);
+    await this.queueService.enqueueAnalyze(document.id, (req as any).requestId);
     return res.status(202).send(document);
   }
 
@@ -182,7 +183,7 @@ export class DocumentsController {
       throw new ConflictException('Document has already been verified');
     }
 
-    await this.queueService.enqueueAnchor(document.id, req.requestId);
+    await this.queueService.enqueueAnchor(document.id, (req as any).requestId);
 
     return res.status(202).json({
       message: 'Verification queued',
@@ -208,6 +209,26 @@ export class DocumentsController {
     return record;
   }
 
+  @Patch(':id/revoke')
+  @UseGuards(JwtAuthGuard)
+  async revokeAccess(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request & { user?: User },
+  ) {
+    const document = await this.documentsService.findById(id);
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+
+    const user = req.user!;
+    if (document.ownerId !== user.id && user.role !== 'admin') {
+      throw new ForbiddenException('Access denied');
+    }
+
+    const updated = await this.documentsService.revokeAccess(id);
+    return { message: 'Access revoked', documentId: updated?.id, status: updated?.status };
+  }
+
   @Get(':id/download')
   @UseGuards(JwtAuthGuard)
   async downloadDocument(
@@ -231,7 +252,7 @@ export class DocumentsController {
 
     res.set({
       'Content-Type': contentType,
-      'Content-Disposition': ttachment; filename="",
+      'Content-Disposition': `attachment; filename="${document.title}"`,
       'X-Content-Type-Options': 'nosniff',
     });
 

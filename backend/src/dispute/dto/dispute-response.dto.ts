@@ -6,7 +6,7 @@ export class DisputeResponseDto {
   documentId: string;
   description: string;
   reason: DisputeReason | null;
-  status: DisputeStatus;
   filedBy: string;
+  status: DisputeStatus;
   createdAt: Date;
 }

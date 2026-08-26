@@ -5,6 +5,7 @@ import { Dispute, DisputeStatus, ALLOWED_DISPUTE_TRANSITIONS } from './entities/
 import { DisputeReasonClassifierService } from './dispute-reason-classifier.service';
 import { CreateDisputeDto } from './dto/create-dispute.dto';
 import { DisputeResponseDto } from './dto/dispute-response.dto';
+import { AccessLogsService } from '../access-logs/access-logs.service';
 
 @Injectable()
 export class DisputeService {
@@ -12,6 +13,7 @@ export class DisputeService {
     @InjectRepository(Dispute)
     private readonly disputeRepo: Repository<Dispute>,
     private readonly classifier: DisputeReasonClassifierService,
+    private readonly accessLogsService: AccessLogsService,
   ) {}
 
   async fileDispute(
@@ -29,25 +31,44 @@ export class DisputeService {
     });
 
     const saved = await this.disputeRepo.save(dispute);
+
+    await this.accessLogsService.logDocumentAccess(
+      dto.documentId,
+      `dispute_filed:${DisputeStatus.OPEN}`,
+      userId,
+    );
+
     return this.toResponseDto(saved);
   }
 
-  async updateStatus(id: string, newStatus: DisputeStatus): Promise<DisputeResponseDto> {
+  async updateStatus(
+    id: string,
+    newStatus: DisputeStatus,
+    userId: string,
+  ): Promise<DisputeResponseDto> {
     const dispute = await this.disputeRepo.findOne({ where: { id } });
     if (!dispute) {
-      throw new NotFoundException(Dispute  not found);
+      throw new NotFoundException(`Dispute ${id} not found`);
     }
 
     const allowed = ALLOWED_DISPUTE_TRANSITIONS[dispute.status];
     if (!allowed.includes(newStatus)) {
       throw new BadRequestException(
-        Invalid status transition from '' to ''. Allowed: [],
+        `Invalid status transition from '${dispute.status}' to '${newStatus}'. Allowed: [${allowed.join(', ')}]`,
       );
     }
 
+    const oldStatus = dispute.status;
     dispute.status = newStatus;
-    const saved = await this.disputeRepo.save(dispute);
-    return this.toResponseDto(saved);
+    await this.disputeRepo.save(dispute);
+
+    await this.accessLogsService.logDocumentAccess(
+      dispute.documentId,
+      `dispute_status_changed:${oldStatus}->${newStatus}`,
+      userId,
+    );
+
+    return this.toResponseDto(dispute);
   }
 
   async findByUser(
@@ -71,7 +92,7 @@ export class DisputeService {
   async findOne(id: string): Promise<DisputeResponseDto> {
     const dispute = await this.disputeRepo.findOne({ where: { id } });
     if (!dispute) {
-      throw new NotFoundException(Dispute  not found);
+      throw new NotFoundException(`Dispute ${id} not found`);
     }
     return this.toResponseDto(dispute);
   }

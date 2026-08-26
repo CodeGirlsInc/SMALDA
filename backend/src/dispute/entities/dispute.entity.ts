@@ -11,14 +11,16 @@ import { DisputeReason } from './dispute-reason.entity';
 
 export enum DisputeStatus {
   OPEN = 'open',
-  UNDER_REVIEW = 'under-review',
+  IN_REVIEW = 'in_review',
   RESOLVED = 'resolved',
+  DISMISSED = 'dismissed',
 }
 
 export const ALLOWED_DISPUTE_TRANSITIONS: Record<DisputeStatus, DisputeStatus[]> = {
-  [DisputeStatus.OPEN]: [DisputeStatus.UNDER_REVIEW],
-  [DisputeStatus.UNDER_REVIEW]: [DisputeStatus.RESOLVED],
+  [DisputeStatus.OPEN]: [DisputeStatus.IN_REVIEW, DisputeStatus.DISMISSED],
+  [DisputeStatus.IN_REVIEW]: [DisputeStatus.RESOLVED, DisputeStatus.DISMISSED],
   [DisputeStatus.RESOLVED]: [],
+  [DisputeStatus.DISMISSED]: [],
 };
 
 @Entity('disputes')
@@ -41,7 +43,8 @@ export class Dispute {
   filedBy: string;
 
   @Column({
-    type: 'varchar',
+    type: 'enum',
+    enum: DisputeStatus,
     default: DisputeStatus.OPEN,
   })
   status: DisputeStatus;
