@@ -3,6 +3,8 @@ use std::env;
 use thiserror::Error;
 use url::Url;
 
+use crate::module::network::{network_from_env, validate_horizon_url};
+
 /// Deployment environment. Controls log output format: JSON in production,
 /// human-readable in development. Unrecognized values default to development.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -210,6 +212,10 @@ impl AppConfig {
                 "STELLAR_HORIZON_URL must be a valid URL, got '{}'",
                 stellar_horizon_url
             ));
+        } else if let Err(error) = network_from_env()
+            .and_then(|network| validate_horizon_url(&network, &stellar_horizon_url))
+        {
+            errors.push(error);
         }
 
         // Parse numeric values
@@ -317,6 +323,7 @@ mod tests {
         let keys = [
             "PORT",
             "STELLAR_HORIZON_URL",
+            "STELLAR_NETWORK",
             "STELLAR_SECRET_KEY",
             "REDIS_URL",
             "RATE_LIMIT_PER_SECOND",
@@ -369,6 +376,21 @@ mod tests {
         assert!(msg.contains("PORT must be between 1 and 65535"));
         assert!(msg.contains("STELLAR_HORIZON_URL must be a valid URL"));
         assert!(msg.contains("RATE_LIMIT_PER_SECOND must be greater than 0"));
+    }
+
+    #[test]
+    fn from_env_rejects_network_horizon_mismatch() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_env();
+        env::set_var("STELLAR_NETWORK", "mainnet");
+        env::set_var("STELLAR_HORIZON_URL", "https://horizon-testnet.stellar.org");
+        env::set_var(
+            "STELLAR_SECRET_KEY",
+            "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        );
+
+        let error = AppConfig::from_env().expect_err("mismatched network should fail startup");
+        assert!(error.to_string().contains("does not match"));
     }
 
     #[test]

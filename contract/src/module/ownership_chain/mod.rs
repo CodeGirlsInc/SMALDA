@@ -14,9 +14,9 @@ use axum::{
     Json,
 };
 use serde::Serialize;
+use std::collections::HashSet;
 
 use crate::{cache::CacheBackend, AppState, TransferRecord};
-use std::sync::Arc;
 
 // ────────────────────────────────────────────────────────────────────────────
 // Public result type
@@ -37,6 +37,8 @@ pub enum ValidationResult {
         expected_owner: String,
         found_owner: String,
     },
+
+    Cycle { at_index: usize, owner: String },
 
     /// No transfer records exist for this document hash.
     Empty,
@@ -80,6 +82,10 @@ pub async fn validate_chain(
         return Ok(ValidationResult::Valid);
     }
 
+    let mut owners = HashSet::new();
+    owners.insert(records[0].from_owner.clone());
+    owners.insert(records[0].to_owner.clone());
+
     for i in 1..records.len() {
         let expected = &records[i - 1].to_owner;
         let found = &records[i].from_owner;
@@ -88,6 +94,12 @@ pub async fn validate_chain(
                 gap_at_index: i,
                 expected_owner: expected.clone(),
                 found_owner: found.clone(),
+            });
+        }
+        if !owners.insert(records[i].to_owner.clone()) {
+            return Ok(ValidationResult::Cycle {
+                at_index: i,
+                owner: records[i].to_owner.clone(),
             });
         }
     }
@@ -206,6 +218,20 @@ mod tests {
                 gap_at_index: 3,
                 expected_owner: "Eve".to_string(),
                 found_owner: "Mallory".to_string(),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn circular_chain_is_detected() {
+        let records = vec![make_record("Alice", "Bob"), make_record("Bob", "Alice")];
+        let cache = cache_with_records(records).await;
+        let result = validate_chain("test_doc", &cache).await.unwrap();
+        assert_eq!(
+            result,
+            ValidationResult::Cycle {
+                at_index: 1,
+                owner: "Alice".to_string(),
             }
         );
     }
