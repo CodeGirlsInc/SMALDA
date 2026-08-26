@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { ConflictException } from '@nestjs/common';
 
 import { VerificationService } from './verification.service';
 import {
@@ -76,6 +77,35 @@ describe('VerificationService', () => {
       });
 
       expect(result.status).toBe(VerificationStatus.PENDING);
+    });
+
+    it('should reject a duplicate confirmed verification for the same document', async () => {
+      mockRepository.findOne.mockResolvedValueOnce({
+        ...mockRecord,
+        documentId: 'doc-1',
+        status: VerificationStatus.CONFIRMED,
+      });
+
+      await expect(
+        service.create({
+          documentId: 'doc-1',
+          stellarTxHash: 'tx-hash-def456',
+          stellarLedger: 12346,
+          status: VerificationStatus.CONFIRMED,
+        }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('should allow a pending verification even if a confirmed one exists', async () => {
+      const result = await service.create({
+        documentId: 'doc-1',
+        stellarTxHash: 'tx-hash-def456',
+        stellarLedger: 12346,
+        status: VerificationStatus.PENDING,
+      });
+
+      expect(mockRepository.findOne).not.toHaveBeenCalled();
+      expect(result.documentId).toBe('doc-1');
     });
   });
 
