@@ -1,14 +1,17 @@
-use tower::util::ServiceExt;
+//! Integration tests verifying HTTP handler routing, inputs, and error codes.
+
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use std::sync::Arc;
 use stellar_doc_verifier::app;
 use stellar_doc_verifier::cache::{CacheBackend, InMemoryCache};
-use stellar_doc_verifier::config::AppConfig;
 use stellar_doc_verifier::metrics::MetricsRegistry;
+use stellar_doc_verifier::rate_limit::build_rate_limiter;
 use stellar_doc_verifier::stellar::StellarClient;
 use stellar_doc_verifier::AppState;
 use tower::util::ServiceExt;
+
+const SECRET: &str = "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
 fn test_app_state() -> AppState {
     let cache = CacheBackend::InMemory(InMemoryCache::new());
@@ -19,7 +22,10 @@ fn test_app_state() -> AppState {
         stellar,
         cache: Arc::new(cache),
         metrics,
-        stellar_secret_key: "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string(),
+        stellar_secret_key: SECRET.to_string(),
+        rate_limiter: build_rate_limiter(1000, 1000),
+        webhook_urls: Vec::new(),
+        webhook_secret: None,
     }
 }
 
@@ -74,6 +80,24 @@ async fn test_metrics_handler_returns_prometheus_text() {
 }
 
 #[tokio::test]
+async fn test_audit_log_handler_returns_200() {
+    let state = test_app_state();
+    let router = app(state);
+
+    let response = router
+        .oneshot(
+            Request::builder()
+                .uri("/audit")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
 async fn test_verify_with_invalid_hash_returns_400() {
     let state = test_app_state();
     let router = app(state);
@@ -105,6 +129,44 @@ async fn test_verify_with_empty_hash_returns_400() {
                 .uri("/verify")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"document_hash": ""}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_verify_by_hash_path_with_invalid_hash_returns_400() {
+    let state = test_app_state();
+    let router = app(state);
+
+    let response = router
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/verify/not-a-valid-sha256-hash")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_verify_history_path_with_invalid_hash_returns_400() {
+    let state = test_app_state();
+    let router = app(state);
+
+    let response = router
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/verify/not-a-valid-sha256-hash/history")
+                .body(Body::empty())
                 .unwrap(),
         )
         .await
@@ -211,7 +273,31 @@ async fn test_transfer_with_invalid_hash_returns_400() {
                 .method("POST")
                 .uri("/transfer")
                 .header("content-type", "application/json")
-                .body(Body::from(r#"{"document_hash": "invalid", "from_owner": "A", "to_owner": "B", "transfer_date": "2025-01-01", "transfer_reference": "REF1"}"#))
+                .body(Body::from(
+                    r#"{"document_hash": "invalid", "from_owner": "A", "to_owner": "B", "transfer_date": "2025-01-01", "transfer_reference": "REF1"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_transfer_with_invalid_date_returns_400() {
+    let state = test_app_state();
+    let router = app(state);
+
+    let response = router
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/transfer")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"document_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "from_owner": "A", "to_owner": "B", "transfer_date": "invalid-date", "transfer_reference": "REF1"}"#,
+                ))
                 .unwrap(),
         )
         .await
