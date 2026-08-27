@@ -401,3 +401,151 @@ async fn transfer_of_revoked_hash_returns_409() {
     resp.assert_status(StatusCode::CONFLICT);
     assert!(resp.text().contains("has been revoked"));
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 11. Non-UTF8 / Malformed Binary Input (CT's SHA-256 / SHA-512 support)
+//     Confirm Axum extractor rejects non-UTF8/binary payload cleanly with 4xx,
+//     never panicking or returning 500.
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn verify_rejects_invalid_utf8_binary_body_with_4xx() {
+    let state = make_state("http://127.0.0.1:1");
+    let server = TestServer::new(app(state)).unwrap();
+
+    // Raw bytes containing non-UTF8 binary byte sequences in the JSON body
+    let invalid_utf8_payload: &[u8] = b"{\"document_hash\": \"\xFF\xFE\xFD\"}";
+
+    let resp = server
+        .post("/verify")
+        .content_type("application/json")
+        .bytes(invalid_utf8_payload.to_vec().into())
+        .await;
+
+    let status = resp.status_code();
+    assert!(
+        status.is_client_error(),
+        "expected a 4xx client error status when submitting non-UTF8 binary bytes, got {}",
+        status
+    );
+    assert_ne!(status, StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
+async fn endpoints_reject_raw_malformed_binary_with_4xx() {
+    let state = make_state("http://127.0.0.1:1");
+    let server = TestServer::new(app(state)).unwrap();
+
+    let raw_binary: &[u8] = &[0xFF, 0xFE, 0xFD, 0x80, 0x00];
+
+    for path in ["/verify", "/submit", "/revoke", "/transfer", "/verify/batch"] {
+        let resp = server
+            .post(path)
+            .content_type("application/json")
+            .bytes(raw_binary.to_vec().into())
+            .await;
+
+        let status = resp.status_code();
+        assert!(
+            status.is_client_error(),
+            "path {} expected 4xx client error status for raw binary, got {}",
+            path,
+            status
+        );
+        assert_ne!(
+            status,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "path {} must not return 500 for malformed binary",
+            path
+        );
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12. Hash Unexpected Length Tests (Too Short / Too Long)
+//     Confirm Axum validator rejects too-short / too-long hash strings with 400.
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn verify_rejects_hash_of_unexpected_length_with_400() {
+    let state = make_state("http://127.0.0.1:1");
+    let server = TestServer::new(app(state)).unwrap();
+
+    // Hashes that are too short (1, 10, 32, 63 chars)
+    for len in [1, 10, 32, 63] {
+        let short_hash = "a".repeat(len);
+        let resp = server
+            .post("/verify")
+            .json(&json!({ "document_hash": short_hash }))
+            .await;
+
+        resp.assert_status(StatusCode::BAD_REQUEST);
+        let body: Value = resp.json();
+        assert!(
+            body["error"].as_str().unwrap().contains("wrong length"),
+            "expected wrong length error for short hash (len {}): {:?}",
+            len,
+            body
+        );
+    }
+
+    // Hashes that are too long (65, 100, 128 chars for sha256 endpoint, 200 chars)
+    for len in [65, 100, 128, 200] {
+        let long_hash = "a".repeat(len);
+        let resp = server
+            .post("/verify")
+            .json(&json!({ "document_hash": long_hash }))
+            .await;
+
+        resp.assert_status(StatusCode::BAD_REQUEST);
+        let body: Value = resp.json();
+        assert!(
+            body["error"].as_str().unwrap().contains("wrong length"),
+            "expected wrong length error for long hash (len {}): {:?}",
+            len,
+            body
+        );
+    }
+
+    // Empty hash
+    let resp_empty = server
+        .post("/verify")
+        .json(&json!({ "document_hash": "" }))
+        .await;
+    resp_empty.assert_status(StatusCode::BAD_REQUEST);
+    let body_empty: Value = resp_empty.json();
+    assert!(body_empty["error"].as_str().unwrap().contains("empty"));
+}
+
+#[tokio::test]
+async fn submit_and_revoke_reject_unexpected_hash_length_with_400() {
+    let state = make_state("http://127.0.0.1:1");
+    let server = TestServer::new(app(state)).unwrap();
+
+    // Test too short and too long on /submit
+    for bad_hash in ["a".repeat(10), "a".repeat(65), "".to_string()] {
+        let resp = server
+            .post("/submit")
+            .json(&json!({
+                "document_hash": bad_hash,
+                "document_id": "doc-1",
+                "submitter": "tester"
+            }))
+            .await;
+        resp.assert_status(StatusCode::BAD_REQUEST);
+    }
+
+    // Test too short and too long on /revoke
+    for bad_hash in ["a".repeat(10), "a".repeat(65), "".to_string()] {
+        let resp = server
+            .post("/revoke")
+            .json(&json!({
+                "document_hash": bad_hash,
+                "reason": "testing",
+                "revoked_by": "tester"
+            }))
+            .await;
+        resp.assert_status(StatusCode::BAD_REQUEST);
+    }
+}
+
