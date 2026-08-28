@@ -82,13 +82,13 @@ pub struct AppState {
 }
 
 // Request/Response types
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct VerifyRequest {
     pub document_hash: String,
     pub transaction_id: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct VerifyResponse {
     pub verified: bool,
     pub transaction_id: Option<String>,
@@ -101,7 +101,7 @@ pub struct VerifyResponse {
 }
 
 /// Request type for submitting a document hash to Stellar blockchain
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct SubmitRequest {
     pub document_hash: String,
     pub document_id: String,
@@ -109,7 +109,7 @@ pub struct SubmitRequest {
 }
 
 /// Response type for document hash submission
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct SubmitResponse {
     pub success: bool,
     pub transaction_id: Option<String>,
@@ -117,21 +117,21 @@ pub struct SubmitResponse {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct RevokeRequest {
     pub document_hash: String,
     pub reason: String,
     pub revoked_by: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct RevokeResponse {
     pub transaction_id: String,
     pub revoked_at: i64,
     pub revoked: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct HealthResponse {
     pub status: String,
     pub stellar_connected: bool,
@@ -141,7 +141,7 @@ pub struct HealthResponse {
 }
 
 /// Response type for document verification history
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct HistoryResponse {
     pub document_hash: String,
     pub transactions: Vec<TransactionRecord>,
@@ -149,17 +149,17 @@ pub struct HistoryResponse {
     pub cached: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ValidationErrorResponse {
     pub error: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct BatchVerifyRequest {
     pub hashes: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct BatchVerifyResponse {
     pub results: Vec<BatchVerifyItem>,
     pub total: usize,
@@ -167,7 +167,7 @@ pub struct BatchVerifyResponse {
     pub failed_count: usize,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct BatchVerifyItem {
     pub hash: String,
     pub verified: bool,
@@ -176,7 +176,7 @@ pub struct BatchVerifyItem {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct TransferRequest {
     pub document_hash: String,
     pub from_owner: String,
@@ -185,7 +185,7 @@ pub struct TransferRequest {
     pub transfer_reference: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct TransferRecord {
     pub document_hash: String,
     pub from_owner: String,
@@ -197,7 +197,7 @@ pub struct TransferRecord {
     pub anchored_at: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct TransferResponse {
     pub transfer_hash: String,
     pub memo: String,

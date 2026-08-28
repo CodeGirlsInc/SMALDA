@@ -283,3 +283,156 @@ pub async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyIt
         error: None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cache::{CacheBackend, InMemoryCache};
+    use crate::metrics::MetricsRegistry;
+    use crate::stellar::StellarClient;
+
+    fn test_state() -> AppState {
+        AppState {
+            stellar: StellarClient::new("https://horizon-testnet.stellar.org"),
+            cache: CacheBackend::InMemory(InMemoryCache::new()),
+            metrics: MetricsRegistry::new(),
+            stellar_secret_key: "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_verify_single_hash_invalid_length() {
+        let state = test_state();
+        let item = verify_single_hash(&state, "short_hash".to_string()).await;
+        assert_eq!(item.hash, "short_hash");
+        assert!(!item.verified);
+        assert!(item.transaction_id.is_none());
+        assert!(item.timestamp.is_none());
+        assert!(item.error.is_some());
+        assert!(item.error.unwrap().contains("wrong length"));
+    }
+
+    #[tokio::test]
+    async fn test_verify_single_hash_invalid_hex() {
+        let state = test_state();
+        let invalid_hex = "z".repeat(64);
+        let item = verify_single_hash(&state, invalid_hex.clone()).await;
+        assert_eq!(item.hash, invalid_hex);
+        assert!(!item.verified);
+        assert!(item.error.is_some());
+        assert!(item.error.unwrap().contains("invalid character"));
+    }
+
+    #[tokio::test]
+    async fn test_verify_single_hash_empty() {
+        let state = test_state();
+        let item = verify_single_hash(&state, "".to_string()).await;
+        assert_eq!(item.hash, "");
+        assert!(!item.verified);
+        assert!(item.error.is_some());
+        assert!(item.error.unwrap().contains("empty"));
+    }
+
+    #[tokio::test]
+    async fn test_verify_single_hash_cached_hit() {
+        let state = test_state();
+        let valid_hash =
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string();
+
+        let cached_resp = VerifyResponse {
+            verified: true,
+            transaction_id: Some("tx_cached_123".to_string()),
+            timestamp: Some(1700000000),
+            cached: true,
+            revoked: None,
+            revoked_at: None,
+        };
+        state
+            .cache
+            .set(&valid_hash, &cached_resp, 3600)
+            .await
+            .unwrap();
+
+        let item = verify_single_hash(&state, valid_hash.clone()).await;
+        assert_eq!(item.hash, valid_hash);
+        assert!(item.verified);
+        assert_eq!(item.transaction_id, Some("tx_cached_123".to_string()));
+        assert_eq!(item.timestamp, Some(1700000000));
+        assert!(item.error.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_batch_verify_mixed_hashes_returns_distinct_results() {
+        let state = test_state();
+
+        let valid_cached_hash =
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string();
+        let cached_resp = VerifyResponse {
+            verified: true,
+            transaction_id: Some("tx_valid_cached".to_string()),
+            timestamp: Some(1700000000),
+            cached: true,
+            revoked: None,
+            revoked_at: None,
+        };
+        state
+            .cache
+            .set(&valid_cached_hash, &cached_resp, 3600)
+            .await
+            .unwrap();
+
+        let invalid_short_hash = "abc123".to_string();
+        let invalid_char_hash = "g".repeat(64);
+
+        let req = BatchVerifyRequest {
+            hashes: vec![
+                valid_cached_hash.clone(),
+                invalid_short_hash.clone(),
+                invalid_char_hash.clone(),
+            ],
+        };
+
+        let response = batch_verify_documents(State(state), Json(req)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Convert body to BatchVerifyResponse
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let batch_resp: BatchVerifyResponse = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(batch_resp.total, 3);
+        assert_eq!(batch_resp.verified_count, 1);
+        assert_eq!(batch_resp.failed_count, 2);
+        assert_eq!(batch_resp.results.len(), 3);
+
+        // First item (valid, cached): verified = true, error = None
+        assert_eq!(batch_resp.results[0].hash, valid_cached_hash);
+        assert!(batch_resp.results[0].verified);
+        assert_eq!(
+            batch_resp.results[0].transaction_id,
+            Some("tx_valid_cached".to_string())
+        );
+        assert!(batch_resp.results[0].error.is_none());
+
+        // Second item (invalid length): verified = false, error = Some(...)
+        assert_eq!(batch_resp.results[1].hash, invalid_short_hash);
+        assert!(!batch_resp.results[1].verified);
+        assert!(batch_resp.results[1].error.is_some());
+        assert!(batch_resp.results[1]
+            .error
+            .as_ref()
+            .unwrap()
+            .contains("wrong length"));
+
+        // Third item (invalid character): verified = false, error = Some(...)
+        assert_eq!(batch_resp.results[2].hash, invalid_char_hash);
+        assert!(!batch_resp.results[2].verified);
+        assert!(batch_resp.results[2].error.is_some());
+        assert!(batch_resp.results[2]
+            .error
+            .as_ref()
+            .unwrap()
+            .contains("invalid character"));
+    }
+}

@@ -252,6 +252,85 @@ async fn batch_verify_calls_horizon_once_per_hash() {
     account_mock.assert_hits_async(10).await;
 }
 
+#[tokio::test]
+async fn batch_verify_mixed_valid_and_invalid_hashes_returns_distinct_results() {
+    let mock_server = MockServer::start_async().await;
+
+    mock_server.mock(|when, then| {
+        when.method(GET).path_contains("/accounts/");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(horizon_empty_account_json());
+    });
+
+    let state = make_state(&mock_server.base_url());
+
+    // Prime cache with a verified document
+    let verified_hash = SAMPLE_HASH.to_string();
+    let cached_resp = crate::VerifyResponse {
+        verified: true,
+        transaction_id: Some("tx_integration_batch".to_string()),
+        timestamp: Some(1700000000),
+        cached: true,
+        revoked: None,
+        revoked_at: None,
+    };
+    state
+        .cache
+        .set(&verified_hash, &cached_resp, 3600)
+        .await
+        .unwrap();
+
+    let server = TestServer::new(app(state)).unwrap();
+
+    let invalid_short = "short";
+    let invalid_hex = "x".repeat(64);
+    let valid_unanchored = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    let resp = server
+        .post("/verify/batch")
+        .json(&json!({
+            "hashes": [
+                verified_hash,
+                invalid_short,
+                invalid_hex,
+                valid_unanchored
+            ]
+        }))
+        .await;
+
+    resp.assert_status_ok();
+    let body: Value = resp.json();
+
+    assert_eq!(body["total"], 4);
+    assert_eq!(body["verified_count"], 1);
+    assert_eq!(body["failed_count"], 3);
+
+    let results = body["results"].as_array().unwrap();
+    assert_eq!(results.len(), 4);
+
+    // Item 0: valid, anchored (cached) -> verified: true, error: null
+    assert_eq!(results[0]["hash"], SAMPLE_HASH);
+    assert_eq!(results[0]["verified"], true);
+    assert_eq!(results[0]["transaction_id"], "tx_integration_batch");
+    assert!(results[0]["error"].is_null());
+
+    // Item 1: invalid length -> verified: false, error: "wrong length"
+    assert_eq!(results[1]["hash"], invalid_short);
+    assert_eq!(results[1]["verified"], false);
+    assert!(results[1]["error"].as_str().unwrap().contains("wrong length"));
+
+    // Item 2: invalid hex -> verified: false, error: "invalid character"
+    assert_eq!(results[2]["hash"], invalid_hex);
+    assert_eq!(results[2]["verified"], false);
+    assert!(results[2]["error"].as_str().unwrap().contains("invalid character"));
+
+    // Item 3: valid unanchored -> verified: false, error: null
+    assert_eq!(results[3]["hash"], valid_unanchored);
+    assert_eq!(results[3]["verified"], false);
+    assert!(results[3]["error"].is_null());
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 7. Batch validate: empty batch → 400
 // ─────────────────────────────────────────────────────────────────────────────
