@@ -219,6 +219,101 @@ async fn test_batch_verify_too_many_hashes_returns_400() {
 }
 
 #[tokio::test]
+async fn test_batch_verify_mixed_valid_and_invalid_hashes_returns_per_item_results() {
+    let state = test_app_state();
+    let valid_hash_1 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    let invalid_hash_short = "too-short";
+    let invalid_hash_bad_chars = "z".repeat(64);
+    let valid_hash_2 = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+
+    // Prime cache for valid_hash_1 so it verifies true
+    let cached_resp = stellar_doc_verifier::VerifyResponse {
+        verified: true,
+        transaction_id: Some("tx_integration_1".to_string()),
+        timestamp: Some(1700000000),
+        cached: true,
+        revoked: None,
+        revoked_at: None,
+    };
+    state
+        .cache
+        .set(valid_hash_1, &cached_resp, 3600)
+        .await
+        .unwrap();
+
+    let router = app(state);
+
+    let body = serde_json::json!({
+        "hashes": [
+            valid_hash_1,
+            invalid_hash_short,
+            invalid_hash_bad_chars,
+            valid_hash_2
+        ]
+    })
+    .to_string();
+
+    let response = router
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/verify/batch")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let resp: stellar_doc_verifier::BatchVerifyResponse =
+        serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(resp.total, 4);
+    assert_eq!(resp.verified_count, 1);
+    assert_eq!(resp.failed_count, 3);
+    assert_eq!(resp.results.len(), 4);
+
+    // Item 0: valid and verified from cache
+    assert_eq!(resp.results[0].hash, valid_hash_1);
+    assert!(resp.results[0].verified);
+    assert_eq!(
+        resp.results[0].transaction_id,
+        Some("tx_integration_1".to_string())
+    );
+    assert_eq!(resp.results[0].timestamp, Some(1700000000));
+    assert!(resp.results[0].error.is_none());
+
+    // Item 1: invalid length -> per-item error without failing batch
+    assert_eq!(resp.results[1].hash, invalid_hash_short);
+    assert!(!resp.results[1].verified);
+    assert!(resp.results[1].error.is_some());
+    assert!(resp.results[1]
+        .error
+        .as_ref()
+        .unwrap()
+        .contains("wrong length"));
+
+    // Item 2: invalid character -> per-item error without failing batch
+    assert_eq!(resp.results[2].hash, invalid_hash_bad_chars);
+    assert!(!resp.results[2].verified);
+    assert!(resp.results[2].error.is_some());
+    assert!(resp.results[2]
+        .error
+        .as_ref()
+        .unwrap()
+        .contains("invalid character"));
+
+    // Item 3: valid format hash but query failed / not found -> verified: false
+    assert_eq!(resp.results[3].hash, valid_hash_2);
+    assert!(!resp.results[3].verified);
+}
+
+#[tokio::test]
 async fn test_submit_with_invalid_hash_returns_400() {
     let state = test_app_state();
     let router = app(state);

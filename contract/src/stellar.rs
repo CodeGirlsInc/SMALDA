@@ -26,7 +26,7 @@ pub struct StellarClient {
     retry_policy: RetryPolicy,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct TransactionRecord {
     pub transaction_id: String,
     pub timestamp: i64,

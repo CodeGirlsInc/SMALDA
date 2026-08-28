@@ -16,13 +16,13 @@ pub struct AppState {
 }
 
 // Request/Response types
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct VerifyRequest {
     pub document_hash: String,
     pub transaction_id: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct VerifyResponse {
     pub verified: bool,
     pub transaction_id: Option<String>,
@@ -35,7 +35,7 @@ pub struct VerifyResponse {
 }
 
 /// Request type for submitting a document hash to Stellar blockchain
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct SubmitRequest {
     pub document_hash: String,
     pub document_id: String,
@@ -43,7 +43,7 @@ pub struct SubmitRequest {
 }
 
 /// Response type for document hash submission
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct SubmitResponse {
     pub success: bool,
     pub transaction_id: Option<String>,
@@ -51,21 +51,21 @@ pub struct SubmitResponse {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct RevokeRequest {
     pub document_hash: String,
     pub reason: String,
     pub revoked_by: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct RevokeResponse {
     pub transaction_id: String,
     pub revoked_at: i64,
     pub revoked: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct HealthResponse {
     pub status: String,
     pub stellar_connected: bool,
@@ -73,7 +73,7 @@ pub struct HealthResponse {
 }
 
 /// Response type for document verification history
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct HistoryResponse {
     pub document_hash: String,
     pub transactions: Vec<TransactionRecord>,
@@ -81,17 +81,17 @@ pub struct HistoryResponse {
     pub cached: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ValidationErrorResponse {
     pub error: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct BatchVerifyRequest {
     pub hashes: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct BatchVerifyResponse {
     pub results: Vec<BatchVerifyItem>,
     pub total: usize,
@@ -99,7 +99,7 @@ pub struct BatchVerifyResponse {
     pub failed_count: usize,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct BatchVerifyItem {
     pub hash: String,
     pub verified: bool,
@@ -108,7 +108,7 @@ pub struct BatchVerifyItem {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct TransferRequest {
     pub document_hash: String,
     pub from_owner: String,
@@ -117,7 +117,7 @@ pub struct TransferRequest {
     pub transfer_reference: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct TransferRecord {
     pub document_hash: String,
     pub from_owner: String,
@@ -129,7 +129,7 @@ pub struct TransferRecord {
     pub anchored_at: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct TransferResponse {
     pub transfer_hash: String,
     pub memo: String,
@@ -246,7 +246,7 @@ pub fn cosine_similarity(doc1: &str, doc2: &str) -> f64 {
 }
 
 /// Document similarity result
-#[derive(Debug, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct SimilarityResult {
     pub doc1: String,
     pub doc2: String,
@@ -540,5 +540,396 @@ mod tests {
         assert_eq!(item.transaction_id, None);
         assert_eq!(item.timestamp, None);
         assert_eq!(item.error, Some("invalid hash format".to_string()));
+    }
+
+    // ── Round-trip serde tests for all public types ──────────────
+
+    fn assert_serde_round_trip<T>(original: &T)
+    where
+        T: Serialize + for<'de> Deserialize<'de> + PartialEq + std::fmt::Debug,
+    {
+        let json_string =
+            serde_json::to_string(original).expect("serialization to JSON string should succeed");
+        let deserialized: T = serde_json::from_str(&json_string)
+            .expect("deserialization from JSON string should succeed");
+        assert_eq!(
+            original, &deserialized,
+            "Round-trip value mismatch for JSON string"
+        );
+
+        let json_bytes =
+            serde_json::to_vec(original).expect("serialization to JSON bytes should succeed");
+        let deserialized_bytes: T = serde_json::from_slice(&json_bytes)
+            .expect("deserialization from JSON slice should succeed");
+        assert_eq!(
+            original, &deserialized_bytes,
+            "Round-trip value mismatch for JSON bytes"
+        );
+    }
+
+    #[test]
+    fn test_round_trip_verify_request() {
+        let req_with_tx = VerifyRequest {
+            document_hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                .to_string(),
+            transaction_id: Some("tx_abc123".to_string()),
+        };
+        assert_serde_round_trip(&req_with_tx);
+
+        let req_without_tx = VerifyRequest {
+            document_hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                .to_string(),
+            transaction_id: None,
+        };
+        assert_serde_round_trip(&req_without_tx);
+    }
+
+    #[test]
+    fn test_round_trip_verify_response() {
+        let resp_full = VerifyResponse {
+            verified: true,
+            transaction_id: Some("tx_123".to_string()),
+            timestamp: Some(1700000000),
+            cached: true,
+            revoked: Some(false),
+            revoked_at: None,
+        };
+        assert_serde_round_trip(&resp_full);
+
+        let resp_revoked = VerifyResponse {
+            verified: false,
+            transaction_id: Some("tx_456".to_string()),
+            timestamp: Some(1700000000),
+            cached: false,
+            revoked: Some(true),
+            revoked_at: Some(1700001000),
+        };
+        assert_serde_round_trip(&resp_revoked);
+
+        let resp_minimal = VerifyResponse {
+            verified: false,
+            transaction_id: None,
+            timestamp: None,
+            cached: false,
+            revoked: None,
+            revoked_at: None,
+        };
+        assert_serde_round_trip(&resp_minimal);
+    }
+
+    #[test]
+    fn test_round_trip_submit_request() {
+        let req = SubmitRequest {
+            document_hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                .to_string(),
+            document_id: "doc-999".to_string(),
+            submitter: "alice".to_string(),
+        };
+        assert_serde_round_trip(&req);
+    }
+
+    #[test]
+    fn test_round_trip_submit_response() {
+        let resp_success = SubmitResponse {
+            success: true,
+            transaction_id: Some("tx_submit_123".to_string()),
+            anchored_at: Some(1700000000),
+            error: None,
+        };
+        assert_serde_round_trip(&resp_success);
+
+        let resp_failed = SubmitResponse {
+            success: false,
+            transaction_id: None,
+            anchored_at: None,
+            error: Some("network error".to_string()),
+        };
+        assert_serde_round_trip(&resp_failed);
+    }
+
+    #[test]
+    fn test_round_trip_revoke_request() {
+        let req = RevokeRequest {
+            document_hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                .to_string(),
+            reason: "superseded by version 2".to_string(),
+            revoked_by: "admin".to_string(),
+        };
+        assert_serde_round_trip(&req);
+    }
+
+    #[test]
+    fn test_round_trip_revoke_response() {
+        let resp = RevokeResponse {
+            transaction_id: "tx_revoke_789".to_string(),
+            revoked_at: 1700002000,
+            revoked: true,
+        };
+        assert_serde_round_trip(&resp);
+    }
+
+    #[test]
+    fn test_round_trip_health_response() {
+        let resp_healthy = HealthResponse {
+            status: "healthy".to_string(),
+            stellar_connected: true,
+            redis_connected: true,
+        };
+        assert_serde_round_trip(&resp_healthy);
+
+        let resp_degraded = HealthResponse {
+            status: "degraded".to_string(),
+            stellar_connected: false,
+            redis_connected: true,
+        };
+        assert_serde_round_trip(&resp_degraded);
+    }
+
+    #[test]
+    fn test_round_trip_history_response() {
+        let resp_empty = HistoryResponse {
+            document_hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                .to_string(),
+            transactions: vec![],
+            count: 0,
+            cached: false,
+        };
+        assert_serde_round_trip(&resp_empty);
+
+        let resp_with_records = HistoryResponse {
+            document_hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                .to_string(),
+            transactions: vec![
+                TransactionRecord {
+                    transaction_id: "tx_1".to_string(),
+                    timestamp: 1690000000,
+                    verified: true,
+                },
+                TransactionRecord {
+                    transaction_id: "tx_2".to_string(),
+                    timestamp: 1700000000,
+                    verified: true,
+                },
+            ],
+            count: 2,
+            cached: true,
+        };
+        assert_serde_round_trip(&resp_with_records);
+    }
+
+    #[test]
+    fn test_round_trip_validation_error_response() {
+        let resp = ValidationErrorResponse {
+            error: "hash must not be empty".to_string(),
+        };
+        assert_serde_round_trip(&resp);
+    }
+
+    #[test]
+    fn test_round_trip_batch_verify_request() {
+        let req_empty = BatchVerifyRequest { hashes: vec![] };
+        assert_serde_round_trip(&req_empty);
+
+        let req_populated = BatchVerifyRequest {
+            hashes: vec![
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
+                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".to_string(),
+            ],
+        };
+        assert_serde_round_trip(&req_populated);
+    }
+
+    #[test]
+    fn test_round_trip_batch_verify_item() {
+        let item_verified = BatchVerifyItem {
+            hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
+            verified: true,
+            transaction_id: Some("tx_batch_1".to_string()),
+            timestamp: Some(1700000000),
+            error: None,
+        };
+        assert_serde_round_trip(&item_verified);
+
+        let item_with_error = BatchVerifyItem {
+            hash: "invalid-hash".to_string(),
+            verified: false,
+            transaction_id: None,
+            timestamp: None,
+            error: Some("hash has wrong length: expected 64 characters, got 12".to_string()),
+        };
+        assert_serde_round_trip(&item_with_error);
+    }
+
+    #[test]
+    fn test_round_trip_batch_verify_response() {
+        let resp = BatchVerifyResponse {
+            results: vec![
+                BatchVerifyItem {
+                    hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                        .to_string(),
+                    verified: true,
+                    transaction_id: Some("tx_1".to_string()),
+                    timestamp: Some(1700000000),
+                    error: None,
+                },
+                BatchVerifyItem {
+                    hash: "invalid_hash".to_string(),
+                    verified: false,
+                    transaction_id: None,
+                    timestamp: None,
+                    error: Some("hash has wrong length: expected 64 characters, got 12".to_string()),
+                },
+            ],
+            total: 2,
+            verified_count: 1,
+            failed_count: 1,
+        };
+        assert_serde_round_trip(&resp);
+    }
+
+    #[test]
+    fn test_round_trip_transfer_request() {
+        let req = TransferRequest {
+            document_hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                .to_string(),
+            from_owner: "Alice".to_string(),
+            to_owner: "Bob".to_string(),
+            transfer_date: "2025-01-15".to_string(),
+            transfer_reference: "REF-2025-001".to_string(),
+        };
+        assert_serde_round_trip(&req);
+    }
+
+    #[test]
+    fn test_round_trip_transfer_record() {
+        let record = TransferRecord {
+            document_hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                .to_string(),
+            from_owner: "Alice".to_string(),
+            to_owner: "Bob".to_string(),
+            transfer_date: "2025-01-15".to_string(),
+            transfer_reference: "REF-2025-001".to_string(),
+            transfer_hash: "a1b2c3d4e5f6".to_string(),
+            memo: "TRANSFER:a1b2c3d4e5f6".to_string(),
+            anchored_at: "2025-01-15T12:00:00Z".to_string(),
+        };
+        assert_serde_round_trip(&record);
+    }
+
+    #[test]
+    fn test_round_trip_transfer_response() {
+        let resp = TransferResponse {
+            transfer_hash: "a1b2c3d4e5f67890".to_string(),
+            memo: "TRANSFER:a1b2c3d4e5f67890".to_string(),
+        };
+        assert_serde_round_trip(&resp);
+    }
+
+    #[test]
+    fn test_round_trip_similarity_result() {
+        let result = SimilarityResult {
+            doc1: "Hello world".to_string(),
+            doc2: "Hello earth".to_string(),
+            cosine: 0.85,
+            levenshtein: 0.72,
+            combined: 0.785,
+        };
+        assert_serde_round_trip(&result);
+    }
+
+    #[test]
+    fn test_all_public_types_round_trip_suite() {
+        // Consolidated test verifying all 16 public data/serde types
+        assert_serde_round_trip(&VerifyRequest {
+            document_hash: "hash123".to_string(),
+            transaction_id: Some("tx1".to_string()),
+        });
+        assert_serde_round_trip(&VerifyResponse {
+            verified: true,
+            transaction_id: Some("tx1".to_string()),
+            timestamp: Some(100),
+            cached: false,
+            revoked: None,
+            revoked_at: None,
+        });
+        assert_serde_round_trip(&SubmitRequest {
+            document_hash: "hash123".to_string(),
+            document_id: "doc1".to_string(),
+            submitter: "user1".to_string(),
+        });
+        assert_serde_round_trip(&SubmitResponse {
+            success: true,
+            transaction_id: Some("tx1".to_string()),
+            anchored_at: Some(100),
+            error: None,
+        });
+        assert_serde_round_trip(&RevokeRequest {
+            document_hash: "hash123".to_string(),
+            reason: "revoked".to_string(),
+            revoked_by: "admin".to_string(),
+        });
+        assert_serde_round_trip(&RevokeResponse {
+            transaction_id: "tx1".to_string(),
+            revoked_at: 100,
+            revoked: true,
+        });
+        assert_serde_round_trip(&HealthResponse {
+            status: "healthy".to_string(),
+            stellar_connected: true,
+            redis_connected: true,
+        });
+        assert_serde_round_trip(&HistoryResponse {
+            document_hash: "hash123".to_string(),
+            transactions: vec![],
+            count: 0,
+            cached: false,
+        });
+        assert_serde_round_trip(&ValidationErrorResponse {
+            error: "bad request".to_string(),
+        });
+        assert_serde_round_trip(&BatchVerifyRequest {
+            hashes: vec!["hash1".to_string()],
+        });
+        assert_serde_round_trip(&BatchVerifyItem {
+            hash: "hash1".to_string(),
+            verified: true,
+            transaction_id: Some("tx1".to_string()),
+            timestamp: Some(100),
+            error: None,
+        });
+        assert_serde_round_trip(&BatchVerifyResponse {
+            results: vec![],
+            total: 0,
+            verified_count: 0,
+            failed_count: 0,
+        });
+        assert_serde_round_trip(&TransferRequest {
+            document_hash: "hash1".to_string(),
+            from_owner: "alice".to_string(),
+            to_owner: "bob".to_string(),
+            transfer_date: "2025-01-01".to_string(),
+            transfer_reference: "ref1".to_string(),
+        });
+        assert_serde_round_trip(&TransferRecord {
+            document_hash: "hash1".to_string(),
+            from_owner: "alice".to_string(),
+            to_owner: "bob".to_string(),
+            transfer_date: "2025-01-01".to_string(),
+            transfer_reference: "ref1".to_string(),
+            transfer_hash: "thash".to_string(),
+            memo: "memo".to_string(),
+            anchored_at: "2025-01-01T00:00:00Z".to_string(),
+        });
+        assert_serde_round_trip(&TransferResponse {
+            transfer_hash: "thash".to_string(),
+            memo: "memo".to_string(),
+        });
+        assert_serde_round_trip(&SimilarityResult {
+            doc1: "a".to_string(),
+            doc2: "b".to_string(),
+            cosine: 0.5,
+            levenshtein: 0.5,
+            combined: 0.5,
+        });
     }
 }
