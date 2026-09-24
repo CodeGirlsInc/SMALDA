@@ -1,6 +1,7 @@
 ﻿import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
+import { promises as fs } from 'fs';
 import { Document, DocumentStatus } from './entities/document.entity';
 
 @Injectable()
@@ -77,6 +78,11 @@ export class DocumentsService {
   }
 
   async delete(id: string): Promise<void> {
+    const document = await this.documentRepository.findOne({ where: { id } });
+    if (document) {
+      // Remove the stored file so no orphaned blob outlives its record.
+      await fs.unlink(document.filePath).catch(() => undefined);
+    }
     await this.documentRepository.delete(id);
   }
 
