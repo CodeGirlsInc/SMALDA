@@ -6,12 +6,14 @@ import {
   VerificationRecord,
   VerificationStatus,
 } from './entities/verification-record.entity';
+import { DocumentsGateway } from '../documents/documents.gateway';
 
 @Injectable()
 export class VerificationService {
   constructor(
     @InjectRepository(VerificationRecord)
     private readonly verificationRepository: Repository<VerificationRecord>,
+    private readonly documentsGateway: DocumentsGateway,
   ) {}
 
   async create(payload: Partial<VerificationRecord>): Promise<VerificationRecord> {
@@ -30,8 +32,13 @@ export class VerificationService {
       }
     }
 
-    const record = this.verificationRepository.create(payload);
-    return this.verificationRepository.save(record);
+    const record = await this.verificationRepository.save(payload);
+    this.documentsGateway.notifyVerificationStatusChanged(
+      record.documentId,
+      record.status,
+      null,
+    );
+    return record;
   }
 
   findByDocument(documentId: string): Promise<VerificationRecord[]> {
@@ -49,7 +56,17 @@ export class VerificationService {
     id: string,
     status: VerificationStatus,
   ): Promise<VerificationRecord | null> {
+    const before = await this.verificationRepository.findOne({ where: { id } });
     await this.verificationRepository.update(id, { status });
-    return this.verificationRepository.findOne({ where: { id } });
+    const record = await this.verificationRepository.findOne({ where: { id } });
+
+    if (record) {
+      this.documentsGateway.notifyVerificationStatusChanged(
+        record.documentId,
+        record.status,
+        before?.status ?? null,
+      );
+    }
+    return record;
   }
 }
