@@ -32,6 +32,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User } from '../users/entities/user.entity';
 import { QueueService } from '../queue/queue.service';
 import { VerificationService } from '../verification/verification.service';
+import { AccessLogsService } from '../access-logs/access-logs.service';
 import { FileValidationPipe } from './pipes/file-validation.pipe';
 import { ListDocumentsDto } from './dto/list-documents.dto';
 import { DocumentResponseDto } from './dto/document-response.dto';
@@ -59,6 +60,7 @@ export class DocumentsController {
     private readonly configService: ConfigService,
     private readonly queueService: QueueService,
     private readonly verificationService: VerificationService,
+    private readonly accessLogsService: AccessLogsService,
   ) {}
 
   @Post('upload')
@@ -245,6 +247,14 @@ export class DocumentsController {
     if (!user || document.ownerId !== user.id) {
       throw new NotFoundException('Document not found');
     }
+
+    // BE audit — every download is recorded in the access-log trail.
+    await this.accessLogsService.logDocumentAccess(
+      document.id,
+      'download',
+      user.id,
+      req.ip,
+    );
 
     const stream = createReadStream(document.filePath);
     const contentType =
