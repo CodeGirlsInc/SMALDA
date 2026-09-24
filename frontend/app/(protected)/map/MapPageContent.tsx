@@ -66,6 +66,8 @@ export default function MapPageContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [userRegion, setUserRegion] = useState<[number, number] | null>(null);
+  const [tileError, setTileError] = useState(false);
+  const [tileKey, setTileKey] = useState(0);
   const mapRef = useRef<L.Map | null>(null);
 
   const fetchDocuments = useCallback(async () => {
@@ -166,8 +168,13 @@ export default function MapPageContent() {
             ref={mapRef}
           >
             <TileLayer
+              key={tileKey}
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              eventHandlers={{
+                tileerror: () => setTileError(true),
+                load: () => setTileError(false),
+              }}
             />
             <ZoomControl position="bottomright" />
 
@@ -195,6 +202,43 @@ export default function MapPageContent() {
                     Documents with GPS coordinates will appear on this map.
                     Upload a document with location metadata to see it here.
                   </p>
+                </div>
+              </div>
+            )}
+
+            {tileError && (
+              <div className="pointer-events-none absolute inset-0 z-[1001] flex items-center justify-center">
+                <div className="pointer-events-auto max-w-sm rounded-xl bg-white p-6 text-center shadow-lg">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="mx-auto h-10 w-10 text-red-300"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 9v2m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
+                  </svg>
+                  <h3 className="mt-3 text-sm font-semibold text-gray-900">
+                    Map tiles failed to load
+                  </h3>
+                  <p className="mt-1 text-xs text-gray-500">
+                    The map tile provider could not be reached. Check your
+                    connection or try again.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTileError(false);
+                      setTileKey((k) => k + 1);
+                    }}
+                    className="mt-3 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Retry map
+                  </button>
                 </div>
               </div>
             )}
