@@ -136,10 +136,21 @@ export class ExternalValidationService {
         error.stack,
       );
 
-      request.status = ValidationStatus.FAILED;
-      request.result = ValidationResult.ERROR;
-      request.errorMessage = error.message;
-      request.responsePayload = { error: error.message };
+      // Degraded mode: the primary provider is unavailable. Instead of
+      // failing the request outright, mark it for manual review so the
+      // outcome can be resolved off-line.
+      this.logger.warn(
+        `Entering degraded mode for request ${requestId}; assigning to manual review`,
+      );
+
+      request.status = ValidationStatus.COMPLETED;
+      request.result = ValidationResult.UNSURE;
+      request.errorMessage =
+        'Primary validation provider unavailable; assigned to manual review';
+      request.responsePayload = {
+        degraded: true,
+        providerError: error.message,
+      };
 
       return this.validationRequestRepository.save(request);
     }
