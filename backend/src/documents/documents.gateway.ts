@@ -36,6 +36,15 @@ import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
  *     previousStatus: "PENDING" | "ANALYZING" | "VERIFIED" | "FLAGGED" | "REJECTED" | null,
  *     timestamp: string (ISO 8601)
  *   }
+ *
+ * Server → Client (verification status changed):
+ *   Event:  "verification:status-changed"
+ *   Payload: {
+ *     documentId: string,
+ *     status: "PENDING" | "CONFIRMED" | ... (VerificationStatus),
+ *     previousStatus: VerificationStatus | null,
+ *     timestamp: string (ISO 8601)
+ *   }
  * ─────────────────────────────────────────────────────────────────────
  */
 
@@ -139,5 +148,20 @@ export class DocumentsGateway
       previousStatus,
       timestamp: new Date().toISOString(),
     });
+  }
+
+  notifyVerificationStatusChanged(
+    documentId: string,
+    status: string,
+    previousStatus: string | null,
+  ): void {
+    this.server
+      .to(`document:${documentId}`)
+      .emit('verification:status-changed', {
+        documentId,
+        status,
+        previousStatus,
+        timestamp: new Date().toISOString(),
+      });
   }
 }
