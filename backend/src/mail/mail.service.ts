@@ -43,10 +43,24 @@ export class MailService {
       return;
     }
 
-    await this.transporter.sendMail({
-      from: this.from,
-      ...options,
-    });
+    const maxAttempts = 2;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await this.transporter.sendMail({
+          from: this.from,
+          ...options,
+        });
+        return;
+      } catch (error) {
+        this.logger.error(
+          `Failed to send email to ${options.to} (attempt ${attempt}/${maxAttempts}): ${(error as Error).message}`,
+          (error as Error).stack,
+        );
+        if (attempt < maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+        }
+      }
+    }
   }
 
   async sendVerificationEmail(to: string, token: string): Promise<void> {
