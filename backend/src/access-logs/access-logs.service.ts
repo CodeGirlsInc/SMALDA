@@ -42,6 +42,15 @@ export class AccessLogsService {
     isDenied = false,
   ): Promise<void> {
     try {
+      await this.accessLogRepository.save(
+        this.accessLogRepository.create({
+          userId: userId ?? null,
+          routePath: `documents/${documentId}/${action}`,
+          httpMethod: 'GET',
+          ipAddress,
+          statusCode: isDenied ? 403 : 200,
+        }),
+      );
       this.logger.log(
         `Document Access Log: docId=${documentId}, action=${action}, user=${userId || 'anonymous'}, denied=${isDenied}`,
       );
