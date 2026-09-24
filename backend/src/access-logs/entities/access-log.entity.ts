@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
@@ -23,6 +24,7 @@ export class AccessLog {
   ipAddress: string;
 
   @CreateDateColumn()
+  @Index('idx_access_logs_created_at')
   createdAt: Date;
 
   @Column({ type: 'int', nullable: true })
