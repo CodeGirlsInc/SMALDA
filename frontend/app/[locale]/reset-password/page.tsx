@@ -4,7 +4,7 @@ import React, { Suspense, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { Link, useRouter } from "@/i18n/navigation";
-import { apiUrl } from "@/lib/api-config";
+import { ApiError, request } from "@/lib/api-client";
 
 const MIN_PASSWORD_LENGTH = 6;
 
@@ -80,22 +80,21 @@ function ResetPasswordForm() {
 
     setLoading(true);
     try {
-      const res = await fetch(apiUrl("/auth/reset-password"), {
+      await request("/api/v1/auth/reset-password", {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, password }),
+        anonymous: true,
+        body: { token, password },
       });
-
-      if (res.status === 400 || res.status === 401 || res.status === 410) {
-        setTokenInvalid(true);
-        return;
-      }
-      if (!res.ok) throw new Error(`Reset failed: ${res.status}`);
-
       router.push("/login?reset=success");
-    } catch {
-      setError(t("errorGeneric"));
+    } catch (error) {
+      if (
+        error instanceof ApiError &&
+        (error.status === 400 || error.status === 401 || error.status === 410)
+      ) {
+        setTokenInvalid(true);
+      } else {
+        setError(t("errorGeneric"));
+      }
     } finally {
       setLoading(false);
     }

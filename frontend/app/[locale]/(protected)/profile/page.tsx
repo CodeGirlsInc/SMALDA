@@ -34,10 +34,8 @@ async function fetchCurrentUser(): Promise<UserProfile> {
 }
 
 async function patchUser(changes: Partial<ProfileForm>): Promise<void> {
-  // Replace with real fetch:
-  // await fetch('/api/users/me', { method: 'PATCH', body: JSON.stringify(changes) })
   await new Promise((r) => setTimeout(r, 700));
-  console.log("PATCH /api/users/me", changes);
+  void changes;
 }
 
 function getChangedFields(

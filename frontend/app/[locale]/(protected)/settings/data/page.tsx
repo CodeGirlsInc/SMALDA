@@ -1,17 +1,19 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { getAccessToken, logoutSession } from "@/lib/session";
-import { apiUrl } from "@/lib/api-config";
+import { useRouter } from "@/i18n/navigation";
+import {
+  clearSession,
+  request,
+  requestBlob,
+} from "@/lib/api-client";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function getAuthHeaders(): HeadersInit {
-  const token = getAccessToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+function logout(): boolean {
+  return clearSession().ok;
 }
 
 const COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -178,12 +180,7 @@ export default function SettingsDataPage() {
     setIsExporting(true);
     setExportError(null);
     try {
-      const res = await fetch(apiUrl("/users/me/export"), {
-        credentials: "include",
-        headers: getAuthHeaders(),
-      });
-      if (!res.ok) throw new Error(`Export failed: ${res.status}`);
-      const blob = await res.blob();
+      const blob = await requestBlob("/api/v1/users/me/export");
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -210,24 +207,14 @@ export default function SettingsDataPage() {
     setIsDeleting(true);
     setDeleteError(null);
     try {
-      const res = await fetch(apiUrl("/users/me/data"), {
+      await request("/api/v1/users/me/data", {
         method: "DELETE",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          ...getAuthHeaders(),
-        },
-        body: JSON.stringify({ password }),
+        body: { password },
       });
 
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(
-          body?.message ?? `Deletion failed: ${res.status}`
-        );
+      if (!logout()) {
+        throw new Error("Sign out failed. Please try again.");
       }
-
-      await logoutSession();
       router.push("/?deleted=true");
     } catch (err: unknown) {
       setDeleteError(

@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
-import Link from "next/link";
-import { apiUrl } from "@/lib/api-config";
+import { useSearchParams } from "next/navigation";
+import { Link, useRouter } from "@/i18n/navigation";
+import { ApiError, request } from "@/lib/api-client";
 
 export default function VerifyEmailPage() {
   const searchParams = useSearchParams();
@@ -24,24 +24,21 @@ export default function VerifyEmailPage() {
 
     async function verify() {
       try {
-        const response = await fetch(apiUrl("/auth/verify-email", { token }), {
-          method: "GET",
-          credentials: "include",
-        });
-
-        if (response.ok) {
-          setStatus("success");
-          setTimeout(() => {
-            router.push("/login");
-          }, 3000);
-        } else {
-          const data = await response.json().catch(() => ({}));
-          setStatus("failure");
-          setErrorMessage(data.message || "Failed to verify email. The token may be expired or invalid.");
-        }
-      } catch (err) {
+        await request(
+          `/api/v1/auth/verify-email?token=${encodeURIComponent(token)}`,
+          { method: "GET", anonymous: true },
+        );
+        setStatus("success");
+        setTimeout(() => {
+          router.push("/login");
+        }, 3000);
+      } catch (error) {
         setStatus("failure");
-        setErrorMessage("Network error verifying email. Please check your connection.");
+        setErrorMessage(
+          error instanceof ApiError && error.backendMessage
+            ? error.backendMessage
+            : "Failed to verify email. The token may be expired or invalid.",
+        );
       }
     }
 
@@ -54,25 +51,19 @@ export default function VerifyEmailPage() {
 
     setResendStatus("sending");
     try {
-      const response = await fetch(apiUrl("/auth/resend-verification"), {
+      await request("/api/v1/auth/resend-verification", {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: resendEmail }),
+        anonymous: true,
+        body: { email: resendEmail },
       });
-
-      if (response.ok) {
-        setResendStatus("sent");
-      } else {
-        setResendStatus("error");
-      }
+      setResendStatus("sent");
     } catch {
       setResendStatus("error");
     }
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-900 px-4 py-12 text-white">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-gray-900 px-4 py-12 text-white">
       <div className="w-full max-w-md rounded-xl border border-gray-800 bg-gray-950 p-8 shadow-2xl">
         <h1 className="mb-6 text-center text-2xl font-bold">Email Verification</h1>
 
@@ -138,6 +129,6 @@ export default function VerifyEmailPage() {
           </div>
         )}
       </div>
-    </div>
+    </main>
   );
 }

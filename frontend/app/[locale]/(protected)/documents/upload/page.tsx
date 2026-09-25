@@ -2,9 +2,16 @@
 
 import React, { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { API_PREFIX } from "@/lib/api-contracts";
+import {
+  documentUploadConstraints,
+  documentUploadSchema,
+} from "@/lib/schemas/document";
 
-const ALLOWED_TYPES = ["application/pdf", "image/png", "image/jpeg"];
-const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20MB
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+const MAX_SIZE_MB = Math.round(
+  documentUploadConstraints.fileSize.max / (1024 * 1024),
+);
 
 export default function DocumentUploadPage() {
   const router = useRouter();
@@ -18,13 +25,17 @@ export default function DocumentUploadPage() {
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
 
   function validateFile(file: File): string | null {
-    if (!ALLOWED_TYPES.includes(file.type)) {
+    const result = documentUploadSchema.safeParse({
+      fileSize: file.size,
+      mimeType: file.type,
+    });
+    if (result.success) return null;
+
+    const field = result.error.issues[0]?.path[0];
+    if (field === "mimeType") {
       return "Invalid file type. Only PDF, PNG, and JPEG files are allowed.";
     }
-    if (file.size > MAX_SIZE_BYTES) {
-      return "File is too large. Maximum file size allowed is 20MB.";
-    }
-    return null;
+    return `File is too large. Maximum file size allowed is ${MAX_SIZE_MB}MB.`;
   }
 
   function handleFileChange(file: File | null) {
@@ -88,10 +99,15 @@ export default function DocumentUploadPage() {
         setProgress((prev) => (prev >= 90 ? prev : prev + 20));
       }, 200);
 
-      const response = await fetch("/api/documents/upload", {
-        method: "POST",
-        body: formData,
-      });
+      const token = window.localStorage.getItem("auth-token");
+      const response = await fetch(
+        `${API_BASE}${API_PREFIX}/documents/upload`,
+        {
+          method: "POST",
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          body: formData,
+        },
+      );
 
       clearInterval(interval);
       setProgress(100);
@@ -118,7 +134,8 @@ export default function DocumentUploadPage() {
       <div className="rounded-xl border border-gray-800 bg-gray-950 p-8 shadow-2xl">
         <h1 className="text-2xl font-bold">Upload New Document</h1>
         <p className="mt-1 text-xs text-gray-400">
-          Upload PDF, PNG, or JPEG documents (up to 20MB) for automated AI verification.
+          Upload PDF, PNG, or JPEG documents (up to {MAX_SIZE_MB}MB) for
+          automated AI verification.
         </p>
 
         <form onSubmit={handleUpload} className="mt-6">
@@ -151,7 +168,7 @@ export default function DocumentUploadPage() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.png,.jpeg,.jpg"
+              accept={documentUploadConstraints.mimeTypes.join(",")}
               className="hidden"
               onChange={(e) => handleFileChange(e.target.files?.[0] || null)}
             />
@@ -174,7 +191,9 @@ export default function DocumentUploadPage() {
                 <p className="text-sm font-medium text-gray-200">
                   Drag and drop your file here, or <span className="text-blue-400 underline">browse</span>
                 </p>
-                <p className="mt-1 text-xs text-gray-500">Supports PDF, PNG, JPEG (Max 20MB)</p>
+                <p className="mt-1 text-xs text-gray-500">
+                  Supports PDF, PNG, JPEG (Max {MAX_SIZE_MB}MB)
+                </p>
               </div>
             )}
           </div>

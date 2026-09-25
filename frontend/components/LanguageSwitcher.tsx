@@ -3,57 +3,40 @@
 import { useTransition } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { usePathname, useRouter } from "@/i18n/navigation";
-import { routing } from "@/i18n/routing";
-import { apiUrl } from "@/lib/api-config";
-import { getAccessToken } from "@/lib/session";
+import {
+  LOCALE_COOKIE_MAX_AGE,
+  LOCALE_COOKIE_NAME,
+  routing,
+  type Locale,
+} from "@/i18n/routing";
 
-/**
- * Persist the chosen language to the backend so it can be reused elsewhere
- * (e.g. for outgoing emails — see BE-86). Best-effort: a failure here must not
- * block the UI from switching languages.
- */
-async function persistPreferredLanguage(language: string): Promise<void> {
-  try {
-    const token = getAccessToken();
-
-    // Not signed in — the language still switches locally via the cookie/URL.
-    if (!token) return;
-
-    await fetch(apiUrl("/users/me"), {
-      method: "PATCH",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ preferredLanguage: language }),
-    });
-  } catch {
-    // Swallow — persistence is non-blocking.
-  }
+function persistLocalePreference(locale: Locale): void {
+  if (typeof document === "undefined") return;
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${LOCALE_COOKIE_NAME}=${encodeURIComponent(locale)}; Path=/; Max-Age=${LOCALE_COOKIE_MAX_AGE}; SameSite=Lax${secure}`;
 }
 
 /**
  * Dropdown that switches the active UI language. Switching triggers a
  * client-side navigation to the same route under the new locale (no full page
- * reload) and, when the user is authenticated, saves the preference to the
- * backend.
+ * reload).
  */
 export default function LanguageSwitcher() {
   const t = useTranslations("languageSwitcher");
-  const locale = useLocale();
+  const activeLocale = useLocale() as Locale;
   const router = useRouter();
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
 
   function handleSelect(nextLocale: string) {
-    if (nextLocale === locale) return;
-
-    void persistPreferredLanguage(nextLocale);
+    if (!routing.locales.includes(nextLocale as Locale)) return;
+    const locale = nextLocale as Locale;
+    persistLocalePreference(locale);
+    if (locale === activeLocale) return;
 
     startTransition(() => {
       // `pathname` is locale-agnostic; next-intl re-attaches the new locale.
-      router.replace(pathname, { locale: nextLocale });
+      router.replace(pathname, { locale });
     });
   }
 
@@ -61,7 +44,7 @@ export default function LanguageSwitcher() {
     <label className="inline-flex items-center gap-2 text-sm">
       <span className="sr-only">{t("label")}</span>
       <select
-        value={locale}
+        value={activeLocale}
         onChange={(event) => handleSelect(event.target.value)}
         disabled={isPending}
         aria-label={t("label")}

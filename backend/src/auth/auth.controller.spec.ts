@@ -1,9 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
-import { ConfigService } from '@nestjs/config';
 
 describe('AuthController', () => {
   let controller: AuthController;
@@ -12,12 +12,21 @@ describe('AuthController', () => {
   const mockAuthService = {
     register: jest.fn(),
     login: jest.fn(),
-    createOAuthExchangeCode: jest.fn().mockResolvedValue('exchange-code'),
-    handleOAuthLogin: jest.fn(),
-    logout: jest.fn().mockResolvedValue(undefined),
+    refreshToken: jest.fn(),
+    logout: jest.fn(),
+  };
+
+  const mockConfigService = {
+    get: jest.fn((key: string) => {
+      if (key === 'NODE_ENV') return 'test';
+      if (key === 'JWT_EXPIRATION') return '15m';
+      if (key === 'JWT_REFRESH_EXPIRATION') return '7d';
+      return undefined;
+    }),
   };
 
   beforeEach(async () => {
+    jest.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AuthController],
       providers: [
@@ -27,7 +36,7 @@ describe('AuthController', () => {
         },
         {
           provide: ConfigService,
-          useValue: { get: jest.fn().mockReturnValue('development') },
+          useValue: mockConfigService,
         },
       ],
     })
@@ -45,40 +54,26 @@ describe('AuthController', () => {
     expect(controller).toBeDefined();
   });
 
-  describe('register', () => {
-    it('should call authService.register with the provided dto', async () => {
-      const registerDto = {
-        email: 'test@example.com',
-        password: 'password123',
-        fullName: 'Test User',
-      };
-      const token = { access_token: 'jwt-token' };
-      mockAuthService.register.mockResolvedValue(token);
-
-      const result = await controller.register(registerDto);
-
-      expect(authService.register).toHaveBeenCalledWith(registerDto);
-      expect(result).toEqual(token);
-    });
-  });
-
-  it('sets the secure session cookie when registering', async () => {
+  it('sets HttpOnly cookies when registering', async () => {
     const registerDto = {
-      email: 'cookie@example.com',
-      password: 'password123',
-      fullName: 'Cookie User',
+      email: 'test@example.com',
+      password: 'Password123!',
+      fullName: 'Test User',
     };
-    mockAuthService.register.mockResolvedValue({ access_token: 'jwt-token' });
-    const response = {
-      cookie: jest.fn(),
-      clearCookie: jest.fn(),
-    } as any;
+    const tokens = {
+      access_token: 'jwt-token',
+      refresh_token: 'refresh-token',
+    };
+    const response = { cookie: jest.fn(), clearCookie: jest.fn() };
+    mockAuthService.register.mockResolvedValue(tokens);
 
-    await controller.register(registerDto, response);
+    const result = await controller.register(registerDto, response as never);
 
+    expect(authService.register).toHaveBeenCalledWith(registerDto);
+    expect(result).toEqual(tokens);
     expect(response.cookie).toHaveBeenCalledWith(
-      'smalda_access_token',
-      'jwt-token',
+      'access_token',
+      tokens.access_token,
       expect.objectContaining({
         httpOnly: true,
         secure: false,
@@ -86,36 +81,102 @@ describe('AuthController', () => {
         path: '/',
       }),
     );
+    expect(response.cookie).toHaveBeenCalledWith(
+      'refresh_token',
+      tokens.refresh_token,
+      expect.objectContaining({ httpOnly: true }),
+    );
   });
 
-  describe('login', () => {
-    it('should call authService.login with the provided dto', async () => {
-      const loginDto = { email: 'test@example.com', password: 'password123' };
-      const token = { access_token: 'jwt-token', refresh_token: 'refresh-token' };
-      mockAuthService.login.mockResolvedValue(token);
+  it('sets HttpOnly cookies when logging in', async () => {
+    const loginDto = { email: 'test@example.com', password: 'Password123!' };
+    const tokens = {
+      access_token: 'jwt-token',
+      refresh_token: 'refresh-token',
+    };
+    const response = { cookie: jest.fn(), clearCookie: jest.fn() };
+    mockAuthService.login.mockResolvedValue(tokens);
 
-      const result = await controller.login(loginDto);
+    const result = await controller.login(loginDto, response as never);
 
-      expect(authService.login).toHaveBeenCalledWith(loginDto);
-      expect(result).toEqual(token);
+    expect(authService.login).toHaveBeenCalledWith(loginDto);
+    expect(result).toEqual(tokens);
+    expect(response.cookie).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns only safe identity fields from /me', () => {
+    const result = controller.me({
+      user: {
+        id: 'user-1',
+        email: 'test@example.com',
+        fullName: 'Test User',
+        role: 'user',
+        isVerified: true,
+        preferredLanguage: 'en',
+        twoFactorEnabled: false,
+        passwordHash: 'secret-hash',
+      },
+    } as never);
+
+    expect(result).toEqual({
+      id: 'user-1',
+      email: 'test@example.com',
+      fullName: 'Test User',
+      role: 'user',
+      isVerified: true,
+      preferredLanguage: 'en',
+      twoFactorEnabled: false,
     });
   });
 
-  it('clears the session cookie when the access token is already expired', async () => {
-    const response = {
-      cookie: jest.fn(),
-      clearCookie: jest.fn(),
-    } as any;
+  it('clears both cookies on logout', async () => {
+    const response = { cookie: jest.fn(), clearCookie: jest.fn() };
+    const request = {
+      headers: {
+        authorization: 'Bearer bearer-token',
+        cookie: 'access_token=cookie-token; refresh_token=refresh-token',
+        origin: 'http://localhost:3000',
+      },
+    };
 
-    await controller.logout({ headers: {} } as any, response);
+    await controller.logout(request as never, response as never);
 
-    expect(response.clearCookie).toHaveBeenCalledWith(
-      'smalda_access_token',
-      expect.objectContaining({ httpOnly: true, path: '/' }),
+    expect(authService.logout).toHaveBeenCalledWith(
+      ['bearer-token', 'cookie-token'],
+      'refresh-token',
     );
-    expect(response.clearCookie).toHaveBeenCalledWith(
-      'token',
-      expect.objectContaining({ httpOnly: true, path: '/' }),
-    );
+    expect(response.clearCookie).toHaveBeenCalledTimes(2);
+  });
+
+  it('clears cookies even if token revocation fails', async () => {
+    const response = { cookie: jest.fn(), clearCookie: jest.fn() };
+    const request = {
+      headers: {
+        authorization: 'Bearer bearer-token',
+        cookie: 'access_token=cookie-token; refresh_token=refresh-token',
+        origin: 'http://localhost:3000',
+      },
+    };
+    mockAuthService.logout.mockRejectedValueOnce(new Error('revoke failed'));
+
+    await expect(
+      controller.logout(request as never, response as never),
+    ).rejects.toThrow('revoke failed');
+    expect(response.clearCookie).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects cookie-authenticated refresh from an untrusted origin', async () => {
+    const response = { cookie: jest.fn(), clearCookie: jest.fn() };
+    const request = {
+      headers: {
+        cookie: 'refresh_token=refresh-token',
+        origin: 'https://untrusted.example',
+      },
+    };
+
+    await expect(
+      controller.refresh({}, request as never, response as never),
+    ).rejects.toThrow('Request origin is not allowed');
+    expect(authService.refreshToken).not.toHaveBeenCalled();
   });
 });

@@ -7,14 +7,14 @@ import { useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { Link, useRouter } from "@/i18n/navigation";
 import { loginSchema, type LoginInput } from "@/lib/schemas/auth";
-import { ApiError, apiRequest } from "@/lib/api-client";
-import { apiUrl } from "@/lib/api-config";
+import { API_V1_BASE, ApiError, apiRequest } from "@/lib/api-client";
 import {
   resolvePostLoginPath,
   storeSession,
   type LoginResponse,
 } from "@/lib/auth-session";
 import { ErrorBanner } from "@/components/ErrorBanner";
+import { persistOAuthRedirect } from "@/lib/oauth-redirect";
 import {
   Button,
   Card,
@@ -89,26 +89,28 @@ export function LoginForm() {
   });
 
   const target = resolvePostLoginPath(searchParams.get("redirect"));
+  const resumeId = searchParams.get("resume");
 
-  // OAuth is a full-page handoff to the backend, which redirects back with a
-  // one-time exchange code — so these are plain anchors, not locale-aware links.
   const oauthHref = (provider: "google" | "github") =>
-    apiUrl(`/auth/${provider}`);
+    `${API_V1_BASE}/auth/${provider}`;
 
   async function onSubmit(values: LoginInput) {
     setSubmitError(null);
     try {
       const data = await apiRequest<LoginResponse>(
-        apiUrl("/auth/login"),
+        `${API_V1_BASE}/auth/login`,
         {
           method: "POST",
           body: values,
-          // Lets the backend set a session cookie too, for when the token
-          // stops living in localStorage.
           credentials: "include",
+          anonymous: true,
         },
       );
-      storeSession(data);
+      const stored = storeSession(data, resumeId ?? undefined);
+      if (!stored.ok) {
+        setSubmitError({ kind: "api", messageKey: "errors.status.unknown" });
+        return;
+      }
       // replace, so Back does not land the user on a login page they have
       // already passed through.
       router.replace(target);
@@ -225,10 +227,20 @@ export function LoginForm() {
 
         <div className="flex flex-col gap-2">
           <Button asChild variant="outline" className="w-full">
-            <a href={oauthHref("google")}>{t("continueWithGoogle")}</a>
+            <a
+              href={oauthHref("google")}
+              onClick={() => persistOAuthRedirect(target)}
+            >
+              {t("continueWithGoogle")}
+            </a>
           </Button>
           <Button asChild variant="outline" className="w-full">
-            <a href={oauthHref("github")}>{t("continueWithGithub")}</a>
+            <a
+              href={oauthHref("github")}
+              onClick={() => persistOAuthRedirect(target)}
+            >
+              {t("continueWithGithub")}
+            </a>
           </Button>
         </div>
 

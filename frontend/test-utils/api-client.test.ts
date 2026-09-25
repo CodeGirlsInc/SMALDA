@@ -1,4 +1,12 @@
-import { ApiError, clearSession, request } from "@/lib/api-client";
+import {
+  ApiError,
+  clearSession,
+  invalidateRefresh,
+  refreshSession,
+  request,
+  RefreshInvalidatedError,
+} from "@/lib/api-client";
+import { preserveSessionState } from "@/lib/session-state-preserver";
 
 const API_BASE = "http://localhost:3001";
 
@@ -28,6 +36,21 @@ function createLocalStorageMock() {
 
 let lsMock: ReturnType<typeof createLocalStorageMock>;
 
+let sessionStore: Record<string, string>;
+const sessionStorageMock = {
+  getItem: jest.fn((key: string) => sessionStore[key] ?? null),
+  setItem: jest.fn((key: string, value: string) => {
+    sessionStore[key] = value;
+  }),
+  removeItem: jest.fn((key: string) => {
+    delete sessionStore[key];
+  }),
+  get length() {
+    return Object.keys(sessionStore).length;
+  },
+  key: jest.fn((index: number) => Object.keys(sessionStore)[index] ?? null),
+};
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function setTokens(access: string, refresh?: string) {
@@ -38,6 +61,14 @@ function setTokens(access: string, refresh?: string) {
 function clearTokens() {
   lsMock.removeItem("auth-token");
   lsMock.removeItem("refresh-token");
+}
+
+function makeToken(subject: string): string {
+  const payload = btoa(JSON.stringify({ sub: subject }))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+  return `header.${payload}.signature`;
 }
 
 /** Build a mock Response-like object */
@@ -95,11 +126,21 @@ beforeEach(() => {
   }
 
   clearTokens();
+  sessionStore = {};
+  Object.defineProperty(window, "sessionStorage", {
+    value: sessionStorageMock,
+    writable: true,
+    configurable: true,
+  });
+  sessionStorageMock.getItem.mockClear();
+  sessionStorageMock.setItem.mockClear();
+  sessionStorageMock.removeItem.mockClear();
+  sessionStorageMock.key.mockClear();
 
   mockFetch = jest.fn();
   globalThis.fetch = mockFetch;
 
-  // Prevent actual navigation on redirect
+  invalidateRefresh();
   locationHref = "";
   Object.defineProperty(window, "location", {
     value: {
@@ -133,7 +174,7 @@ describe("request()", () => {
     expect(data).toEqual({ ok: true });
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url, opts] = mockFetch.mock.calls[0];
-    expect(url).toBe(`${API_BASE}/api/v1/test`);
+    expect(url).toBe(`${API_BASE}/api/test`);
     expect(opts.headers.get("Authorization")).toBe("Bearer my-jwt-token");
   });
 
@@ -231,7 +272,75 @@ describe("request()", () => {
     expect(lsMock.getItem("auth-token")).toBe("new-jwt-token");
   });
 
+  it("adopts a refresh completed by another tab", async () => {
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({ message: "Unauthorized" }, { status: 401 }),
+    );
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({ message: "Rotated" }, { status: 401 }),
+    );
+    mockFetch.mockResolvedValueOnce(mockResponse({ data: "fresh" }));
+    setTokens("expired-jwt", "shared-refresh-token");
+
+    const winner = setTimeout(() => {
+      lsMock.setItem("auth-token", "winner-access-token");
+      lsMock.setItem("refresh-token", "winner-refresh-token");
+    }, 25);
+
+    const data = await request<{ data: string }>("/api/data");
+    clearTimeout(winner);
+
+    expect(data).toEqual({ data: "fresh" });
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    expect(mockFetch.mock.calls[2][1].headers.get("Authorization")).toBe(
+      "Bearer winner-access-token",
+    );
+    expect(lsMock.getItem("auth-token")).toBe("winner-access-token");
+    expect(lsMock.getItem("refresh-token")).toBe("winner-refresh-token");
+  });
+
+  it("does not rotate again when another tab already updated storage", async () => {
+    mockFetch.mockImplementationOnce(async () => {
+      lsMock.setItem("auth-token", "winner-access-token");
+      lsMock.setItem("refresh-token", "winner-refresh-token");
+      return mockResponse({ message: "Unauthorized" }, { status: 401 });
+    });
+    mockFetch.mockResolvedValueOnce(mockResponse({ data: "fresh" }));
+    setTokens("expired-jwt", "shared-refresh-token");
+
+    const data = await request<{ data: string }>("/api/data");
+
+    expect(data).toEqual({ data: "fresh" });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockFetch.mock.calls[1][1].headers.get("Authorization")).toBe(
+      "Bearer winner-access-token",
+    );
+  });
+
   // ── 401 → refresh failure → clear session + redirect ───────────────────
+
+  it("clears the session when a refreshed request is still unauthorized", async () => {
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({ message: "Unauthorized" }, { status: 401 }),
+    );
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({ access_token: "new-jwt-token" }),
+    );
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({ message: "Unauthorized" }, { status: 401 }),
+    );
+
+    setTokens("expired-jwt", "valid-refresh-token");
+    await expect(request("/api/secret")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 401,
+      kind: "authRequired",
+    });
+
+    expect(lsMock.getItem("auth-token")).toBeNull();
+    expect(lsMock.getItem("refresh-token")).toBeNull();
+    expect(locationHref).toContain("/login?redirect=");
+  });
 
   it("clears session and redirects to /login when refresh fails", async () => {
     // First call: 401
@@ -243,7 +352,11 @@ describe("request()", () => {
       mockResponse({ message: "Invalid" }, { status: 401 }),
     );
 
-    setTokens("expired-token", "bad-refresh-token");
+    setTokens(makeToken("user-a"), "bad-refresh-token");
+    const preserved = preserveSessionState("upload-form", { title: "Land deed" });
+    expect(preserved.ok).toBe(true);
+    if (!preserved.ok) return;
+    const resumeId = preserved.value;
 
     await expect(request("/api/secret")).rejects.toMatchObject({
       name: "ApiError",
@@ -253,7 +366,8 @@ describe("request()", () => {
 
     expect(lsMock.getItem("auth-token")).toBeNull();
     expect(lsMock.getItem("refresh-token")).toBeNull();
-    expect(locationHref).toContain("/login");
+    expect(locationHref).toContain("resume=");
+    expect(locationHref).toContain(encodeURIComponent(resumeId));
   });
 
   it("clears session and redirects when no refresh token exists", async () => {
@@ -271,7 +385,26 @@ describe("request()", () => {
     });
 
     expect(lsMock.getItem("auth-token")).toBeNull();
-    expect(locationHref).toContain("/login");
+    expect(locationHref).toBe("/login?redirect=%2F");
+  });
+
+  it("does not clear the session for a transient refresh failure", async () => {
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({ message: "Unauthorized" }, { status: 401 }),
+    );
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({ message: "Unavailable" }, { status: 503 }),
+    );
+    setTokens("access-token", "refresh-token");
+
+    await expect(request("/api/secret")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 503,
+      kind: "server",
+    });
+
+    expect(lsMock.getItem("auth-token")).toBe("access-token");
+    expect(lsMock.getItem("refresh-token")).toBe("refresh-token");
   });
 
   it("does not attempt refresh for anonymous requests", async () => {
@@ -292,13 +425,112 @@ describe("request()", () => {
   });
 });
 
+describe("refreshSession()", () => {
+  it("uses the canonical refresh endpoint and stores the new access token", async () => {
+    setTokens("expired-jwt", "valid-refresh-token");
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({ access_token: "refreshed-jwt" }),
+    );
+
+    await refreshSession();
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      `${API_BASE}/api/v1/auth/refresh`,
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(lsMock.getItem("auth-token")).toBe("refreshed-jwt");
+  });
+
+  it("rejects asynchronously when no refresh token exists", async () => {
+    setTokens("access-token");
+    const pending = refreshSession();
+
+    expect(pending).toBeInstanceOf(Promise);
+    await expect(pending).rejects.toMatchObject({
+      name: "RefreshError",
+      status: null,
+      definitive: true,
+    });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("deduplicates concurrent refreshes", async () => {
+    let resolveRefresh!: (value: Response) => void;
+    const response = new Promise<Response>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    mockFetch.mockReturnValue(response);
+    setTokens("expired-jwt", "valid-refresh-token");
+
+    const first = refreshSession();
+    const second = refreshSession();
+    resolveRefresh(mockResponse({ access_token: "refreshed-jwt" }));
+
+    await Promise.all([first, second]);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not restore a token after refresh invalidation", async () => {
+    let resolveRefresh!: (value: Response) => void;
+    const response = new Promise<Response>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    mockFetch.mockReturnValue(response);
+    setTokens("old-access-jwt", "valid-refresh-token");
+
+    const pending = refreshSession();
+    await Promise.resolve();
+    invalidateRefresh();
+    resolveRefresh(mockResponse({ access_token: "stale-jwt" }));
+
+    await expect(pending).rejects.toBeInstanceOf(RefreshInvalidatedError);
+    expect(lsMock.getItem("auth-token")).toBe("old-access-jwt");
+  });
+});
+
 // ── clearSession ────────────────────────────────────────────────────────────
 
 describe("clearSession()", () => {
-  it("removes both tokens from localStorage", async () => {
+  it("removes both tokens synchronously and best-effort revokes the server session", async () => {
+    mockFetch.mockResolvedValueOnce(mockResponse({ message: "Logged out" }));
     setTokens("access", "refresh");
-    await clearSession();
+
+    const result = clearSession();
+
+    expect(result.ok).toBe(true);
     expect(lsMock.getItem("auth-token")).toBeNull();
     expect(lsMock.getItem("refresh-token")).toBeNull();
+
+    // The server revocation call fires in the background; flush it.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockFetch).toHaveBeenCalledWith(
+      `${API_BASE}/api/v1/auth/logout`,
+      expect.objectContaining({ method: "POST", credentials: "include" }),
+    );
+  });
+
+  it("still clears local state when the server cannot confirm logout", async () => {
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({ message: "Unavailable" }, { status: 503 }),
+    );
+    setTokens("access", "refresh");
+
+    const result = clearSession();
+
+    expect(result.ok).toBe(true);
+    expect(lsMock.getItem("auth-token")).toBeNull();
+    expect(lsMock.getItem("refresh-token")).toBeNull();
+  });
+
+  it("broadcasts a logout-event by default, and skips it when notify is false", () => {
+    setTokens("access", "refresh");
+    clearSession();
+    expect(lsMock.getItem("logout-event")).not.toBeNull();
+
+    setTokens("access", "refresh");
+    lsMock.removeItem("logout-event");
+    clearSession({ notify: false });
+    expect(lsMock.getItem("logout-event")).toBeNull();
   });
 });

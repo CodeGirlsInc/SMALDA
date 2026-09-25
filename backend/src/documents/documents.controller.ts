@@ -36,9 +36,13 @@ import { AccessLogsService } from '../access-logs/access-logs.service';
 import { FileValidationPipe } from './pipes/file-validation.pipe';
 import { ListDocumentsDto } from './dto/list-documents.dto';
 import { DocumentResponseDto } from './dto/document-response.dto';
+import {
+  DOCUMENT_ALLOWED_MIME_TYPES,
+  DOCUMENT_MAX_FILE_SIZE_BYTES,
+} from '../common/api-contracts';
 
-const ALLOWED_MIME_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
-const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
+const ALLOWED_MIME_TYPES = DOCUMENT_ALLOWED_MIME_TYPES;
+const MAX_FILE_SIZE_BYTES = DOCUMENT_MAX_FILE_SIZE_BYTES;
 const DEFAULT_USER_QUOTA = 20;
 
 const multerStorage = multer.memoryStorage();

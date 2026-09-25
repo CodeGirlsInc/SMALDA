@@ -3,12 +3,12 @@
   Controller,
   Post,
   Get,
+  Header,
   Req,
   Res,
   UseGuards,
   BadRequestException,
   ForbiddenException,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '@nestjs/passport';
@@ -20,17 +20,20 @@ import { AuthService } from './auth.service';
 import { RegisterAuthDto } from './dto/register-auth.dto';
 import { LoginAuthDto } from './dto/login-auth.dto';
 import { RefreshAuthDto } from './dto/refresh-auth.dto';
-import { ExchangeOAuthCodeDto } from './dto/exchange-oauth-code.dto';
-import { getFrontendUrl } from '../common/cors.config';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { User } from '../users/entities/user.entity';
 import {
-  ACCESS_TOKEN_COOKIE,
-  LEGACY_ACCESS_TOKEN_COOKIE,
-  getAccessToken,
-  getSessionCookieToken,
-} from './access-token';
-import { getSessionCookieDomain } from './session-cookie.config';
+  getFrontendUrl,
+  isAllowedFrontendOrigin,
+} from '../common/cors.config';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import {
+  ACCESS_COOKIE_NAME,
+  AuthTokens,
+  REFRESH_COOKIE_NAME,
+  clearAuthCookies,
+  getCookieValue,
+  setAuthCookies,
+} from './auth-cookie';
+import { User } from '../users/entities/user.entity';
 
 @Controller('auth')
 export class AuthController {
@@ -43,78 +46,87 @@ export class AuthController {
   async register(
     @Body() dto: RegisterAuthDto,
     @Res({ passthrough: true }) response?: Response,
+    @Req() request?: Request,
   ) {
-    const result = await this.authService.register(dto);
-    this.setAccessTokenCookie(response, result.access_token);
-    return result;
+    this.assertTrustedBrowserRequest(request);
+    const tokens = await this.authService.register(dto);
+    setAuthCookies(response, tokens, this.configService);
+    return tokens;
   }
 
   @Post('login')
   async login(
     @Body() dto: LoginAuthDto,
     @Res({ passthrough: true }) response?: Response,
+    @Req() request?: Request,
   ) {
-    const result = await this.authService.login(dto);
-    this.setAccessTokenCookie(response, result.access_token);
-    return result;
+    this.assertTrustedBrowserRequest(request);
+    const tokens = await this.authService.login(dto);
+    setAuthCookies(response, tokens, this.configService);
+    return tokens;
   }
 
   @Post('refresh')
   async refresh(
     @Body() dto: RefreshAuthDto,
+    @Req() request: Request,
     @Res({ passthrough: true }) response?: Response,
   ) {
-    const result = await this.authService.refreshToken(dto);
-    this.setAccessTokenCookie(response, result.access_token);
-    return result;
+    this.assertTrustedBrowserRequest(request);
+    const cookieRefreshToken = getCookieValue(
+      request.headers.cookie,
+      REFRESH_COOKIE_NAME,
+    );
+    const tokens = await this.authService.refreshToken({
+      refreshToken: cookieRefreshToken ?? dto?.refreshToken,
+    });
+    setAuthCookies(response, tokens, this.configService);
+    return tokens;
+  }
+
+  @Post('logout')
+  async logout(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response?: Response,
+  ) {
+    this.assertTrustedBrowserRequest(request);
+    const bearerToken = this.getBearerToken(request.headers.authorization);
+    const cookieAccessToken = getCookieValue(
+      request.headers.cookie,
+      ACCESS_COOKIE_NAME,
+    );
+    const accessTokens = [
+      ...new Set([bearerToken, cookieAccessToken].filter(Boolean)),
+    ] as string[];
+    const refreshToken = getCookieValue(
+      request.headers.cookie,
+      REFRESH_COOKIE_NAME,
+    );
+
+    try {
+      await this.authService.logout(accessTokens, refreshToken);
+    } finally {
+      clearAuthCookies(response, this.configService);
+    }
+    return { message: 'Logged out successfully' };
   }
 
   @Get('me')
+  @Header('Cache-Control', 'no-store')
   @UseGuards(JwtAuthGuard)
-  me(@Req() req: Request & { user?: User }) {
-    const user = req.user;
-    if (!user) {
-      throw new UnauthorizedException('Authentication required');
-    }
+  me(@Req() request: Request & { user?: User }) {
+    const user = request.user;
+    if (!user) throw new BadRequestException('Authenticated user is required');
 
     return {
       id: user.id,
       email: user.email,
       fullName: user.fullName,
       role: user.role,
+      isVerified: user.isVerified,
+      preferredLanguage: user.preferredLanguage,
+      twoFactorEnabled: user.twoFactorEnabled,
     };
-  }
-
-  @Post('logout')
-  async logout(
-    @Req() req: Request,
-    @Res({ passthrough: true }) response?: Response,
-    @Body('refreshToken') refreshToken?: string,
-  ) {
-    this.assertAllowedMutationOrigin(req);
-    const token = getAccessToken(req);
-    const normalizedRefreshToken =
-      typeof refreshToken === 'string' ? refreshToken.trim() : undefined;
-    if (token) {
-      await this.authService.logout(token, normalizedRefreshToken);
-    } else if (normalizedRefreshToken) {
-      await this.authService.logout(undefined, normalizedRefreshToken);
-    }
-    this.clearAccessTokenCookie(response, ACCESS_TOKEN_COOKIE);
-    this.clearAccessTokenCookie(response, LEGACY_ACCESS_TOKEN_COOKIE);
-    return { message: 'Logged out successfully' };
-  }
-
-  @Post('oauth/exchange')
-  async exchangeOAuthCode(
-    @Req() req: Request,
-    @Body() dto: ExchangeOAuthCodeDto,
-    @Res({ passthrough: true }) response?: Response,
-  ) {
-    this.assertAllowedMutationOrigin(req);
-    const tokens = await this.authService.exchangeOAuthCode(dto.code);
-    this.setAccessTokenCookie(response, tokens.access_token);
-    return tokens;
   }
 
   @Get('google')
@@ -148,9 +160,7 @@ export class AuthController {
       fullName || email,
     );
 
-    this.setAccessTokenCookie(res, tokens.access_token);
-    const code = await this.authService.createOAuthExchangeCode(tokens);
-    return this.redirectWithOAuthCode(code, res);
+    return this.redirectWithCookies(tokens, res);
   }
 
   @Get('github')
@@ -174,102 +184,67 @@ export class AuthController {
     }
 
     const fullName =
-      this.buildFullName([profile?.displayName, profile?.username]) ||
-      identifier;
+      this.buildFullName([
+        profile?.displayName,
+        profile?.username,
+      ]) || identifier;
 
     const tokens = await this.authService.handleOAuthLogin(
       identifier,
       fullName,
     );
 
-    this.setAccessTokenCookie(res, tokens.access_token);
-    const code = await this.authService.createOAuthExchangeCode(tokens);
-    return this.redirectWithOAuthCode(code, res);
+    return this.redirectWithCookies(tokens, res);
   }
 
-  private setAccessTokenCookie(
-    response: Response | undefined,
-    accessToken: string,
-  ): void {
-    if (!response || typeof response.cookie !== 'function') return;
-
-    response.cookie(ACCESS_TOKEN_COOKIE, accessToken, {
-      ...this.getAccessTokenCookieOptions(),
-    });
-  }
-
-  private clearAccessTokenCookie(
-    response: Response | undefined,
-    cookieName: string,
-  ): void {
-    if (!response || typeof response.clearCookie !== 'function') return;
-
-    response.clearCookie(cookieName, {
-      ...this.getAccessTokenCookieOptions(),
-    });
-  }
-
-  private getAccessTokenCookieOptions() {
-    const isProduction =
-      this.configService.get<string>('NODE_ENV') === 'production';
-
-    const domain = getSessionCookieDomain(this.configService);
-
-    return {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? ('none' as const) : ('lax' as const),
-      path: '/',
-      ...(domain ? { domain } : {}),
-    };
-  }
-
-  private redirectWithOAuthCode(code: string, res: Response) {
-    const frontendUrl = getFrontendUrl(this.configService);
-    const redirectUrl = new URL(frontendUrl);
-    redirectUrl.pathname = `${redirectUrl.pathname.replace(/\/$/, '')}/auth/oauth/callback`;
+  private redirectWithCookies(tokens: AuthTokens, res: Response) {
+    setAuthCookies(res, tokens, this.configService);
+    const redirectUrl = new URL(getFrontendUrl(this.configService));
+    const basePath = redirectUrl.pathname.replace(/\/+$/, "");
+    redirectUrl.pathname = `${basePath}/auth/oauth/callback`;
     redirectUrl.search = '';
-    redirectUrl.hash = '';
-    redirectUrl.searchParams.set('code', code);
-    if (typeof res.setHeader === 'function') {
-      res.setHeader('Cache-Control', 'no-store');
-    }
+    redirectUrl.hash = new URLSearchParams({
+      access_token: tokens.access_token,
+    }).toString();
     return res.redirect(redirectUrl.toString());
   }
 
-  private assertAllowedMutationOrigin(req: Request): void {
-    const origin = req.headers.origin;
-    const hasSessionCookie = Boolean(getSessionCookieToken(req));
-    if (!origin) {
-      if (hasSessionCookie) {
-        throw new ForbiddenException('Origin is required for cookie logout');
+  private assertTrustedBrowserRequest(request?: Request): void {
+    if (!request) return;
+
+    if (request.headers['sec-fetch-site'] === 'cross-site') {
+      throw new ForbiddenException('Request origin is not allowed');
+    }
+
+    const origin = request.headers.origin;
+    if (origin) {
+      if (!isAllowedFrontendOrigin(this.configService, origin)) {
+        throw new ForbiddenException('Request origin is not allowed');
       }
       return;
     }
 
-    let normalizedOrigin: string;
+    const referer = request.headers.referer;
+    if (!referer) {
+      if (request.headers.cookie) {
+        throw new ForbiddenException('Request origin is not allowed');
+      }
+      return;
+    }
+
     try {
-      normalizedOrigin = new URL(origin).origin;
-    } catch {
-      throw new ForbiddenException('Origin is not allowed');
+      if (!isAllowedFrontendOrigin(this.configService, new URL(referer).origin)) {
+        throw new ForbiddenException('Request origin is not allowed');
+      }
+    } catch (error) {
+      if (error instanceof ForbiddenException) throw error;
+      throw new ForbiddenException('Request origin is not allowed');
     }
+  }
 
-    const configuredOrigins = [
-      this.configService.get<string>('APP_URL'),
-      ...(this.configService.get<string>('FRONTEND_URL') ?? '').split(','),
-    ]
-      .filter((value): value is string => Boolean(value?.trim()))
-      .map((value) => {
-        try {
-          return new URL(value.trim()).origin;
-        } catch {
-          return '';
-        }
-      });
-
-    if (!configuredOrigins.includes(normalizedOrigin)) {
-      throw new ForbiddenException('Origin is not allowed');
-    }
+  private getBearerToken(header: string | undefined): string | undefined {
+    const match = header?.match(/^Bearer\s+(.+)$/i);
+    return match?.[1]?.trim() || undefined;
   }
 
   private buildFullName(parts: (string | undefined)[]) {

@@ -1,41 +1,89 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import { clearSession } from "@/lib/api-client";
 import { clearLastViewedParcel } from "@/lib/map-state";
 
 const ACCESS_TOKEN_KEY = "auth-token";
+const WARNING_BEFORE_MS = 5 * 60 * 1000;
+const ACTIVITY_GRACE_MS = 60 * 1000;
+const ACTIVITY_DEBOUNCE_MS = 250;
+const ACTIVITY_EVENTS = [
+  "keydown",
+  "beforeinput",
+  "input",
+  "focusin",
+  "pointerdown",
+  "mousedown",
+  "click",
+] as const;
 
-// ── JWT expiry helper ───────────────────────────────────────────────────────
-
-function getTokenExpiryMs(token: string): number | null {
+function decodeBase64Url(value: string): string | null {
   try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
-    if (!payload.exp) return null;
-    // exp is in seconds; return ms until expiry
+    const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+    const padding = (4 - (normalized.length % 4)) % 4;
+    const binary = atob(normalized + "=".repeat(padding));
+    if (typeof TextDecoder === "undefined") return binary;
+    const bytes = Uint8Array.from(binary, (character) =>
+      character.charCodeAt(0),
+    );
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+export function getTokenExpiryMs(token: string): number | null {
+  const payloadPart = token.split(".")[1];
+  if (!payloadPart) return null;
+  const decoded = decodeBase64Url(payloadPart);
+  if (!decoded) return null;
+
+  try {
+    const payload: unknown = JSON.parse(decoded);
+    if (
+      typeof payload !== "object" ||
+      payload === null ||
+      !("exp" in payload) ||
+      typeof payload.exp !== "number" ||
+      !Number.isFinite(payload.exp)
+    ) {
+      return null;
+    }
     return payload.exp * 1000 - Date.now();
   } catch {
     return null;
   }
 }
 
-// ── Cross-tab logout sync ───────────────────────────────────────────────────
+function readAccessToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(ACCESS_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
 
-/**
- * Listen for the `logout-event` localStorage key written by clearSession()
- * in other tabs and redirect to login. Call once on app bootstrap.
- */
+function isEditingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.isContentEditable ||
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    target.getAttribute("role") === "textbox"
+  );
+}
+
 export function initCrossTabLogoutSync(): () => void {
   if (typeof window === "undefined") return () => {};
 
   function handler(event: StorageEvent) {
     if (event.key === "logout-event" && event.newValue) {
+      clearSession({ notify: false });
       clearLastViewedParcel();
-      const firstSegment = window.location.pathname.split("/").filter(Boolean)[0];
-      const loginPath =
-        firstSegment === "en" || firstSegment === "fr" || firstSegment === "es"
-          ? `/${firstSegment}/login`
-          : "/login";
-      window.location.href = loginPath;
+      window.location.href = "/login";
     }
   }
 
@@ -43,77 +91,162 @@ export function initCrossTabLogoutSync(): () => void {
   return () => window.removeEventListener("storage", handler);
 }
 
-// ── Session expiry warning hook ─────────────────────────────────────────────
-
-const WARNING_BEFORE_MS = 5 * 60 * 1000; // warn 5 minutes before expiry
-
-interface UseSessionExpiryWarningOptions {
-  /** Called when the user clicks "Stay signed in" — should trigger a refresh. */
-  onRefresh: () => Promise<void>;
-  /** Whether the user is currently authenticated (skip if false). */
+export interface UseSessionExpiryWarningOptions {
+  onRefresh?: () => Promise<void>;
   enabled?: boolean;
 }
 
-/**
- * Polls the access token's `exp` claim and prompts the user with a
- * "Stay signed in?" dialog a few minutes before the session expires.
- *
- * If the user confirms, calls `onRefresh`. If they dismiss or the token
- * expires, the consumer should handle the redirect (the api-client's 401
- * interceptor will do this automatically on the next request).
- */
 export function useSessionExpiryWarning({
   onRefresh,
   enabled = true,
 }: UseSessionExpiryWarningOptions) {
+  const onRefreshRef = useRef(onRefresh);
+  onRefreshRef.current = onRefresh;
+  const warningTokenRef = useRef<string | null>(null);
   const warningShownRef = useRef(false);
   const promptRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activityDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastActivityAtRef = useRef<number | null>(null);
 
-  const clearTimer = useCallback(() => {
+  const clearTimers = useCallback(() => {
     if (promptRef.current !== null) {
       clearTimeout(promptRef.current);
       promptRef.current = null;
+    }
+    if (activityDebounceRef.current !== null) {
+      clearTimeout(activityDebounceRef.current);
+      activityDebounceRef.current = null;
     }
   }, []);
 
   useEffect(() => {
     if (!enabled || typeof window === "undefined") return;
 
-    function schedulePrompt() {
-      clearTimer();
+    let disposed = false;
+    warningShownRef.current = false;
+    lastActivityAtRef.current = null;
+    const listenerOptions: AddEventListenerOptions = { capture: true };
 
-      const token = window.localStorage.getItem(ACCESS_TOKEN_KEY);
+    function schedulePrompt(
+      afterActivity = false,
+      activityAt?: number,
+    ) {
+      if (promptRef.current !== null) {
+        clearTimeout(promptRef.current);
+        promptRef.current = null;
+      }
+      if (disposed) return;
+
+      const token = readAccessToken();
       if (!token) return;
+      if (warningTokenRef.current !== token) {
+        warningTokenRef.current = token;
+        warningShownRef.current = false;
+      }
+      if (warningShownRef.current) return;
 
-      const remainingMs = getTokenExpiryMs(token);
-      if (remainingMs === null || remainingMs <= 0) return;
-
-      const delayMs = Math.max(remainingMs - WARNING_BEFORE_MS, 0);
+      const now = Date.now();
+      const currentRemainingMs = getTokenExpiryMs(token);
+      if (currentRemainingMs === null || currentRemainingMs <= 0) return;
+      const remainingAtReference =
+        currentRemainingMs +
+        (afterActivity && activityAt !== undefined
+          ? Math.max(0, now - activityAt)
+          : 0);
+      if (remainingAtReference <= 0) return;
+      const warningDelayAtReference = Math.max(
+        remainingAtReference - WARNING_BEFORE_MS,
+        0,
+      );
+      const delayMs = afterActivity
+        ? Math.min(
+            remainingAtReference,
+            warningDelayAtReference + ACTIVITY_GRACE_MS,
+          )
+        : warningDelayAtReference;
 
       promptRef.current = setTimeout(() => {
+        promptRef.current = null;
+        if (disposed) return;
+
+        const currentToken = readAccessToken();
+        if (currentToken !== token) {
+          warningTokenRef.current = null;
+          warningShownRef.current = false;
+          lastActivityAtRef.current = null;
+          schedulePrompt();
+          return;
+        }
         if (warningShownRef.current) return;
+        warningTokenRef.current = token;
         warningShownRef.current = true;
 
-        // Simple confirm dialog — can be replaced with a custom UI later
-        const staySignedIn = window.confirm(
-          "Your session is about to expire. Stay signed in?",
-        );
-
-        if (staySignedIn) {
-          onRefresh()
-            .then(() => {
-              warningShownRef.current = false;
-              schedulePrompt();
-            })
-            .catch(() => {
-              // Refresh failed — api-client will redirect on next 401
-            });
+        let staySignedIn = false;
+        try {
+          staySignedIn = window.confirm(
+            "Your session is about to expire. Stay signed in?",
+          );
+        } catch {
+          return;
         }
+        if (!staySignedIn) return;
+
+        const refresh = onRefreshRef.current;
+        if (!refresh) return;
+        Promise.resolve()
+          .then(() => refresh())
+          .then(() => {
+            if (disposed) return;
+            warningTokenRef.current = null;
+            warningShownRef.current = false;
+            schedulePrompt();
+          })
+          .catch(() => {
+            if (disposed) return;
+            warningTokenRef.current = null;
+            warningShownRef.current = false;
+            schedulePrompt(true);
+          });
       }, delayMs);
     }
 
-    schedulePrompt();
+    function handleActivity(event: Event) {
+      const activeElement = document.activeElement;
+      const editingEvent =
+        isEditingTarget(event.target) ||
+        ((event.type === "click" ||
+          event.type === "pointerdown" ||
+          event.type === "mousedown") &&
+          isEditingTarget(activeElement));
+      if (!editingEvent) return;
 
-    return clearTimer;
-  }, [enabled, onRefresh, clearTimer]);
+      const activityAt = Date.now();
+      lastActivityAtRef.current = activityAt;
+      if (promptRef.current !== null) {
+        clearTimeout(promptRef.current);
+        promptRef.current = null;
+      }
+      if (activityDebounceRef.current !== null) {
+        clearTimeout(activityDebounceRef.current);
+      }
+      activityDebounceRef.current = setTimeout(() => {
+        activityDebounceRef.current = null;
+        schedulePrompt(true, lastActivityAtRef.current ?? activityAt);
+      }, ACTIVITY_DEBOUNCE_MS);
+    }
+
+    schedulePrompt();
+    ACTIVITY_EVENTS.forEach((eventName) => {
+      window.addEventListener(eventName, handleActivity, listenerOptions);
+    });
+
+    return () => {
+      disposed = true;
+      ACTIVITY_EVENTS.forEach((eventName) => {
+        window.removeEventListener(eventName, handleActivity, listenerOptions);
+      });
+      lastActivityAtRef.current = null;
+      clearTimers();
+    };
+  }, [enabled, clearTimers]);
 }

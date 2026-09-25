@@ -2,8 +2,6 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiUrl } from "@/lib/api-config";
-import { getAccessToken } from "@/lib/session";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -33,8 +31,11 @@ interface PaginatedUsers {
 // Helpers
 // ---------------------------------------------------------------------------
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+
 function getAuthHeaders(): HeadersInit {
-  const token = getAccessToken();
+  const token =
+    typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
   return {
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -44,7 +45,7 @@ function getAuthHeaders(): HeadersInit {
 function getCurrentUserId(): string | null {
   if (typeof window === "undefined") return null;
   try {
-    const token = getAccessToken();
+    const token = localStorage.getItem("auth-token");
     if (!token) return null;
     const payload = JSON.parse(atob(token.split(".")[1]));
     return payload?.sub ?? null;
@@ -148,6 +149,19 @@ export default function AdminUsersPage() {
 
   const currentUserId = getCurrentUserId();
 
+  // ── Check admin access ──────────────────────────────────────────────────
+
+  useEffect(() => {
+    const token = localStorage.getItem("auth-token");
+    if (!token) { router.replace("/login"); return; }
+    try {
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      if (payload?.role !== "admin") { router.replace("/"); }
+    } catch {
+      router.replace("/login");
+    }
+  }, [router]);
+
   // ── Fetch users ─────────────────────────────────────────────────────────
 
   const fetchUsers = useCallback(async () => {
@@ -162,8 +176,7 @@ export default function AdminUsersPage() {
     if (appliedSearch) params.set("search", appliedSearch);
 
     try {
-      const res = await fetch(apiUrl("/users", params), {
-        credentials: "include",
+      const res = await fetch(`${API_BASE}/api/users?${params}`, {
         headers: getAuthHeaders(),
       });
       if (res.status === 403) { router.replace("/"); return; }
@@ -189,9 +202,8 @@ export default function AdminUsersPage() {
     }
     setActionLoading((prev) => ({ ...prev, [`role_${user.id}`]: true }));
     try {
-      const res = await fetch(apiUrl(`/users/${user.id}`), {
+      const res = await fetch(`${API_BASE}/api/users/${user.id}`, {
         method: "PATCH",
-        credentials: "include",
         headers: getAuthHeaders(),
         body: JSON.stringify({ role: newRole }),
       });
@@ -210,9 +222,8 @@ export default function AdminUsersPage() {
     const newStatus: UserStatus = user.status === "active" ? "suspended" : "active";
     setActionLoading((prev) => ({ ...prev, [`status_${user.id}`]: true }));
     try {
-      const res = await fetch(apiUrl(`/users/${user.id}`), {
+      const res = await fetch(`${API_BASE}/api/users/${user.id}`, {
         method: "PATCH",
-        credentials: "include",
         headers: getAuthHeaders(),
         body: JSON.stringify({ status: newStatus }),
       });
@@ -232,9 +243,8 @@ export default function AdminUsersPage() {
     setDeleteLoading(true);
     setDeleteError(null);
     try {
-      const res = await fetch(apiUrl(`/users/${deleteTarget.id}`), {
+      const res = await fetch(`${API_BASE}/api/users/${deleteTarget.id}`, {
         method: "DELETE",
-        credentials: "include",
         headers: getAuthHeaders(),
       });
       if (!res.ok) throw new Error("Delete failed");
@@ -255,9 +265,8 @@ export default function AdminUsersPage() {
     try {
       await Promise.all(
         Array.from(selected).map((id) =>
-          fetch(apiUrl(`/users/${id}`), {
+          fetch(`${API_BASE}/api/users/${id}`, {
             method: "DELETE",
-            credentials: "include",
             headers: getAuthHeaders(),
           })
         )

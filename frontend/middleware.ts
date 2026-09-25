@@ -1,184 +1,284 @@
 import createMiddleware from "next-intl/middleware";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { routing } from "./i18n/routing";
-import { apiUrl } from "./lib/api-config";
+import { ACCESS_COOKIE_NAME, REFRESH_COOKIE_NAME } from "./lib/auth-cookie";
+import { LOCALE_COOKIE_NAME, routing, type Locale } from "./i18n/routing";
 
-const ACCESS_TOKEN_COOKIE = "smalda_access_token";
-const ADMIN_CHECK_TIMEOUT_MS = 5000;
+const intlMiddleware = createMiddleware(routing);
+const configuredApiBase = process.env.NEXT_PUBLIC_API_URL;
+const API_BASE = (
+  configuredApiBase ??
+  (process.env.NODE_ENV === "production" ? "" : "http://localhost:3001")
+).replace(/\/+$/, "");
+const AUTH_ME_PATH = "/api/v1/auth/me";
+const AUTH_CHECK_TIMEOUT_MS = 2000;
+const PROTECTED_ROOTS = [
+  "/",
+  "/admin",
+  "/2fa/setup",
+  "/disputes",
+  "/document",
+  "/documents",
+  "/map",
+  "/profile",
+  "/reports",
+  "/settings",
+] as const;
 
-type AdminCheck = "admin" | "forbidden" | "unauthenticated" | "temporary";
-
-type Locale = (typeof routing.locales)[number];
+type AuthCheck = "authenticated" | "unauthenticated" | "forbidden" | "unavailable";
 
 function isLocale(value: string | undefined): value is Locale {
-  return (
-    value !== undefined &&
-    routing.locales.includes(value as Locale)
-  );
+  return Boolean(value && routing.locales.includes(value as Locale));
 }
 
-function getPathSegments(pathname: string): string[] | null {
-  try {
-    const segments = pathname
-      .split("/")
-      .filter(Boolean)
-      .map((segment) => decodeURIComponent(segment));
-
-    if (
-      segments.some(
-        (segment) =>
-          segment.includes("/") ||
-          segment.includes("\\") ||
-          segment === "." ||
-          segment === ".." ||
-          /%(?:2f|5c)/i.test(segment),
-      )
-    ) {
-      return null;
+function normalizePathSegments(pathname: string): string[] {
+  const normalized: string[] = [];
+  for (const segment of pathname.split("/")) {
+    if (segment && segment !== ".") {
+      if (segment === "..") normalized.pop();
+      else normalized.push(segment);
     }
-
-    return segments;
-  } catch {
-    return null;
   }
+  return normalized;
+}
+
+function getPathnameWithoutLocale(pathname: string): string {
+  const segments = normalizePathSegments(pathname);
+  if (segments.length === 0) return "/";
+  if (segments[0]?.length === 2) {
+    return segments.length > 1 ? `/${segments.slice(1).join("/")}` : "/";
+  }
+  return `/${segments.join("/")}`;
+}
+
+export function isProtectedPath(pathname: string): boolean {
+  const routePath = getPathnameWithoutLocale(pathname);
+  return PROTECTED_ROOTS.some(
+    (root) => routePath === root || routePath.startsWith(`${root}/`),
+  );
 }
 
 export function isAdminPath(pathname: string): boolean {
-  const segments = getPathSegments(pathname);
-  if (!segments) return false;
-  if (segments[0] === "admin") return true;
-  return isLocale(segments[0]) && segments[1] === "admin";
+  const routePath = getPathnameWithoutLocale(pathname);
+  return routePath === "/admin" || routePath.startsWith("/admin/");
 }
 
-function stripLocalePrefix(pathname: string): string {
-  const segments = getPathSegments(pathname);
-  if (!segments || !isLocale(segments[0])) return pathname;
-  const remainder = segments.slice(1).join("/");
-  return remainder ? `/${remainder}` : "/";
+function getFirstSegment(pathname: string): string | undefined {
+  return pathname.split("/").filter(Boolean)[0];
 }
 
-function getRequestLocale(pathname: string): Locale {
-  const segments = getPathSegments(pathname);
-  const firstSegment = segments?.[0];
-  return isLocale(firstSegment) ? firstSegment : routing.defaultLocale;
-}
+function getRequestLocale(request: NextRequest): Locale {
+  const firstSegment = getFirstSegment(request.nextUrl.pathname);
+  if (isLocale(firstSegment)) return firstSegment;
 
-function localizedPath(
-  request: NextRequest,
-  pathname: string,
-  locale: Locale,
-): URL {
-  const url = request.nextUrl.clone();
-  url.pathname = locale === routing.defaultLocale ? pathname : `/${locale}${pathname}`;
-  url.search = "";
-  return url;
-}
+  const cookieLocale = request.cookies.get(LOCALE_COOKIE_NAME)?.value;
+  if (isLocale(cookieLocale)) return cookieLocale;
 
-function redirectToLogin(request: NextRequest): NextResponse {
-  const locale = getRequestLocale(request.nextUrl.pathname);
-  const url = localizedPath(request, "/login", locale);
-  url.searchParams.set(
-    "redirect",
-    `${stripLocalePrefix(request.nextUrl.pathname)}${request.nextUrl.search}`,
+  const acceptedLocales = request.headers
+    .get("accept-language")
+    ?.split(",")
+    .map((value) => value.trim().split(";")[0]?.split("-")[0]?.toLowerCase());
+  const headerLocale = acceptedLocales?.find((value): value is Locale =>
+    isLocale(value),
   );
+  return headerLocale ?? (routing.defaultLocale as Locale);
+}
+
+function isInfrastructurePath(pathname: string): boolean {
+  const routePath = getPathnameWithoutLocale(pathname);
+  return (
+    routePath === "/api" ||
+    routePath.startsWith("/api/") ||
+    routePath === "/_next" ||
+    routePath.startsWith("/_next/") ||
+    routePath === "/_vercel" ||
+    routePath.startsWith("/_vercel/")
+  );
+}
+
+function isStaticAssetPath(pathname: string): boolean {
+  return pathname.split("/").some((segment) => segment.includes("."));
+}
+
+function getUnsupportedLocalePath(pathname: string): string {
+  const firstSegment = getFirstSegment(pathname);
+  if (!firstSegment) return pathname;
+  const remainder = pathname.slice(firstSegment.length + 1);
+  return `/${routing.defaultLocale}${remainder}`;
+}
+
+function getRedirectPath(request: NextRequest, unsupportedLocale: boolean): string {
+  const pathname = unsupportedLocale
+    ? getUnsupportedLocalePath(request.nextUrl.pathname)
+    : request.nextUrl.pathname;
+  return `${pathname}${request.nextUrl.search}`;
+}
+
+function createLoginRedirect(
+  request: NextRequest,
+  redirectPath: string,
+): NextResponse {
+  const url = request.nextUrl.clone();
+  const locale = getRequestLocale(request);
+  const firstSegment = getFirstSegment(request.nextUrl.pathname);
+  const localePrefix =
+    isLocale(firstSegment) || locale !== routing.defaultLocale
+      ? `/${locale}`
+      : "";
+  url.pathname = `${localePrefix}/login`;
+  url.search = "";
+  url.searchParams.set("redirect", redirectPath);
   return NextResponse.redirect(url);
 }
 
-function redirectToDashboard(request: NextRequest): NextResponse {
-  const locale = getRequestLocale(request.nextUrl.pathname);
-  return NextResponse.redirect(localizedPath(request, "/", locale));
-}
-
-function temporaryFailure(): NextResponse {
-  return NextResponse.json(
-    { error: "Admin access is temporarily unavailable" },
-    {
-      status: 503,
-      headers: { "Cache-Control": "no-store" },
-    },
-  );
-}
-
-function getAccessToken(request: NextRequest): string | null {
-  return request.cookies.get(ACCESS_TOKEN_COOKIE)?.value ?? null;
-}
-
-function getAuthEndpoint(request: NextRequest): string {
-  return new URL(apiUrl("/auth/me"), request.url).toString();
-}
-
-async function verifyAdmin(
+function createSessionRefreshRedirect(
   request: NextRequest,
-  token: string,
-): Promise<AdminCheck> {
+  redirectPath: string,
+): NextResponse {
+  const url = request.nextUrl.clone();
+  const locale = getRequestLocale(request);
+  const firstSegment = getFirstSegment(request.nextUrl.pathname);
+  const localePrefix =
+    isLocale(firstSegment) || locale !== routing.defaultLocale
+      ? `/${locale}`
+      : "";
+  url.pathname = `${localePrefix}/auth/refresh`;
+  url.search = "";
+  url.searchParams.set("redirect", redirectPath);
+  return NextResponse.redirect(url);
+}
+
+function hasControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  return false;
+}
+
+function createAuthenticationUnavailableResponse(): NextResponse {
+  return new NextResponse("Authentication service unavailable", {
+    status: 503,
+    headers: {
+      "Cache-Control": "no-store",
+      "Content-Type": "text/plain; charset=utf-8",
+    },
+  });
+}
+
+interface AccessTokenVerification {
+  check: AuthCheck;
+  role?: string;
+}
+
+async function verifyAccessToken(token: string): Promise<AccessTokenVerification> {
+  if (!API_BASE) return { check: "unavailable" };
+  if (hasControlCharacter(token)) return { check: "unauthenticated" };
+
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), ADMIN_CHECK_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), AUTH_CHECK_TIMEOUT_MS);
 
   try {
-    const response = await fetch(getAuthEndpoint(request), {
+    const response = await fetch(`${API_BASE}${AUTH_ME_PATH}`, {
       method: "GET",
       headers: {
         Accept: "application/json",
         Authorization: `Bearer ${token}`,
       },
       cache: "no-store",
+      redirect: "manual",
       signal: controller.signal,
     });
 
-    if (response.status === 401) return "unauthenticated";
-    if (response.status === 403) return "forbidden";
-    if (!response.ok) return "temporary";
+    if (response.status === 401) return { check: "unauthenticated" };
+    if (response.status === 403) return { check: "forbidden" };
+    if (!response.ok) return { check: "unavailable" };
 
-    const body: unknown = await response.json();
-    if (!body || typeof body !== "object") return "temporary";
-    return (body as { role?: unknown }).role === "admin" ? "admin" : "forbidden";
+    const body: unknown = await response.json().catch(() => null);
+    const role =
+      body && typeof body === "object" && "role" in body
+        ? (body as { role?: unknown }).role
+        : undefined;
+    return {
+      check: "authenticated",
+      role: typeof role === "string" ? role : undefined,
+    };
   } catch {
-    return "temporary";
+    return { check: "unavailable" };
   } finally {
     clearTimeout(timeout);
   }
 }
 
-const intlMiddleware = createMiddleware(routing);
-
-function redirectUnsupportedLocale(request: NextRequest): NextResponse | null {
-  const segments = getPathSegments(request.nextUrl.pathname);
-  if (!segments) return null;
-
-  const firstSegment = segments[0];
-  if (!firstSegment || firstSegment.length !== 2 || isLocale(firstSegment)) {
-    return null;
-  }
-
-  const remainder = segments.slice(1);
-  const normalizedPath = `/${remainder.join("/")}`;
-  const url = request.nextUrl.clone();
-  url.pathname =
-    routing.defaultLocale === "en"
-      ? normalizedPath
-      : `/${routing.defaultLocale}${normalizedPath}`;
-  url.search = request.nextUrl.search;
-  return NextResponse.redirect(url);
-}
-
 export default async function middleware(request: NextRequest) {
-  const unsupportedLocaleRedirect = redirectUnsupportedLocale(request);
-  if (unsupportedLocaleRedirect) return unsupportedLocaleRedirect;
+  const pathname = request.nextUrl.pathname;
+  if (isInfrastructurePath(pathname)) return NextResponse.next();
 
-  if (isAdminPath(request.nextUrl.pathname)) {
-    const token = getAccessToken(request);
-    if (!token) return redirectToLogin(request);
+  const firstSegment = getFirstSegment(pathname);
+  const unsupportedLocale = Boolean(
+    firstSegment && firstSegment.length === 2 && !isLocale(firstSegment),
+  );
+  const protectedPath = isProtectedPath(pathname);
 
-    const check = await verifyAdmin(request, token);
-    if (check === "temporary") return temporaryFailure();
-    if (check === "forbidden") return redirectToDashboard(request);
-    if (check !== "admin") return redirectToLogin(request);
+  if (protectedPath) {
+    const accessToken = request.cookies.get(ACCESS_COOKIE_NAME)?.value?.trim();
+    const refreshToken = request.cookies
+      .get(REFRESH_COOKIE_NAME)
+      ?.value?.trim();
+    const redirectPath = getRedirectPath(request, unsupportedLocale);
+
+    if (!accessToken) {
+      if (refreshToken && !hasControlCharacter(refreshToken)) {
+        return createSessionRefreshRedirect(request, redirectPath);
+      }
+      return createLoginRedirect(request, redirectPath);
+    }
+
+    const authCheck = await verifyAccessToken(accessToken);
+    if (authCheck.check === "unauthenticated") {
+      if (refreshToken && !hasControlCharacter(refreshToken)) {
+        return createSessionRefreshRedirect(request, redirectPath);
+      }
+      return createLoginRedirect(request, redirectPath);
+    }
+    if (authCheck.check === "forbidden") {
+      return createLoginRedirect(request, redirectPath);
+    }
+    if (authCheck.check === "unavailable") {
+      return createAuthenticationUnavailableResponse();
+    }
+    if (isAdminPath(pathname) && authCheck.role !== "admin") {
+      const url = request.nextUrl.clone();
+      const locale = getRequestLocale(request);
+      const firstSegment = getFirstSegment(pathname);
+      const localePrefix =
+        isLocale(firstSegment) || locale !== routing.defaultLocale
+          ? `/${locale}`
+          : "";
+      url.pathname = localePrefix || "/";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+    if (unsupportedLocale) {
+      const url = request.nextUrl.clone();
+      url.pathname = getUnsupportedLocalePath(pathname);
+      return NextResponse.redirect(url);
+    }
+  } else if (isStaticAssetPath(pathname)) {
+    return NextResponse.next();
   }
+
+  if (unsupportedLocale) {
+    const url = request.nextUrl.clone();
+    url.pathname = getUnsupportedLocalePath(pathname);
+    return NextResponse.redirect(url);
+  }
+
+  if (isStaticAssetPath(pathname)) return NextResponse.next();
 
   return intlMiddleware(request);
 }
 
 export const config = {
-  matcher: ["/((?!api|_next|_vercel|.*\\..*).*)"],
+  matcher: ["/((?!api|_next|_vercel).*)"],
 };

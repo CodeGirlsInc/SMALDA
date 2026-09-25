@@ -37,7 +37,6 @@ export const ConfigValidationSchema = Joi.object({
   APP_PORT: Joi.number().positive().default(3001),
   APP_URL: Joi.string().uri().required(),
   FRONTEND_URL: originList,
-  SESSION_COOKIE_DOMAIN: Joi.string().allow('').optional(),
 
   // ── Database ───────────────────────────────────────────────────────────────
   DATABASE_HOST: Joi.string().required(),
@@ -98,6 +97,7 @@ export const ConfigValidationSchema = Joi.object({
     otherwise: Joi.string().min(32).required(),
   }),
   JWT_REFRESH_EXPIRATION: Joi.string().default('7d'),
+  AUTH_COOKIE_DOMAIN: Joi.string().allow('').optional(),
 
   // ── OAuth ──────────────────────────────────────────────────────────────────
   GOOGLE_CLIENT_ID: Joi.string().when('NODE_ENV', {

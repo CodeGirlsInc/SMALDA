@@ -44,6 +44,69 @@
       "continueWithGithub": "Continue with GitHub",
       "resetSuccessToast": "Your password has been reset. Please sign in."
     },
+    "sessionRefresh": {
+      "loading": "Refreshing your session…",
+      "errorTitle": "Your session could not be refreshed",
+      "errorDescription": "Please sign in again to continue."
+    },
+    "oauthCallback": {
+      "loading": "Completing sign-in…",
+      "errorTitle": "Sign-in could not be completed",
+      "errorDescription": "Return to the sign-in page and try again.",
+      "signIn": "Back to sign in"
+    },
+    "register": {
+      "title": "Create your account",
+      "subtitle": "Secure your land documents with SMALDA",
+      "fullNameLabel": "Full name",
+      "fullNamePlaceholder": "Enter your full name",
+      "emailLabel": "Email address",
+      "emailPlaceholder": "you@example.com",
+      "passwordLabel": "Password",
+      "passwordPlaceholder": "Create a strong password",
+      "confirmPasswordLabel": "Confirm password",
+      "confirmPasswordPlaceholder": "Re-enter your password",
+      "strengthLabel": "Password strength",
+      "requirementsLabel": "Password requirements",
+      "requirementMet": "Met",
+      "requirementNeeded": "Needed",
+      "guidance": "Use a longer passphrase you can remember; avoid names, dates, and repeated sequences.",
+      "strengthSummary": "Password strength: {label}",
+      "strength": {
+        "empty": "Empty",
+        "weak": "Weak",
+        "fair": "Fair",
+        "good": "Good",
+        "strong": "Strong"
+      },
+      "requirements": {
+        "length": "At least 8 characters",
+        "uppercase": "One uppercase letter",
+        "lowercase": "One lowercase letter",
+        "number": "One number",
+        "special": "One special character"
+      },
+      "submit": "Create account",
+      "submitting": "Creating account…",
+      "alreadyHaveAccount": "Already have an account?",
+      "signIn": "Sign in",
+      "apiErrors": {
+        "emailExists": "An account with this email already exists.",
+        "validation": "Please review the highlighted fields and try again.",
+        "generic": "We couldn't create your account. Please try again."
+      },
+      "errors": {
+        "fullNameMin": "Full name must be at least 2 characters",
+        "emailInvalid": "Enter a valid email address",
+        "passwordMin": "Password must be at least 8 characters",
+        "passwordUppercase": "Password must include an uppercase letter",
+        "passwordLowercase": "Password must include a lowercase letter",
+        "passwordNumber": "Password must include a number",
+        "passwordSpecial": "Password must include a special character",
+        "confirmRequired": "Please confirm your password",
+        "passwordMismatch": "Passwords do not match"
+      }
+    },
     "forgotPassword": {
       "title": "Reset your password",
       "subtitle": "Enter the email address associated with your account and we'll send you a link to reset your password.",

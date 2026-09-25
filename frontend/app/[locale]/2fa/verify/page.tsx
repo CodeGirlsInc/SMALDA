@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { apiUrl } from "@/lib/api-config";
+import { useSearchParams } from "next/navigation";
+import { useRouter } from "@/i18n/navigation";
+import { request } from "@/lib/api-client";
 
 export default function TwoFactorVerifyPage() {
   const router = useRouter();
@@ -37,39 +38,33 @@ export default function TwoFactorVerifyPage() {
     setError("");
 
     try {
-      const response = await fetch(apiUrl("/auth/2fa/challenge"), {
+      await request("/api/v1/auth/2fa/challenge", {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        anonymous: true,
+        body: {
           challengeToken,
           code,
           isBackupCode,
-        }),
+        },
       });
-
-      if (response.ok) {
-        router.push("/");
-      } else {
-        const nextAttempts = failedAttempts + 1;
-        setFailedAttempts(nextAttempts);
-
-        if (nextAttempts >= 3) {
-          setLockoutSeconds(15);
-          setError("Too many failed attempts. Please wait 15 seconds before trying again.");
-        } else {
-          setError(`Invalid 2FA code. Attempt ${nextAttempts} of 3 before temporary lockout.`);
-        }
-      }
+      router.push("/");
     } catch {
-      setError("Network error during verification.");
+      const nextAttempts = failedAttempts + 1;
+      setFailedAttempts(nextAttempts);
+
+      if (nextAttempts >= 3) {
+        setLockoutSeconds(15);
+        setError("Too many failed attempts. Please wait 15 seconds before trying again.");
+      } else {
+        setError(`Invalid 2FA code. Attempt ${nextAttempts} of 3 before temporary lockout.`);
+      }
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-900 px-4 py-12 text-white">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-gray-900 px-4 py-12 text-white">
       <div className="w-full max-w-md rounded-xl border border-gray-800 bg-gray-950 p-8 shadow-2xl">
         <h1 className="mb-2 text-center text-2xl font-bold">Two-Factor Verification</h1>
         <p className="mb-6 text-center text-xs text-gray-400">
@@ -120,6 +115,6 @@ export default function TwoFactorVerifyPage() {
           </button>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

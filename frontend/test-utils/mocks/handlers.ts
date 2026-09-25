@@ -12,7 +12,10 @@ export const handlers = [
         { status: 401 }
       );
     }
-    return HttpResponse.json({ access_token: "fake-jwt-token" });
+    return HttpResponse.json({
+      access_token: "fake-jwt-token",
+      refresh_token: "fake-refresh-token",
+    });
   }),
 
   http.get(`${API_BASE}/api/v1/auth/me`, ({ request }) => {
@@ -25,13 +28,6 @@ export const handlers = [
       email: "alice@example.com",
       fullName: "Alice Smith",
       role: "admin",
-    });
-  }),
-
-  http.post(`${API_BASE}/api/v1/auth/oauth/exchange`, () => {
-    return HttpResponse.json({
-      access_token: "oauth-access-token",
-      refresh_token: "oauth-refresh-token",
     });
   }),
 
@@ -110,10 +106,5 @@ export const handlers = [
       fullName: "Alice Smith",
       preferredLanguage: "en",
     });
-  }),
-
-  http.patch(`${API_BASE}/api/v1/users/me`, async ({ request }) => {
-    const body = (await request.json()) as Record<string, unknown>;
-    return HttpResponse.json({ ok: true, ...body });
   }),
 ];
