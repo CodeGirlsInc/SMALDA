@@ -401,38 +401,26 @@ async fn test_transfer_with_invalid_date_returns_400() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
-// ── #1346: ownership-chain pagination ───────────────────────────────────────
+// ── #1346: ownership-chain pagination on the mounted history endpoint ───────
 
-use stellar_doc_verifier::TransferRecord;
+use stellar_doc_verifier::stellar::TransactionRecord;
 
 const CHAIN_HASH: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
-fn chain_record(hash: &str, from: &str, to: &str) -> TransferRecord {
-    TransferRecord {
-        document_hash: hash.to_string(),
-        from_owner: from.to_string(),
-        to_owner: to.to_string(),
-        transfer_date: "2025-01-01".to_string(),
-        transfer_reference: "REF".to_string(),
-        transfer_hash: format!("hash-{}-{}", from, to),
-        memo: "memo".to_string(),
-        anchored_at: "2025-01-01T00:00:00Z".to_string(),
-    }
-}
-
-/// Five chained records: A→B→C→D→E→F.
-fn chain_of_five() -> Vec<TransferRecord> {
-    let owners = ["A", "B", "C", "D", "E", "F"];
-    owners
-        .windows(2)
-        .map(|pair| chain_record(CHAIN_HASH, pair[0], pair[1]))
+fn chain_records(n: usize) -> Vec<TransactionRecord> {
+    (0..n)
+        .map(|i| TransactionRecord {
+            transaction_id: format!("tx-{:03}", i),
+            timestamp: 1_700_000_000 + i as i64,
+            verified: true,
+        })
         .collect()
 }
 
-async fn state_with_chain(records: Vec<TransferRecord>) -> AppState {
+async fn state_with_chain(records: Vec<TransactionRecord>) -> AppState {
     let cache = CacheBackend::InMemory(InMemoryCache::new());
     cache
-        .set(&format!("transfer:{}", CHAIN_HASH), &records, 3600)
+        .set(&format!("history:{}", CHAIN_HASH), &records, 3600)
         .await
         .unwrap();
     AppState {
@@ -446,10 +434,18 @@ async fn state_with_chain(records: Vec<TransferRecord>) -> AppState {
     }
 }
 
-async fn get_json(uri: &str, records: Vec<TransferRecord>) -> (StatusCode, serde_json::Value) {
+async fn get_chain(
+    query: &str,
+    records: Vec<TransactionRecord>,
+) -> (StatusCode, serde_json::Value) {
     let router = app(state_with_chain(records).await);
     let response = router
-        .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/verify/{}{}", CHAIN_HASH, query))
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     let status = response.status();
@@ -460,69 +456,53 @@ async fn get_json(uri: &str, records: Vec<TransferRecord>) -> (StatusCode, serde
 }
 
 #[tokio::test]
-async fn test_transfer_history_without_pagination_params_keeps_the_array_shape() {
-    let (status, json) = get_json(&format!("/transfer/{}", CHAIN_HASH), chain_of_five()).await;
+async fn test_verify_history_without_params_returns_the_whole_chain() {
+    let (status, json) = get_chain("/history", chain_records(5)).await;
 
     assert_eq!(status, StatusCode::OK);
-    let array = json.as_array().expect("response must stay a bare array");
-    assert_eq!(array.len(), 5);
-    assert_eq!(array[0]["from_owner"], "A");
+    assert_eq!(json["count"], 5);
+    assert_eq!(json["transactions"].as_array().unwrap().len(), 5);
+    assert!(json["next_cursor"].is_null());
 }
 
 #[tokio::test]
-async fn test_transfer_history_first_page_reports_next_cursor() {
-    let (status, json) = get_json(
-        &format!("/transfer/{}?cursor=0&page_size=2", CHAIN_HASH),
-        chain_of_five(),
-    )
-    .await;
+async fn test_verify_history_first_page_reports_next_cursor() {
+    let (status, json) = get_chain("/history?cursor=0&page_size=2", chain_records(5)).await;
 
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(json["total"], 5);
+    assert_eq!(json["count"], 5);
     assert_eq!(json["next_cursor"], 2);
-    assert_eq!(json["items"].as_array().unwrap().len(), 2);
-    assert_eq!(json["items"][0]["to_owner"], "B");
+    let page = json["transactions"].as_array().unwrap();
+    assert_eq!(page.len(), 2);
+    assert_eq!(page[0]["transaction_id"], "tx-000");
 }
 
 #[tokio::test]
-async fn test_transfer_history_last_page_has_null_next_cursor() {
-    let (status, json) = get_json(
-        &format!("/transfer/{}?cursor=4&page_size=2", CHAIN_HASH),
-        chain_of_five(),
-    )
-    .await;
+async fn test_verify_history_last_page_has_null_next_cursor() {
+    let (status, json) = get_chain("/history?cursor=4&page_size=2", chain_records(5)).await;
 
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(json["total"], 5);
-    assert!(json["next_cursor"].is_null());
-    assert_eq!(json["items"].as_array().unwrap().len(), 1);
-}
-
-#[tokio::test]
-async fn test_transfer_history_cursor_past_the_end_is_an_empty_page() {
-    let (status, json) = get_json(
-        &format!("/transfer/{}?cursor=99&page_size=2", CHAIN_HASH),
-        chain_of_five(),
-    )
-    .await;
-
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(json["total"], 5);
-    assert!(json["items"].as_array().unwrap().is_empty());
+    assert_eq!(json["count"], 5);
+    assert_eq!(json["transactions"].as_array().unwrap().len(), 1);
     assert!(json["next_cursor"].is_null());
 }
 
 #[tokio::test]
-async fn test_transfer_history_page_size_is_capped() {
-    let (status, json) = get_json(
-        &format!("/transfer/{}?page_size=100000", CHAIN_HASH),
-        chain_of_five(),
-    )
-    .await;
+async fn test_verify_history_cursor_past_the_end_is_empty_not_500() {
+    let (status, json) = get_chain("/history?cursor=99&page_size=2", chain_records(5)).await;
 
     assert_eq!(status, StatusCode::OK);
-    // 5 records total, so the cap cannot truncate them - but the request must
-    // not be rejected or blow past MAX_CHAIN_PAGE_SIZE either.
-    assert_eq!(json["items"].as_array().unwrap().len(), 5);
+    assert_eq!(json["count"], 5);
+    assert!(json["transactions"].as_array().unwrap().is_empty());
     assert!(json["next_cursor"].is_null());
+}
+
+#[tokio::test]
+async fn test_verify_history_page_size_is_capped_at_the_maximum() {
+    let (status, json) = get_chain("/history?page_size=100000", chain_records(250)).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["count"], 250);
+    assert_eq!(json["transactions"].as_array().unwrap().len(), 200);
+    assert_eq!(json["next_cursor"], 200);
 }

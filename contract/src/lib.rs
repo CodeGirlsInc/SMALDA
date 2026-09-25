@@ -146,8 +146,12 @@ pub struct HealthResponse {
 pub struct HistoryResponse {
     pub document_hash: String,
     pub transactions: Vec<TransactionRecord>,
+    /// Total records in the document's chain, independent of the page returned.
     pub count: usize,
     pub cached: bool,
+    /// Cursor for the following page when the caller asked for one (#1346);
+    /// `null` when the whole chain was returned or it is exhausted.
+    pub next_cursor: Option<usize>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -540,17 +544,6 @@ pub struct ChainHistoryQuery {
     pub page_size: Option<usize>,
 }
 
-/// One page of a document's ownership chain (#1346).
-#[derive(Debug, Serialize)]
-pub struct ChainHistoryPage {
-    /// The records in this page, oldest first.
-    pub items: Vec<TransferRecord>,
-    /// Cursor for the following page; `null` once the chain is exhausted.
-    pub next_cursor: Option<usize>,
-    /// Total records in the chain, so a caller can render progress.
-    pub total: usize,
-}
-
 /// Resolve the requested page, or `None` when the caller asked for no paging.
 ///
 /// `None` keeps the pre-existing response shape (the full array), so clients
@@ -570,36 +563,18 @@ fn pagination_params(query: &ChainHistoryQuery) -> Option<(usize, usize)> {
 }
 
 /// GET /transfer/:document_hash — retrieve transfer history for a document.
-///
-/// Without `cursor`/`page_size` the response is the unchanged full array. With
-/// either parameter it is a [`ChainHistoryPage`]: `items` is one bounded page of
-/// the ownership chain and `next_cursor` is what to request next.
 pub async fn get_transfer_history(
     State(state): State<AppState>,
     Path(document_hash): Path<String>,
-    Query(query): Query<ChainHistoryQuery>,
-) -> Response {
+) -> Result<Json<Vec<TransferRecord>>, StatusCode> {
     let key = format!("transfer:{}", document_hash);
-    let records: Vec<TransferRecord> = match state.cache.get::<Vec<TransferRecord>>(&key).await {
-        Ok(Some(history)) => history,
-        Ok(None) => Vec::new(),
+    match state.cache.get::<Vec<TransferRecord>>(&key).await {
+        Ok(Some(history)) => Ok(Json(history)),
+        Ok(None) => Ok(Json(Vec::new())),
         Err(e) => {
             warn!("Failed to fetch transfer history from cache: {}", e);
             state.metrics.increment_error_count();
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
-
-    match pagination_params(&query) {
-        None => Json(records).into_response(),
-        Some((cursor, page_size)) => {
-            let page = pagination::paginate(&records, cursor, page_size);
-            Json(ChainHistoryPage {
-                items: page.items,
-                next_cursor: page.next_cursor,
-                total: records.len(),
-            })
-            .into_response()
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
 }
@@ -700,6 +675,7 @@ pub async fn verify_document_by_hash(
 pub async fn verify_document_history(
     State(state): State<AppState>,
     Path(hash): Path<String>,
+    Query(query): Query<ChainHistoryQuery>,
 ) -> Response {
     let normalized_hash = HashValidator::normalize(&hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
@@ -720,11 +696,22 @@ pub async fn verify_document_history(
     let count = transactions.len();
     let cached = !transactions.is_empty();
 
+    // #1346: page the chain only when the caller asks for it, so existing
+    // clients keep receiving the full list they always got.
+    let (transactions, next_cursor) = match pagination_params(&query) {
+        None => (transactions, None),
+        Some((cursor, page_size)) => {
+            let page = pagination::paginate(&transactions, cursor, page_size);
+            (page.items, page.next_cursor)
+        }
+    };
+
     Json(HistoryResponse {
         document_hash: normalized_hash,
         transactions,
         count,
         cached,
+        next_cursor,
     })
     .into_response()
 }
