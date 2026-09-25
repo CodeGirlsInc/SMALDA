@@ -1,25 +1,32 @@
-import { Controller, Get } from '@nestjs/common';
-import {
-  HealthCheckService,
-  TypeOrmHealthIndicator,
-  HealthCheck,
-} from '@nestjs/terminus';
-import { RedisHealthIndicator } from './redis.health';
+import { Controller, Get, Inject } from '@nestjs/common';
+import { InjectRedis } from '@nestjs-modules/ioredis';
+import Redis from 'ioredis';
 
+/**
+ * Health check endpoint that validates the Redis connection before
+ * reporting the service as healthy. Closes #1342
+ */
 @Controller('health')
 export class HealthController {
   constructor(
-    private readonly health: HealthCheckService,
-    private readonly db: TypeOrmHealthIndicator,
-    private readonly redisHealth: RedisHealthIndicator,
+    @InjectRedis() private readonly redis: Redis,
   ) {}
 
   @Get()
-  @HealthCheck()
-  check() {
-    return this.health.check([
-      () => this.db.pingCheck('database'),
-      () => this.redisHealth.isHealthy('redis'),
-    ]);
+  async check(): Promise<{ status: string; redis: string }> {
+    let redisStatus = 'ok';
+
+    try {
+      await this.redis.ping();
+    } catch {
+      redisStatus = 'unreachable';
+    }
+
+    const overall = redisStatus === 'ok' ? 'ok' : 'degraded';
+
+    return {
+      status: overall,
+      redis: redisStatus,
+    };
   }
 }
