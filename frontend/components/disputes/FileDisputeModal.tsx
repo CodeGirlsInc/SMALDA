@@ -2,16 +2,21 @@
 
 import React, { useState } from "react";
 import { request } from "@/lib/api-client";
+import { API_PREFIX } from "@/lib/api-contracts";
+import {
+  createDisputeSchema,
+  disputeResponseSchema,
+  DISPUTE_DESCRIPTION_UX_MIN_LENGTH,
+  type DisputeResponse,
+} from "@/lib/schemas/dispute";
+import type { DocumentListItem } from "@/lib/schemas/document";
 import { useToast } from "@/components/ui/use-toast";
 
-interface Document {
-  id: string;
-  title: string;
-}
+type Document = Pick<DocumentListItem, "id" | "title">;
 
 interface FileDisputeModalProps {
   documents: Document[];
-  onDisputeFiled: (newDispute: any) => void;
+  onDisputeFiled: (newDispute: DisputeResponse) => void;
   onClose: () => void;
 }
 
@@ -32,18 +37,30 @@ export function FileDisputeModal({
       setError("Please select a document.");
       return;
     }
-    if (description.length < 20) {
-      setError("Description must be at least 20 characters long.");
+    if (description.length < DISPUTE_DESCRIPTION_UX_MIN_LENGTH) {
+      setError(
+        `Description must be at least ${DISPUTE_DESCRIPTION_UX_MIN_LENGTH} characters long.`,
+      );
+      return;
+    }
+    const validation = createDisputeSchema.safeParse({
+      documentId,
+      description,
+    });
+    if (!validation.success) {
+      setError("Please select a valid document.");
       return;
     }
     setError(null);
     setSubmitting(true);
 
     try {
-      const newDispute = await request("/api/disputes", {
-        method: "POST",
-        body: { documentId, description },
-      });
+      const newDispute = disputeResponseSchema.parse(
+        await request<unknown>(`${API_PREFIX}/disputes`, {
+          method: "POST",
+          body: validation.data,
+        }),
+      );
       onDisputeFiled(newDispute);
       toast({
         title: "Dispute Filed",
@@ -98,7 +115,7 @@ export function FileDisputeModal({
               onChange={(e) => setDescription(e.target.value)}
               rows={4}
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-              placeholder="Please provide a detailed reason for your dispute (min. 20 characters)."
+              placeholder={`Please provide a detailed reason for your dispute (min. ${DISPUTE_DESCRIPTION_UX_MIN_LENGTH} characters).`}
             />
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}

@@ -6,6 +6,7 @@
   MinLength,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
+import { apiContracts } from '../../common/api-contracts';
 
 export class RegisterAuthDto {
   @IsEmail()
@@ -13,7 +14,7 @@ export class RegisterAuthDto {
   email: string;
 
   @IsString()
-  @MinLength(8)
+  @MinLength(apiContracts.register.password.minLength)
   @Matches(/[A-Z]/, { message: 'passwordUppercase' })
   @Matches(/[a-z]/, { message: 'passwordLowercase' })
   @Matches(/[0-9]/, { message: 'passwordNumber' })
@@ -21,6 +22,7 @@ export class RegisterAuthDto {
   password: string;
 
   @IsNotEmpty()
+  @MinLength(apiContracts.register.fullName.minLength)
   @Transform(({ value }) => value?.trim())
   fullName: string;
 }
