@@ -4,22 +4,19 @@ import React, { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { request } from "@/lib/api-client";
+import { API_PREFIX } from "@/lib/api-contracts";
+import {
+  disputeStatusValues,
+  type DisputeResponse,
+  type DisputeStatus,
+} from "@/lib/schemas/dispute";
 import { useToast } from "@/components/ui/use-toast";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type DisputeStatus = "OPEN" | "UNDER_REVIEW" | "RESOLVED" | "REJECTED";
-
-interface Dispute {
-  id: string;
-  documentId: string;
-  description: string;
-  reason: string | null;
-  status: DisputeStatus;
-  filedBy: string;
-  createdAt: string;
+interface Dispute extends DisputeResponse {
   timeline: { status: DisputeStatus; createdAt: string }[];
   resolution?: string | null;
   resolvedAt?: string | null;
@@ -32,7 +29,7 @@ interface Dispute {
 
 interface User {
   id: string;
-  role: "USER" | "ADMIN";
+  role: "user" | "admin";
 }
 
 // ---------------------------------------------------------------------------
@@ -40,10 +37,10 @@ interface User {
 // ---------------------------------------------------------------------------
 
 const STATUS_CLASSES: Record<DisputeStatus, string> = {
-  OPEN: "bg-blue-100 text-blue-800",
-  UNDER_REVIEW: "bg-yellow-100 text-yellow-800",
-  RESOLVED: "bg-green-100 text-green-800",
-  REJECTED: "bg-red-100 text-red-800",
+  open: "bg-blue-100 text-blue-800",
+  in_review: "bg-yellow-100 text-yellow-800",
+  resolved: "bg-green-100 text-green-800",
+  dismissed: "bg-red-100 text-red-800",
 };
 
 // ---------------------------------------------------------------------------
@@ -59,18 +56,20 @@ export default function DisputeDetailPage() {
   const [user, setUser] = useState<User | null>(null); // Assume we get user info from an auth hook
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [adminStatus, setAdminStatus] = useState<DisputeStatus>("OPEN");
+  const [adminStatus, setAdminStatus] = useState<DisputeStatus>("open");
   const [adminResolution, setAdminResolution] = useState("");
 
   const fetchDispute = useCallback(async () => {
     if (!disputeId) return;
     setLoading(true);
     try {
-      const disputeData = await request<Dispute>(`/api/disputes/${disputeId}`);
+      const disputeData = await request<Dispute>(
+        `${API_PREFIX}/disputes/${disputeId}`,
+      );
       setDispute(disputeData);
       setAdminStatus(disputeData.status);
       // In a real app, user data would come from a context or hook
-      const userData = await request<User>("/api/users/me");
+      const userData = await request<User>(`${API_PREFIX}/users/me`);
       setUser(userData);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load dispute.");
@@ -86,7 +85,9 @@ export default function DisputeDetailPage() {
   const handleWithdrawDispute = async () => {
     if (!disputeId) return;
     try {
-      await request(`/api/disputes/${disputeId}`, { method: "DELETE" });
+      await request(`${API_PREFIX}/disputes/${disputeId}`, {
+        method: "DELETE",
+      });
       toast({
         title: "Dispute Withdrawn",
         description: "The dispute has been successfully withdrawn.",
@@ -104,9 +105,9 @@ export default function DisputeDetailPage() {
   const handleAdminUpdate = async () => {
     if (!disputeId) return;
     try {
-      await request(`/api/disputes/${disputeId}`, {
+      await request(`${API_PREFIX}/disputes/${disputeId}/status`, {
         method: "PATCH",
-        body: { status: adminStatus, resolution: adminResolution },
+        body: { status: adminStatus },
       });
       toast({
         title: "Dispute Updated",
@@ -198,7 +199,7 @@ export default function DisputeDetailPage() {
           </p>
           {dispute.reason && (
             <p className="mt-2 text-xs text-gray-500">
-              Classified as: {dispute.reason}
+              Classified as: {dispute.reason.name}
             </p>
           )}
         </section>
@@ -231,7 +232,7 @@ export default function DisputeDetailPage() {
           </ol>
         </section>
 
-        {(dispute.status === "RESOLVED" || dispute.status === "REJECTED") &&
+        {(dispute.status === "resolved" || dispute.status === "dismissed") &&
           dispute.resolution && (
             <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
               <h2 className="text-sm font-semibold text-gray-900">
@@ -246,7 +247,7 @@ export default function DisputeDetailPage() {
             </section>
           )}
 
-        {user?.role === "ADMIN" && (
+        {user?.role === "admin" && (
           <section className="rounded-xl border border-blue-200 bg-blue-50 p-5 shadow-sm">
             <h2 className="text-sm font-semibold text-blue-900">
               Admin Controls
@@ -267,10 +268,11 @@ export default function DisputeDetailPage() {
                   }
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
                 >
-                  <option>OPEN</option>
-                  <option>UNDER_REVIEW</option>
-                  <option>RESOLVED</option>
-                  <option>REJECTED</option>
+                  {disputeStatusValues.map((status) => (
+                    <option key={status} value={status}>
+                      {status.replace("_", " ")}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>
@@ -298,7 +300,7 @@ export default function DisputeDetailPage() {
           </section>
         )}
 
-        {dispute.status === "OPEN" && user?.id === dispute.filedBy && (
+        {dispute.status === "open" && user?.id === dispute.filedBy && (
           <div className="mt-6">
             <button
               onClick={handleWithdrawDispute}

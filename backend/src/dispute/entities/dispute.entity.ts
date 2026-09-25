@@ -8,12 +8,22 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { DisputeReason } from './dispute-reason.entity';
+import { DISPUTE_STATUS_VALUES } from '../../common/api-contracts';
 
 export enum DisputeStatus {
   OPEN = 'open',
   IN_REVIEW = 'in_review',
   RESOLVED = 'resolved',
   DISMISSED = 'dismissed',
+}
+
+const backendStatuses = new Set<string>(Object.values(DisputeStatus));
+const contractStatuses = new Set<string>(DISPUTE_STATUS_VALUES);
+if (
+  backendStatuses.size !== contractStatuses.size ||
+  [...backendStatuses].some((status) => !contractStatuses.has(status))
+) {
+  throw new Error('Dispute statuses do not match the API contract');
 }
 
 export const ALLOWED_DISPUTE_TRANSITIONS: Record<DisputeStatus, DisputeStatus[]> = {

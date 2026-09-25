@@ -93,28 +93,24 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Unit tests
-        run: npm run test
+      - name: Unit tests with coverage
+        run: npm run test:coverage
+
+      - name: Upload frontend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
 
       - name: Accessibility tests (jest-axe)
         run: npm run test:a11y -- --passWithNoTests
 
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium firefox webkit
 
       - name: E2E tests
         run: npm run test:e2e
-
-      # TODO: Remove --passWithNoTests and switch to test:coverage once real test suites exist
-      # - name: Unit tests with coverage
-      #   run: npm run test:coverage
-      # 
-      # - name: Upload coverage artifact
-      #   if: always()
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: frontend-coverage
-      #     path: frontend/coverage/
 
   # ─────────────────────────────────────────────
   # SMART CONTRACTS — Rust / Cargo

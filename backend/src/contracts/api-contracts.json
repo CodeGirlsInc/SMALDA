@@ -1,0 +1,48 @@
+{
+  "api": {
+    "version": "1"
+  },
+  "register": {
+    "email": {
+      "format": "email"
+    },
+    "password": {
+      "minLength": 6
+    },
+    "fullName": {
+      "minLength": 1
+    }
+  },
+  "login": {
+    "email": {
+      "format": "email"
+    },
+    "password": {
+      "minLength": 1
+    }
+  },
+  "dispute": {
+    "documentId": {
+      "format": "uuid"
+    },
+    "description": {
+      "minLength": 1
+    },
+    "statuses": [
+      "open",
+      "in_review",
+      "resolved",
+      "dismissed"
+    ]
+  },
+  "documentUpload": {
+    "fileSize": {
+      "max": 20971520
+    },
+    "mimeTypes": [
+      "application/pdf",
+      "image/png",
+      "image/jpeg"
+    ]
+  }
+}
