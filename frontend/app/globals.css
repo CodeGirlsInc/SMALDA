@@ -135,6 +135,11 @@
   outline-offset: 2px;
 }
 
+[data-skip-link-target]:focus {
+  outline: 2px solid var(--color-ring, currentColor);
+  outline-offset: 2px;
+}
+
 /* FE-88: honor prefers-reduced-motion and enforce 44x44 touch-target minimums. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

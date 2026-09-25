@@ -36,6 +36,21 @@ describe("ReferenceCard", () => {
     );
   });
 
+  it("uses theme-aware card colors", () => {
+    const { container } = render(
+      <ReferenceCard title="Reference" description="Registry details" />,
+    );
+
+    expect(container.firstElementChild).toHaveClass(
+      "bg-card",
+      "text-card-foreground",
+      "border-border",
+    );
+    expect(screen.getByText("Registry details")).toHaveClass(
+      "text-muted-foreground",
+    );
+  });
+
   it("omits optional description and content wrappers when values are absent", () => {
     const { container } = render(<ReferenceCard title="Reference" />);
 
