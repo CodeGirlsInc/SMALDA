@@ -3,25 +3,15 @@
 import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { request } from "@/lib/api-client";
-import { FileDisputeModal } from "@/components/disputes/FileDisputeModal";
-import { useToast } from "@/components/ui/use-toast";
+import { FileDisputeModal, type FiledDispute } from "@/components/disputes/FileDisputeModal";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type DisputeStatus = "OPEN" | "UNDER_REVIEW" | "RESOLVED" | "REJECTED";
+type DisputeStatus = "open" | "in_review" | "resolved" | "dismissed";
 
-interface Dispute {
-  id: string;
-  documentId: string;
-  description: string;
-  reason: string | null;
-  status: DisputeStatus;
-  filedBy: string;
-  createdAt: string;
-  resolution?: string | null;
-}
+type Dispute = FiledDispute;
 
 interface Document {
   id: string;
@@ -33,10 +23,10 @@ interface Document {
 // ---------------------------------------------------------------------------
 
 const STATUS_CLASSES: Record<DisputeStatus, string> = {
-  OPEN: "bg-blue-100 text-blue-800",
-  UNDER_REVIEW: "bg-yellow-100 text-yellow-800",
-  RESOLVED: "bg-green-100 text-green-800",
-  REJECTED: "bg-red-100 text-red-800",
+  open: "bg-blue-100 text-blue-800",
+  in_review: "bg-yellow-100 text-yellow-800",
+  resolved: "bg-green-100 text-green-800",
+  dismissed: "bg-red-100 text-red-800",
 };
 
 // ---------------------------------------------------------------------------
@@ -49,17 +39,17 @@ export default function DisputesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<DisputeStatus | "ALL">(
-    "ALL",
+  const [statusFilter, setStatusFilter] = useState<DisputeStatus | "all">(
+    "all",
   );
-  const { toast } = useToast();
-
   const fetchDisputes = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const disputesData = await request<Dispute[]>("/api/disputes");
-      setDisputes(disputesData);
+      const response = await request<{ data: Dispute[]; total: number }>(
+        "/disputes",
+      );
+      setDisputes(response.data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load disputes.");
     } finally {
@@ -69,13 +59,15 @@ export default function DisputesPage() {
 
   const fetchDocuments = useCallback(async () => {
     try {
-      const documentsData = await request<{ documents: Document[] }>(
-        "/api/documents",
-      );
-      setDocuments(documentsData.documents);
-    } catch (err) {
-      // Documents are optional for the page to render, so we don't set a page-level error
-      console.error("Failed to load documents:", err);
+      const response = await request<{
+        data: Document[];
+        total: number;
+        page: number;
+        limit: number;
+      }>("/documents");
+      setDocuments(response.data);
+    } catch {
+      setDocuments([]);
     }
   }, []);
 
@@ -89,7 +81,7 @@ export default function DisputesPage() {
   };
 
   const filteredDisputes =
-    statusFilter === "ALL"
+    statusFilter === "all"
       ? disputes
       : disputes.filter((d) => d.status === statusFilter);
 
@@ -127,15 +119,15 @@ export default function DisputesPage() {
           id="status-filter"
           value={statusFilter}
           onChange={(e) =>
-            setStatusFilter(e.target.value as DisputeStatus | "ALL")
+            setStatusFilter(e.target.value as DisputeStatus | "all")
           }
           className="rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
         >
-          <option value="ALL">All Statuses</option>
-          <option value="OPEN">Open</option>
-          <option value="UNDER_REVIEW">Under Review</option>
-          <option value="RESOLVED">Resolved</option>
-          <option value="REJECTED">Rejected</option>
+          <option value="all">All Statuses</option>
+          <option value="open">Open</option>
+          <option value="in_review">In Review</option>
+          <option value="resolved">Resolved</option>
+          <option value="dismissed">Dismissed</option>
         </select>
       </div>
 
@@ -155,7 +147,7 @@ export default function DisputesPage() {
             No disputes filed
           </h3>
           <p className="mt-1 text-sm text-gray-500">
-            {statusFilter === "ALL"
+            {statusFilter === "all"
               ? "When you file a dispute it will appear here."
               : `You have no disputes with the status '${statusFilter}'.`}
           </p>

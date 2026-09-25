@@ -1,18 +1,23 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect } from "react";
 
 // ─────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────
-export type DocumentStatus = "VERIFIED" | "PENDING" | "FLAGGED" | "REJECTED";
+export type DocumentStatus =
+  | "VERIFIED"
+  | "PENDING"
+  | "FLAGGED"
+  | "REJECTED"
+  | "ANALYZING";
 
 export interface ParcelDocument {
   id: string;
   name: string;
   status: DocumentStatus;
   /** 0–100 */
-  riskScore: number;
+  riskScore: number | null;
   ownerName: string | null;
   isOwnedByViewer: boolean;
   stellarAnchorDate: string | null;
@@ -36,6 +41,7 @@ const STATUS_STYLES: Record<DocumentStatus, string> = {
   PENDING:  "bg-yellow-100 text-yellow-800",
   FLAGGED:  "bg-red-100 text-red-800",
   REJECTED: "bg-gray-100 text-gray-700",
+  ANALYZING: "bg-blue-100 text-blue-800",
 };
 
 function StatusBadge({ status }: { status: DocumentStatus }) {
@@ -80,8 +86,6 @@ export default function ParcelSidebar({
   open,
   onClose,
 }: ParcelSidebarProps) {
-  const panelRef = useRef<HTMLDivElement>(null);
-
   // Close on Escape key
   useEffect(() => {
     if (!open) return;
@@ -91,11 +95,6 @@ export default function ParcelSidebar({
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, [open, onClose]);
-
-  // Trap focus inside panel when open
-  useEffect(() => {
-    if (open) panelRef.current?.focus();
-  }, [open]);
 
   return (
     <>
@@ -109,13 +108,11 @@ export default function ParcelSidebar({
       )}
 
       {/* Slide-in panel */}
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
+      <aside
         aria-label="Parcel detail"
-        tabIndex={-1}
-        className={`absolute right-0 top-0 z-20 h-full w-80 transform bg-white shadow-xl transition-transform duration-300 ease-in-out focus:outline-none ${
+        aria-hidden={!open}
+        inert={!open}
+        className={`absolute right-0 top-0 z-20 h-full w-80 transform bg-white shadow-xl transition-transform duration-300 ease-in-out ${
           open ? "translate-x-0" : "translate-x-full"
         }`}
       >
@@ -178,7 +175,11 @@ export default function ParcelSidebar({
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                     Risk Score
                   </p>
-                  <RiskGauge score={document.riskScore} />
+                  {document.riskScore != null ? (
+                    <RiskGauge score={document.riskScore} />
+                  ) : (
+                    <p className="text-sm text-gray-500">Risk score unavailable</p>
+                  )}
                 </div>
               )}
 
@@ -232,7 +233,9 @@ export default function ParcelSidebar({
                         clipRule="evenodd"
                       />
                     </svg>
-                    Not verified
+                    {document.status === "VERIFIED"
+                      ? "Verification unavailable"
+                      : "Not verified"}
                   </p>
                 )}
               </div>
@@ -279,7 +282,7 @@ export default function ParcelSidebar({
             </div>
           )}
         </div>
-      </div>
+      </aside>
     </>
   );
 }

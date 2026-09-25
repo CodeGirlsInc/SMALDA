@@ -98,6 +98,8 @@
   },
   "documents": {
     "title": "Tous les documents",
+    "subtitle": "Consultez, recherchez et gérez vos documents vérifiés.",
+    "upload": "Téléverser un document",
     "filters": {
       "legend": "Filtres de documents",
       "status": "Statut",
@@ -109,6 +111,10 @@
       "riskRange": "Plage de score de risque",
       "apply": "Appliquer les filtres",
       "reset": "Réinitialiser"
+    },
+    "search": {
+      "label": "Rechercher des documents",
+      "placeholder": "Rechercher des documents par titre..."
     },
     "status": {
       "pending": "En attente",
@@ -126,6 +132,9 @@
       "flags": "Signalements",
       "noFlags": "Aucun",
       "moreFlags": "+{count} de plus",
+      "fileSize": "Taille du fichier",
+      "action": "Action",
+      "view": "Voir les détails",
       "download": "Télécharger",
       "downloadLabel": "Télécharger {title}"
     },
@@ -135,6 +144,7 @@
     "loadError": "Échec du chargement des documents",
     "downloadError": "Échec du téléchargement du document.",
     "pagination": {
+      "label": "Pagination des documents",
       "summary": "Affichage de {from} à {to} sur {total}"
     }
   },

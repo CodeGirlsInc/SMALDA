@@ -4,7 +4,7 @@ import { DisputeService } from './dispute.service';
 import { Dispute, DisputeStatus } from './entities/dispute.entity';
 import { DisputeReasonClassifierService } from './dispute-reason-classifier.service';
 import { AccessLogsService } from '../access-logs/access-logs.service';
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 
 const mockDispute = {
   id: 'dispute-1',
@@ -174,7 +174,7 @@ describe('DisputeService', () => {
       );
     });
 
-    it('should throw UnauthorizedException if a user tries to access a dispute they did not file', async () => {
+    it('should throw ForbiddenException if a user tries to access a dispute they did not file', async () => {
       const disputeId = 'dispute-id-1';
       const dispute: Dispute = {
         id: disputeId,
@@ -189,7 +189,7 @@ describe('DisputeService', () => {
 
       await expect(
         service.findOne(disputeId, 'another-user-id'),
-      ).rejects.toThrow('Unauthorized access');
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 });

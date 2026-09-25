@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { apiUrl } from "@/lib/api-config";
 
 export default function TwoFactorVerifyPage() {
   const router = useRouter();
@@ -36,8 +37,9 @@ export default function TwoFactorVerifyPage() {
     setError("");
 
     try {
-      const response = await fetch("/api/auth/2fa/challenge", {
+      const response = await fetch(apiUrl("/auth/2fa/challenge"), {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           challengeToken,
@@ -47,7 +49,7 @@ export default function TwoFactorVerifyPage() {
       });
 
       if (response.ok) {
-        router.push("/dashboard");
+        router.push("/");
       } else {
         const nextAttempts = failedAttempts + 1;
         setFailedAttempts(nextAttempts);

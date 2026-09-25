@@ -1,6 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import ParcelSidebar, {
+  type ParcelDocument,
+} from "@/components/map/ParcelSidebar";
+import { apiUrl } from "@/lib/api-config";
+import { getAccessToken } from "@/lib/session";
+import {
+  clearLastViewedParcel,
+  readLastViewedParcelId,
+  saveLastViewedParcelId,
+} from "@/lib/map-state";
 import "leaflet/dist/leaflet.css";
 import * as L from "leaflet";
 import {
@@ -11,7 +21,8 @@ import {
   ZoomControl,
 } from "react-leaflet";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+const MAP_PAGE_SIZE = 100;
+const MAP_MAX_DOCUMENTS = 1000;
 
 type DocumentStatus =
   | "VERIFIED"
@@ -24,7 +35,8 @@ interface DocumentWithLocation {
   id: string;
   title: string;
   status: DocumentStatus;
-  riskScore: number;
+  riskScore: number | null;
+  riskFlags: string[] | null;
   latitude: number;
   longitude: number;
 }
@@ -46,8 +58,142 @@ const LABEL_CLASSES: Record<DocumentStatus, string> = {
 };
 
 function getAuthHeaders(): HeadersInit {
-  const token = localStorage.getItem("auth-token");
+  const token = getAccessToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function normalizeStatus(value: unknown): DocumentStatus {
+  const status = typeof value === "string" ? value.toUpperCase() : "";
+  if (
+    status === "VERIFIED" ||
+    status === "PENDING" ||
+    status === "FLAGGED" ||
+    status === "REJECTED" ||
+    status === "ANALYZING"
+  ) {
+    return status;
+  }
+  return "PENDING";
+}
+
+function toDocumentWithLocation(value: unknown): DocumentWithLocation | null {
+  if (!isRecord(value)) return null;
+
+  const id = value.id;
+  const title = value.title;
+  if (typeof id !== "string" || typeof title !== "string") return null;
+
+  if (
+    value.latitude == null ||
+    value.longitude == null ||
+    value.latitude === "" ||
+    value.longitude === ""
+  ) {
+    return null;
+  }
+
+  const latitude = Number(value.latitude);
+  const longitude = Number(value.longitude);
+  if (
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    longitude < -180 ||
+    longitude > 180
+  ) {
+    return null;
+  }
+
+  return {
+    id,
+    title,
+    status: normalizeStatus(value.status),
+    riskScore:
+      typeof value.riskScore === "number" && Number.isFinite(value.riskScore)
+        ? value.riskScore
+        : null,
+    riskFlags: Array.isArray(value.riskFlags)
+      ? value.riskFlags.filter((flag): flag is string => typeof flag === "string")
+      : null,
+    latitude,
+    longitude,
+  };
+}
+
+type ParcelLookup =
+  | { kind: "found"; document: DocumentWithLocation }
+  | { kind: "missing" }
+  | { kind: "transient" };
+
+async function fetchDocumentById(id: string): Promise<ParcelLookup> {
+  try {
+    const response = await fetch(
+      apiUrl(`/documents/${encodeURIComponent(id)}`),
+      { credentials: "include", headers: getAuthHeaders() },
+    );
+    if (response.status === 403 || response.status === 404) {
+      return { kind: "missing" };
+    }
+    if (!response.ok) return { kind: "transient" };
+
+    const payload: unknown = await response.json();
+    if (
+      !isRecord(payload) ||
+      typeof payload.id !== "string" ||
+      typeof payload.title !== "string"
+    ) {
+      return { kind: "transient" };
+    }
+
+    const document = toDocumentWithLocation(payload);
+    return document ? { kind: "found", document } : { kind: "missing" };
+  } catch {
+    return { kind: "transient" };
+  }
+}
+
+async function fetchCurrentUserId(): Promise<string | null> {
+  try {
+    const response = await fetch(apiUrl("/auth/me"), {
+      credentials: "include",
+      headers: getAuthHeaders(),
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+
+    const body: unknown = await response.json();
+    if (!isRecord(body) || typeof body.id !== "string" || !body.id) {
+      return null;
+    }
+    return body.id;
+  } catch {
+    return null;
+  }
+}
+
+function toRiskScore(value: number | null): number | null {
+  if (value == null) return null;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function toParcelDocument(document: DocumentWithLocation): ParcelDocument {
+  return {
+    id: document.id,
+    name: document.title,
+    status: document.status,
+    riskScore: toRiskScore(document.riskScore),
+    ownerName: null,
+    isOwnedByViewer: true,
+    stellarAnchorDate: null,
+    stellarTxHash: null,
+    flags: document.riskFlags ?? [],
+    detailsUrl: `/documents/${document.id}`,
+  };
 }
 
 function createColouredIcon(colour: string) {
@@ -68,26 +214,124 @@ export default function MapPageContent() {
   const [userRegion, setUserRegion] = useState<[number, number] | null>(null);
   const [tileError, setTileError] = useState(false);
   const [tileKey, setTileKey] = useState(0);
+  const [selectedParcelId, setSelectedParcelId] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [mapTotal, setMapTotal] = useState(0);
+  const [mapLoadedCount, setMapLoadedCount] = useState(0);
+  const [mapLimited, setMapLimited] = useState(false);
   const mapRef = useRef<L.Map | null>(null);
+  const mapUserIdRef = useRef<string | null>(null);
 
   const fetchDocuments = useCallback(async () => {
     setLoading(true);
     setError(null);
-    try {
-      const res = await fetch(`${API_BASE}/api/documents?limit=200`, {
-        headers: getAuthHeaders(),
-      });
-      if (!res.ok) throw new Error(`Failed to load documents (${res.status})`);
 
-      const data = await res.json();
-      const list = Array.isArray(data) ? data : (data?.data ?? []);
-      const located = list.filter(
-        (d: DocumentWithLocation) => d.latitude != null && d.longitude != null,
-      );
+    try {
+      const userId = await fetchCurrentUserId();
+      if (!userId) {
+        throw new Error("Unable to verify your session.");
+      }
+
+      const previousUserId = mapUserIdRef.current;
+      if (previousUserId && previousUserId !== userId) {
+        clearLastViewedParcel(previousUserId);
+        setDocs([]);
+        setSelectedParcelId(null);
+        setSidebarOpen(false);
+        setMapTotal(0);
+        setMapLoadedCount(0);
+        setMapLimited(false);
+      }
+      mapUserIdRef.current = userId;
+
+      const loaded: unknown[] = [];
+      let total = 0;
+      let page = 1;
+      let limited = false;
+      const maxPages = Math.ceil(MAP_MAX_DOCUMENTS / MAP_PAGE_SIZE);
+
+      while (page <= maxPages) {
+        const params = new URLSearchParams({
+          page: String(page),
+          limit: String(MAP_PAGE_SIZE),
+        });
+        const res = await fetch(apiUrl("/documents", params), {
+          credentials: "include",
+          headers: getAuthHeaders(),
+        });
+        if (!res.ok) {
+          throw new Error(`Failed to load documents (${res.status})`);
+        }
+
+        const payload: unknown = await res.json();
+        const pageData = Array.isArray(payload)
+          ? payload
+          : isRecord(payload) && Array.isArray(payload.data)
+            ? payload.data
+            : null;
+        if (!pageData) {
+          throw new Error("Invalid documents response");
+        }
+
+        const pageLimit =
+          isRecord(payload) &&
+          typeof payload.limit === "number" &&
+          Number.isFinite(payload.limit)
+            ? Math.max(1, payload.limit)
+            : MAP_PAGE_SIZE;
+        const remaining = Math.max(0, MAP_MAX_DOCUMENTS - loaded.length);
+        loaded.push(...pageData.slice(0, remaining));
+        total =
+          isRecord(payload) &&
+          typeof payload.total === "number" &&
+          Number.isFinite(payload.total)
+            ? payload.total
+            : loaded.length;
+
+        if (
+          pageData.length < pageLimit ||
+          loaded.length >= total ||
+          loaded.length >= MAP_MAX_DOCUMENTS
+        ) {
+          limited = total > loaded.length;
+          break;
+        }
+        page += 1;
+      }
+
+      const locatedFromList = loaded
+        .map(toDocumentWithLocation)
+        .filter((document): document is DocumentWithLocation => document !== null);
+      const missingLocationCount = loaded.length - locatedFromList.length;
+      let located = locatedFromList;
+      let lastViewedId = readLastViewedParcelId(userId);
+
+      if (
+        lastViewedId &&
+        !located.some((document) => document.id === lastViewedId)
+      ) {
+        const lookup = await fetchDocumentById(lastViewedId);
+        if (lookup.kind === "found") {
+          located = [...located, lookup.document];
+        } else if (lookup.kind === "missing") {
+          clearLastViewedParcel(userId);
+          lastViewedId = null;
+        }
+      }
+
       setDocs(located);
-      // Documents without coordinates are excluded from the map but their
-      // count is still surfaced (FE-58).
-      setMissingLocationCount(Math.max(0, list.length - located.length));
+      setMissingLocationCount(missingLocationCount);
+      setMapTotal(total);
+      setMapLoadedCount(loaded.length);
+      setMapLimited(limited || total > loaded.length);
+
+      if (lastViewedId && located.some((document) => document.id === lastViewedId)) {
+        setSelectedParcelId(lastViewedId);
+        setSidebarOpen(true);
+      } else {
+        setSelectedParcelId(null);
+        setSidebarOpen(false);
+      }
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to load documents.",
@@ -114,6 +358,38 @@ export default function MapPageContent() {
     }
   }, []);
 
+  const selectedDocument = selectedParcelId
+    ? docs.find((document) => document.id === selectedParcelId) ?? null
+    : null;
+  const selectedLatitude = selectedDocument?.latitude;
+  const selectedLongitude = selectedDocument?.longitude;
+
+  useEffect(() => {
+    if (
+      loading ||
+      !mapRef.current ||
+      selectedLatitude == null ||
+      selectedLongitude == null
+    ) {
+      return;
+    }
+
+    mapRef.current.setView(
+      [selectedLatitude, selectedLongitude],
+      Math.max(mapRef.current.getZoom(), 13),
+      { animate: false },
+    );
+  }, [loading, selectedLatitude, selectedLongitude]);
+
+  function handleSelectParcel(document: DocumentWithLocation) {
+    const userId = mapUserIdRef.current;
+    if (!userId) return;
+
+    setSelectedParcelId(document.id);
+    setSidebarOpen(true);
+    saveLastViewedParcelId(document.id, userId);
+  }
+
   function handleResetView() {
     if (!mapRef.current) return;
     if (docs.length > 0) {
@@ -134,9 +410,11 @@ export default function MapPageContent() {
         <div>
           <h1 className="text-xl font-bold text-gray-900">Document Map</h1>
           <p className="text-sm text-gray-500">
-            {docs.length > 0
-              ? `Showing ${docs.length} document${docs.length !== 1 ? "s" : ""} with location data.`
-              : "Geographic view of land documents."}
+            {mapLimited
+              ? `Showing ${docs.length} mapped document${docs.length !== 1 ? "s" : ""}. Loaded ${mapLoadedCount} of ${mapTotal} records.`
+              : docs.length > 0 && mapTotal > 0
+                ? `Showing ${docs.length} mapped document${docs.length !== 1 ? "s" : ""} from ${mapTotal} total records.`
+                : "Geographic view of land documents."}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -252,6 +530,10 @@ export default function MapPageContent() {
                     key={doc.id}
                     position={[doc.latitude, doc.longitude]}
                     icon={icon}
+                    title={doc.title}
+                    eventHandlers={{
+                      click: () => handleSelectParcel(doc),
+                    }}
                   >
                     <Popup>
                       <div className="min-w-[180px]">
@@ -265,7 +547,7 @@ export default function MapPageContent() {
                         </span>
                         {doc.riskScore != null && (
                           <p className="mt-1 text-xs text-gray-500">
-                            Risk: {doc.riskScore}/100
+                            Risk: {toRiskScore(doc.riskScore)}/100
                           </p>
                         )}
                         <a
@@ -281,6 +563,13 @@ export default function MapPageContent() {
               })}
           </MapContainer>
         </div>
+        {sidebarOpen && selectedDocument && (
+          <ParcelSidebar
+            document={toParcelDocument(selectedDocument)}
+            open
+            onClose={() => setSidebarOpen(false)}
+          />
+        )}
       </div>
 
       {error && (
@@ -293,6 +582,12 @@ export default function MapPageContent() {
             Retry
           </button>
         </div>
+      )}
+
+      {mapLimited && (
+        <p className="mt-4 text-xs text-amber-700">
+          Map loading is capped at {mapLoadedCount} documents. Narrow the document list to inspect the remaining records.
+        </p>
       )}
 
       {missingLocationCount > 0 && (

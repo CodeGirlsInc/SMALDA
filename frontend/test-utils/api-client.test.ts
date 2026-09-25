@@ -133,7 +133,7 @@ describe("request()", () => {
     expect(data).toEqual({ ok: true });
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url, opts] = mockFetch.mock.calls[0];
-    expect(url).toBe(`${API_BASE}/api/test`);
+    expect(url).toBe(`${API_BASE}/api/v1/test`);
     expect(opts.headers.get("Authorization")).toBe("Bearer my-jwt-token");
   });
 
@@ -253,7 +253,7 @@ describe("request()", () => {
 
     expect(lsMock.getItem("auth-token")).toBeNull();
     expect(lsMock.getItem("refresh-token")).toBeNull();
-    expect(locationHref).toBe("/login");
+    expect(locationHref).toContain("/login");
   });
 
   it("clears session and redirects when no refresh token exists", async () => {
@@ -271,7 +271,7 @@ describe("request()", () => {
     });
 
     expect(lsMock.getItem("auth-token")).toBeNull();
-    expect(locationHref).toBe("/login");
+    expect(locationHref).toContain("/login");
   });
 
   it("does not attempt refresh for anonymous requests", async () => {
@@ -295,9 +295,9 @@ describe("request()", () => {
 // ── clearSession ────────────────────────────────────────────────────────────
 
 describe("clearSession()", () => {
-  it("removes both tokens from localStorage", () => {
+  it("removes both tokens from localStorage", async () => {
     setTokens("access", "refresh");
-    clearSession();
+    await clearSession();
     expect(lsMock.getItem("auth-token")).toBeNull();
     expect(lsMock.getItem("refresh-token")).toBeNull();
   });

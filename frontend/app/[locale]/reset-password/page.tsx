@@ -4,8 +4,8 @@ import React, { Suspense, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { Link, useRouter } from "@/i18n/navigation";
+import { apiUrl } from "@/lib/api-config";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const MIN_PASSWORD_LENGTH = 6;
 
 function InvalidTokenNotice({
@@ -80,8 +80,9 @@ function ResetPasswordForm() {
 
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/auth/reset-password`, {
+      const res = await fetch(apiUrl("/auth/reset-password"), {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, password }),
       });

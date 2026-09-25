@@ -8,6 +8,8 @@ import {
   CardDescription,
   CardContent,
 } from "@/components/ui/card";
+import { apiUrl } from "@/lib/api-config";
+import { getAccessToken } from "@/lib/session";
 import {
   Table,
   TableHeader,
@@ -34,13 +36,10 @@ interface PaginatedAccessLogs {
   totalPages: number;
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const PAGE_SIZE = 20;
 
 function getAuthHeaders(): HeadersInit {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
-
+  const token = getAccessToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
@@ -73,7 +72,8 @@ export default function AdminAuditLogsPage() {
     if (appliedFilters.endDate) params.set("endDate", appliedFilters.endDate);
 
     try {
-      const response = await fetch(`${API_BASE}/admin/access-logs?${params}`, {
+      const response = await fetch(apiUrl("/admin/access-logs", params), {
+        credentials: "include",
         headers: getAuthHeaders(),
       });
       if (!response.ok) {

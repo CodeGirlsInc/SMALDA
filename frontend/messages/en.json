@@ -98,6 +98,8 @@
   },
   "documents": {
     "title": "All Documents",
+    "subtitle": "View, search, and manage your verified documents.",
+    "upload": "Upload New Document",
     "filters": {
       "legend": "Document filters",
       "status": "Status",
@@ -109,6 +111,10 @@
       "riskRange": "Risk score range",
       "apply": "Apply filters",
       "reset": "Reset"
+    },
+    "search": {
+      "label": "Search documents",
+      "placeholder": "Search documents by title..."
     },
     "status": {
       "pending": "Pending",
@@ -126,6 +132,9 @@
       "flags": "Flags",
       "noFlags": "None",
       "moreFlags": "+{count} more",
+      "fileSize": "File size",
+      "action": "Action",
+      "view": "View details",
       "download": "Download",
       "downloadLabel": "Download {title}"
     },
@@ -135,6 +144,7 @@
     "loadError": "Failed to load documents",
     "downloadError": "Failed to download document.",
     "pagination": {
+      "label": "Document pagination",
       "summary": "Showing {from}–{to} of {total}"
     }
   },

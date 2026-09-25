@@ -57,7 +57,7 @@ describe("LanguageSwitcher", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     const [url, options] = fetchMock.mock.calls[0];
-    expect(String(url)).toContain("/api/users/me");
+    expect(String(url)).toContain("/api/v1/users/me");
     expect(options).toMatchObject({ method: "PATCH" });
     expect(
       JSON.parse((options as RequestInit).body as string)

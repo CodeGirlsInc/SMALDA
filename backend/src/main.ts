@@ -11,6 +11,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { WinstonModule } from 'nest-winston';
 import { buildWinstonOptions } from './common/logger.config';
 import { buildCorsOptions } from './common/cors.config';
+import { validateSessionCookieTopology } from './auth/session-cookie.config';
 import { config as loadEnv } from 'dotenv';
 
 loadEnv({ path: '.env' });
@@ -22,6 +23,7 @@ async function bootstrap() {
   app.enableShutdownHooks();
 
   const configService = app.get(ConfigService);
+  validateSessionCookieTopology(configService);
 
   // Enable hardened CORS
   const { corsOptions } = buildCorsOptions(configService);

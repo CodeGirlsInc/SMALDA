@@ -2,15 +2,20 @@
  * Client-side session plumbing shared by the auth pages.
  *
  * FE-43's auth context is not in place yet, so the login page persists the
- * tokens it gets back from `POST /api/auth/login` through here. When the
+ * tokens it gets back from `POST /api/v1/auth/login` through here. When the
  * context lands it should take ownership of these functions and the pages
  * should read the session off the context instead of touching storage.
  */
 
-const ACCESS_TOKEN_KEY = "auth-token";
-const REFRESH_TOKEN_KEY = "auth-refresh-token";
+import {
+  setAccessToken,
+  setRefreshToken,
+  clearSession,
+} from "@/lib/session";
 
-/** Shape of `POST /api/auth/login` — mirrors backend/src/auth/auth.service.ts. */
+export { clearSession };
+
+/** Shape of `POST /api/v1/auth/login` — mirrors backend/src/auth/auth.service.ts. */
 export interface LoginResponse {
   access_token: string;
   refresh_token?: string;
@@ -19,20 +24,16 @@ export interface LoginResponse {
 export function storeSession(tokens: LoginResponse): void {
   if (typeof window === "undefined") return;
   if (tokens.access_token) {
-    window.localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access_token);
+    setAccessToken(tokens.access_token);
   }
   if (tokens.refresh_token) {
-    window.localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token);
+    setRefreshToken(tokens.refresh_token);
   }
 }
 
-export function clearSession(): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(ACCESS_TOKEN_KEY);
-  window.localStorage.removeItem(REFRESH_TOKEN_KEY);
-}
+export const DEFAULT_POST_LOGIN_PATH = "/";
 
-export const DEFAULT_POST_LOGIN_PATH = "/dashboard";
+const LOCALE_PREFIX = /^\/(en|fr|es)(?=[/?]|$)/;
 
 /**
  * A newline or other control character would let a value smuggle itself past
@@ -50,7 +51,7 @@ function hasControlCharacter(value: string): boolean {
  * Resolve the `?redirect=` param that FE-44's middleware appends when it
  * bounces an unauthenticated request, into a path that is safe to navigate to.
  *
- * Anything that could leave the origin falls back to the dashboard, so a
+ * Anything that could leave the origin falls back to the default route, so a
  * crafted `/login?redirect=…` link cannot be used as an open redirect:
  * absolute URLs carry a scheme and therefore never start with `/`, while
  * `//evil.com` and its `/\evil.com` backslash variant are treated as
@@ -62,5 +63,13 @@ export function resolvePostLoginPath(raw: string | null | undefined): string {
     return DEFAULT_POST_LOGIN_PATH;
   }
   if (hasControlCharacter(raw)) return DEFAULT_POST_LOGIN_PATH;
-  return raw;
+
+  let pathWithoutLocale = raw;
+  while (true) {
+    const localeMatch = pathWithoutLocale.match(LOCALE_PREFIX);
+    if (!localeMatch) break;
+    pathWithoutLocale = pathWithoutLocale.slice(localeMatch[0].length) || "/";
+  }
+
+  return pathWithoutLocale;
 }

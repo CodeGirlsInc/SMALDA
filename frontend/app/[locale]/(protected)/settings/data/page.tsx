@@ -2,22 +2,16 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+import { getAccessToken, logoutSession } from "@/lib/session";
+import { apiUrl } from "@/lib/api-config";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 function getAuthHeaders(): HeadersInit {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
+  const token = getAccessToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-function logout() {
-  localStorage.removeItem("auth-token");
-  document.cookie = "token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
 }
 
 const COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -184,7 +178,8 @@ export default function SettingsDataPage() {
     setIsExporting(true);
     setExportError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/users/me/export`, {
+      const res = await fetch(apiUrl("/users/me/export"), {
+        credentials: "include",
         headers: getAuthHeaders(),
       });
       if (!res.ok) throw new Error(`Export failed: ${res.status}`);
@@ -215,8 +210,9 @@ export default function SettingsDataPage() {
     setIsDeleting(true);
     setDeleteError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/users/me/data`, {
+      const res = await fetch(apiUrl("/users/me/data"), {
         method: "DELETE",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           ...getAuthHeaders(),
@@ -231,7 +227,7 @@ export default function SettingsDataPage() {
         );
       }
 
-      logout();
+      await logoutSession();
       router.push("/?deleted=true");
     } catch (err: unknown) {
       setDeleteError(

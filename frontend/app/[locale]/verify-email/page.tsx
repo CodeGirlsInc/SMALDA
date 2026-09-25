@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { apiUrl } from "@/lib/api-config";
 
 export default function VerifyEmailPage() {
   const searchParams = useSearchParams();
@@ -23,8 +24,9 @@ export default function VerifyEmailPage() {
 
     async function verify() {
       try {
-        const response = await fetch(`/api/auth/verify-email?token=${encodeURIComponent(token)}`, {
+        const response = await fetch(apiUrl("/auth/verify-email", { token }), {
           method: "GET",
+          credentials: "include",
         });
 
         if (response.ok) {
@@ -52,8 +54,9 @@ export default function VerifyEmailPage() {
 
     setResendStatus("sending");
     try {
-      const response = await fetch("/api/auth/resend-verification", {
+      const response = await fetch(apiUrl("/auth/resend-verification"), {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: resendEmail }),
       });

@@ -2,7 +2,34 @@
 
 import React, { useState } from "react";
 import { request } from "@/lib/api-client";
+import { apiUrl } from "@/lib/api-config";
 import { useToast } from "@/components/ui/use-toast";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+export type DisputeStatus = "open" | "in_review" | "resolved" | "dismissed";
+
+export interface DisputeReason {
+  id: string;
+  name: string;
+}
+
+export interface FiledDispute {
+  id: string;
+  documentId: string;
+  description: string;
+  reason: DisputeReason | null;
+  filedBy: string;
+  status: DisputeStatus;
+  createdAt: string;
+}
 
 interface Document {
   id: string;
@@ -11,7 +38,7 @@ interface Document {
 
 interface FileDisputeModalProps {
   documents: Document[];
-  onDisputeFiled: (newDispute: any) => void;
+  onDisputeFiled: (newDispute: FiledDispute) => void;
   onClose: () => void;
 }
 
@@ -40,10 +67,15 @@ export function FileDisputeModal({
     setSubmitting(true);
 
     try {
-      const newDispute = await request("/api/disputes", {
-        method: "POST",
-        body: { documentId, description },
-      });
+      const response = await request<FiledDispute | { data: FiledDispute }>(
+        apiUrl("/disputes"),
+        {
+          method: "POST",
+          body: { documentId, description },
+        },
+      );
+      const newDispute =
+        "data" in response ? response.data : response;
       onDisputeFiled(newDispute);
       toast({
         title: "Dispute Filed",
@@ -58,11 +90,19 @@ export function FileDisputeModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
-        <h2 className="text-lg font-semibold text-gray-900">
-          File a New Dispute
-        </h2>
+    <Dialog
+      open
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
+      }}
+    >
+      <DialogContent size="sm">
+        <DialogHeader>
+          <DialogTitle>File a New Dispute</DialogTitle>
+          <DialogDescription>
+            Submit a dispute against one of your documents.
+          </DialogDescription>
+        </DialogHeader>
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           <div>
             <label
@@ -101,15 +141,16 @@ export function FileDisputeModal({
               placeholder="Please provide a detailed reason for your dispute (min. 20 characters)."
             />
           </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <div className="flex justify-end space-x-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
+          {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
+          <DialogFooter>
+            <DialogClose asChild>
+              <button
+                type="button"
+                className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+            </DialogClose>
             <button
               type="submit"
               disabled={submitting}
@@ -117,9 +158,9 @@ export function FileDisputeModal({
             >
               {submitting ? "Submitting..." : "Submit Dispute"}
             </button>
-          </div>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

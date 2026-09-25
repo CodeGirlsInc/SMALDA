@@ -15,12 +15,15 @@
  * never surfaced.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+import { apiUrl } from "@/lib/api-config";
+import {
+  clearSession,
+  getAccessToken,
+  getRefreshToken,
+  setAccessToken,
+} from "@/lib/session";
 
-const ACCESS_TOKEN_KEY = "auth-token";
-const REFRESH_TOKEN_KEY = "refresh-token";
-
-// ── ApiError ────────────────────────────────────────────────────────────────
+export { clearSession };
 
 export type ApiErrorKind =
   | "authRequired"
@@ -75,32 +78,6 @@ export function classifyStatus(status: number): ApiErrorMapping {
   }
 }
 
-// ── Token helpers ───────────────────────────────────────────────────────────
-
-function getAccessToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(ACCESS_TOKEN_KEY);
-}
-
-function getRefreshToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(REFRESH_TOKEN_KEY);
-}
-
-function setAccessToken(token: string): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(ACCESS_TOKEN_KEY, token);
-}
-
-export function clearSession(): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(ACCESS_TOKEN_KEY);
-  window.localStorage.removeItem(REFRESH_TOKEN_KEY);
-  document.cookie = "token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-  // Signal other tabs to also redirect to login
-  window.localStorage.setItem("logout-event", Date.now().toString());
-}
-
 /**
  * Preserve the current path (including locale) as the post-login destination,
  * then redirect to login. The login page's resolvePostLoginPath reads the
@@ -108,10 +85,17 @@ export function clearSession(): void {
  */
 function redirectToLogin(): void {
   if (typeof window === "undefined") return;
-  const currentPath = window.location.pathname + window.location.search;
+  const pathname = window.location.pathname || "/";
+  const search = window.location.search || "";
+  const currentPath = pathname + search;
+  const firstSegment = pathname.split("/").filter(Boolean)[0];
+  const loginPath =
+    firstSegment === "en" || firstSegment === "fr" || firstSegment === "es"
+      ? `/${firstSegment}/login`
+      : "/login";
   const params = new URLSearchParams();
   params.set("redirect", currentPath);
-  window.location.href = `/login?${params.toString()}`;
+  window.location.href = `${loginPath}?${params.toString()}`;
 }
 
 // ── Refresh logic ───────────────────────────────────────────────────────────
@@ -132,8 +116,9 @@ async function refreshAccessToken(): Promise<string> {
         throw new Error("No refresh token available");
       }
 
-      const res = await fetch(`${API_BASE}/auth/refresh`, {
+      const res = await fetch(apiUrl("/auth/refresh"), {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken }),
       });
@@ -201,7 +186,7 @@ export async function request<T = unknown>(
 ): Promise<T> {
   const { anonymous = false, ...fetchOpts } = options;
 
-  const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
+  const url = apiUrl(path);
 
   const doFetch = async (token: string | null): Promise<Response> => {
     const headers = new Headers(fetchOpts.headers);
@@ -226,7 +211,12 @@ export async function request<T = unknown>(
       }
     }
 
-    return fetch(url, { ...fetchOpts, headers, body });
+    return fetch(url, {
+      ...fetchOpts,
+      credentials: fetchOpts.credentials ?? "include",
+      headers,
+      body,
+    });
   };
 
   // First attempt
@@ -249,7 +239,7 @@ export async function request<T = unknown>(
       res = await doFetch(newToken);
     } catch {
       // Refresh failed — clear session and redirect
-      clearSession();
+      await clearSession();
       redirectToLogin();
       throw new ApiError({
         status: 401,

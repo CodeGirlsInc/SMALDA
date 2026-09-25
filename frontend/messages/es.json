@@ -98,6 +98,8 @@
   },
   "documents": {
     "title": "Todos los documentos",
+    "subtitle": "Consulta, busca y gestiona tus documentos verificados.",
+    "upload": "Subir un documento",
     "filters": {
       "legend": "Filtros de documentos",
       "status": "Estado",
@@ -109,6 +111,10 @@
       "riskRange": "Rango de puntuación de riesgo",
       "apply": "Aplicar filtros",
       "reset": "Restablecer"
+    },
+    "search": {
+      "label": "Buscar documentos",
+      "placeholder": "Buscar documentos por título..."
     },
     "status": {
       "pending": "Pendiente",
@@ -126,6 +132,9 @@
       "flags": "Alertas",
       "noFlags": "Ninguna",
       "moreFlags": "+{count} más",
+      "fileSize": "Tamaño del archivo",
+      "action": "Acción",
+      "view": "Ver detalles",
       "download": "Descargar",
       "downloadLabel": "Descargar {title}"
     },
@@ -135,6 +144,7 @@
     "loadError": "Error al cargar los documentos",
     "downloadError": "Error al descargar el documento.",
     "pagination": {
+      "label": "Paginación de documentos",
       "summary": "Mostrando {from}–{to} de {total}"
     }
   },

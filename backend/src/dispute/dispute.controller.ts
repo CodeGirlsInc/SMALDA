@@ -66,8 +66,12 @@ export class DisputeController {
     @Param('id') id: string,
     @Req() req: Request & { user?: User },
   ): Promise<DisputeResponseDto> {
-    const dispute = await this.disputeService.findOne(id);
     const user = req.user!;
+    const dispute = await this.disputeService.findOne(
+      id,
+      user.id,
+      user.role === 'admin',
+    );
 
     if (dispute.filedBy !== user.id && user.role !== 'admin') {
       throw new ForbiddenException('Access denied');

@@ -3,8 +3,7 @@
 import React, { useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+import { apiUrl } from "@/lib/api-config";
 
 export default function ForgotPasswordPage() {
   const t = useTranslations("auth.forgotPassword");
@@ -25,8 +24,9 @@ export default function ForgotPasswordPage() {
 
     setLoading(true);
     try {
-      await fetch(`${API_BASE}/api/auth/forgot-password`, {
+      await fetch(apiUrl("/auth/forgot-password"), {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });

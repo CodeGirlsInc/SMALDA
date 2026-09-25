@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { apiUrl } from "@/lib/api-config";
 
 export default function TwoFactorSetupPage() {
   const router = useRouter();
@@ -16,7 +17,10 @@ export default function TwoFactorSetupPage() {
   useEffect(() => {
     async function init2FA() {
       try {
-        const response = await fetch("/api/auth/2fa/setup", { method: "POST" });
+        const response = await fetch(apiUrl("/auth/2fa/setup"), {
+          method: "POST",
+          credentials: "include",
+        });
         if (response.ok) {
           const data = await response.json();
           setOtpUri(data.otpauthUrl || `otpauth://totp/SMALDA?secret=${data.secret}`);
@@ -43,8 +47,9 @@ export default function TwoFactorSetupPage() {
     setError("");
 
     try {
-      const response = await fetch("/api/auth/2fa/verify", {
+      const response = await fetch(apiUrl("/auth/2fa/verify"), {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: totpCode, secret }),
       });

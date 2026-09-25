@@ -6,6 +6,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { JwtPayload } from '../interfaces/jwt-payload.interface';
 import { UsersService } from '../../users/users.service';
 import { AuthService } from '../auth.service';
+import { extractSessionAccessToken, getAccessToken } from '../access-token';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -15,7 +16,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     configService: ConfigService,
   ) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+        extractSessionAccessToken,
+      ]),
       secretOrKey: configService.get<string>('JWT_SECRET'),
       ignoreExpiration: false,
       passReqToCallback: true,
@@ -23,7 +27,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(request: any, payload: JwtPayload) {
-    const token = ExtractJwt.fromAuthHeaderAsBearerToken()(request);
+    const token = getAccessToken(request);
     if (token && this.authService.isTokenBlacklisted(token)) {
       throw new UnauthorizedException('Token has been revoked');
     }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
+import { clearLastViewedParcel } from "@/lib/map-state";
 
 const ACCESS_TOKEN_KEY = "auth-token";
 
@@ -28,7 +29,13 @@ export function initCrossTabLogoutSync(): () => void {
 
   function handler(event: StorageEvent) {
     if (event.key === "logout-event" && event.newValue) {
-      window.location.href = "/login";
+      clearLastViewedParcel();
+      const firstSegment = window.location.pathname.split("/").filter(Boolean)[0];
+      const loginPath =
+        firstSegment === "en" || firstSegment === "fr" || firstSegment === "es"
+          ? `/${firstSegment}/login`
+          : "/login";
+      window.location.href = loginPath;
     }
   }
 

@@ -2,6 +2,8 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { apiUrl } from "@/lib/api-config";
+import { getAccessToken } from "@/lib/session";
 import {
   AlertTriangle,
   Building2,
@@ -41,11 +43,8 @@ const REFRESH_INTERVAL_SECONDS = 60;
 // Helpers
 // ---------------------------------------------------------------------------
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
-
 function getAuthHeaders(): HeadersInit {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
+  const token = getAccessToken();
   return {
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -261,34 +260,17 @@ export default function AdminProvidersPage() {
   const [checkErrors, setCheckErrors] = useState<Partial<Record<ProviderId, string | null>>>({});
   const [secondsToRefresh, setSecondsToRefresh] = useState(REFRESH_INTERVAL_SECONDS);
 
-  // ── Admin access check ──────────────────────────────────────────────────
-
-  useEffect(() => {
-    const token = localStorage.getItem("auth-token");
-    if (!token) {
-      router.replace("/login");
-      return;
-    }
-    try {
-      const payload = JSON.parse(atob(token.split(".")[1]));
-      if (payload?.role !== "admin") {
-        router.replace("/dashboard");
-      }
-    } catch {
-      router.replace("/login");
-    }
-  }, [router]);
-
   // ── Fetch stats ──────────────────────────────────────────────────────────
 
   const fetchStats = useCallback(async () => {
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/external-validation/stats`, {
+      const res = await fetch(apiUrl("/external-validation/stats"), {
+        credentials: "include",
         headers: getAuthHeaders(),
       });
       if (res.status === 403) {
-        router.replace("/dashboard");
+        router.replace("/");
         return;
       }
       if (!res.ok) throw new Error(`Failed to load provider stats: ${res.status}`);
@@ -342,7 +324,8 @@ export default function AdminProvidersPage() {
     setCheckErrors((prev) => ({ ...prev, [id]: null }));
 
     try {
-      const res = await fetch(`${API_BASE}/api/external-validation/health`, {
+      const res = await fetch(apiUrl("/external-validation/health"), {
+        credentials: "include",
         headers: getAuthHeaders(),
       });
       if (!res.ok) throw new Error(`Health check failed: ${res.status}`);

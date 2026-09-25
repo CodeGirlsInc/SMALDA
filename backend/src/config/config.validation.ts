@@ -1,5 +1,9 @@
 import * as Joi from 'joi';
 
+const originList = Joi.string()
+  .pattern(/^https?:\/\/[^,\s]+(?:\s*,\s*https?:\/\/[^,\s]+)*$/)
+  .required();
+
 /**
  * Custom validation to ensure placeholder values are not used in production
  */
@@ -32,7 +36,8 @@ export const ConfigValidationSchema = Joi.object({
   // ── Server ─────────────────────────────────────────────────────────────────
   APP_PORT: Joi.number().positive().default(3001),
   APP_URL: Joi.string().uri().required(),
-  FRONTEND_URL: Joi.string().uri().required(),
+  FRONTEND_URL: originList,
+  SESSION_COOKIE_DOMAIN: Joi.string().allow('').optional(),
 
   // ── Database ───────────────────────────────────────────────────────────────
   DATABASE_HOST: Joi.string().required(),

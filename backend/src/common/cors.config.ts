@@ -76,7 +76,14 @@ function parseAllowlist(
       .split(',')
       .map((o) => o.trim())
       .filter((o) => o.length > 0)
-      .forEach((o) => allowlist.add(o));
+      .forEach((o) => {
+        try {
+          const origin = new URL(o).origin;
+          allowlist.add(origin);
+        } catch {
+          throw new Error(`Invalid FRONTEND_URL origin: ${o}`);
+        }
+      });
   }
 
   if (allowDevFallback && allowlist.size === 0) {

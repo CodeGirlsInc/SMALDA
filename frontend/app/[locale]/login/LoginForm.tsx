@@ -8,6 +8,7 @@ import { useSearchParams } from "next/navigation";
 import { Link, useRouter } from "@/i18n/navigation";
 import { loginSchema, type LoginInput } from "@/lib/schemas/auth";
 import { ApiError, apiRequest } from "@/lib/api-client";
+import { apiUrl } from "@/lib/api-config";
 import {
   resolvePostLoginPath,
   storeSession,
@@ -23,8 +24,6 @@ import {
   CardTitle,
   Input,
 } from "@/components/ui";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 function ResetSuccessToast({ message }: { message: string }) {
   const [visible, setVisible] = useState(true);
@@ -92,15 +91,15 @@ export function LoginForm() {
   const target = resolvePostLoginPath(searchParams.get("redirect"));
 
   // OAuth is a full-page handoff to the backend, which redirects back with a
-  // token — so these are plain anchors, not locale-aware client-side links.
+  // one-time exchange code — so these are plain anchors, not locale-aware links.
   const oauthHref = (provider: "google" | "github") =>
-    `${API_BASE}/api/auth/${provider}`;
+    apiUrl(`/auth/${provider}`);
 
   async function onSubmit(values: LoginInput) {
     setSubmitError(null);
     try {
       const data = await apiRequest<LoginResponse>(
-        `${API_BASE}/api/auth/login`,
+        apiUrl("/auth/login"),
         {
           method: "POST",
           body: values,
