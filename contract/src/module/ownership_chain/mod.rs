@@ -7,6 +7,8 @@
 //! Routes wired in `lib.rs`:
 //!   GET /module/chain/:document_hash  → [`chain_handler`]
 
+pub mod pagination;
+
 use axum::{
     extract::{Path, State},
     http::StatusCode,

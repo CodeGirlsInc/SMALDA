@@ -15,7 +15,7 @@ pub mod webhook;
 
 use axum::{
     body::Body,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderName, Request, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
@@ -37,6 +37,7 @@ use cache::CacheBackend;
 use event::Event;
 use hash_validator::{HashValidator, ValidationError as HashValidationError};
 use metrics::MetricsRegistry;
+use module::ownership_chain::pagination;
 use stellar::{derive_account_id, StellarClient, TransactionRecord};
 
 /// Header used to correlate a single logical operation across the NestJS
@@ -523,19 +524,82 @@ pub async fn record_transfer(
     }))
 }
 
+/// Default number of ownership-chain records returned per page (#1346).
+pub const DEFAULT_CHAIN_PAGE_SIZE: usize = 20;
+
+/// Upper bound a caller may request for `page_size` (#1346).
+pub const MAX_CHAIN_PAGE_SIZE: usize = 200;
+
+/// Query parameters for a cursor-paginated ownership-chain lookup (#1346).
+#[derive(Debug, Deserialize)]
+pub struct ChainHistoryQuery {
+    /// Offset into the chain to start from; 0 when omitted.
+    pub cursor: Option<usize>,
+    /// Records to return; defaults to [`DEFAULT_CHAIN_PAGE_SIZE`], capped at
+    /// [`MAX_CHAIN_PAGE_SIZE`].
+    pub page_size: Option<usize>,
+}
+
+/// One page of a document's ownership chain (#1346).
+#[derive(Debug, Serialize)]
+pub struct ChainHistoryPage {
+    /// The records in this page, oldest first.
+    pub items: Vec<TransferRecord>,
+    /// Cursor for the following page; `null` once the chain is exhausted.
+    pub next_cursor: Option<usize>,
+    /// Total records in the chain, so a caller can render progress.
+    pub total: usize,
+}
+
+/// Resolve the requested page, or `None` when the caller asked for no paging.
+///
+/// `None` keeps the pre-existing response shape (the full array), so clients
+/// written before #1346 are unaffected; passing either parameter opts in.
+fn pagination_params(query: &ChainHistoryQuery) -> Option<(usize, usize)> {
+    if query.cursor.is_none() && query.page_size.is_none() {
+        return None;
+    }
+
+    Some((
+        query.cursor.unwrap_or(0),
+        query
+            .page_size
+            .unwrap_or(DEFAULT_CHAIN_PAGE_SIZE)
+            .clamp(1, MAX_CHAIN_PAGE_SIZE),
+    ))
+}
+
 /// GET /transfer/:document_hash — retrieve transfer history for a document.
+///
+/// Without `cursor`/`page_size` the response is the unchanged full array. With
+/// either parameter it is a [`ChainHistoryPage`]: `items` is one bounded page of
+/// the ownership chain and `next_cursor` is what to request next.
 pub async fn get_transfer_history(
     State(state): State<AppState>,
     Path(document_hash): Path<String>,
-) -> Result<Json<Vec<TransferRecord>>, StatusCode> {
+    Query(query): Query<ChainHistoryQuery>,
+) -> Response {
     let key = format!("transfer:{}", document_hash);
-    match state.cache.get::<Vec<TransferRecord>>(&key).await {
-        Ok(Some(history)) => Ok(Json(history)),
-        Ok(None) => Ok(Json(Vec::new())),
+    let records: Vec<TransferRecord> = match state.cache.get::<Vec<TransferRecord>>(&key).await {
+        Ok(Some(history)) => history,
+        Ok(None) => Vec::new(),
         Err(e) => {
             warn!("Failed to fetch transfer history from cache: {}", e);
             state.metrics.increment_error_count();
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    match pagination_params(&query) {
+        None => Json(records).into_response(),
+        Some((cursor, page_size)) => {
+            let page = pagination::paginate(&records, cursor, page_size);
+            Json(ChainHistoryPage {
+                items: page.items,
+                next_cursor: page.next_cursor,
+                total: records.len(),
+            })
+            .into_response()
         }
     }
 }
