@@ -12,7 +12,10 @@ export const handlers = [
         { status: 401 }
       );
     }
-    return HttpResponse.json({ token: "fake-jwt-token" });
+    return HttpResponse.json({
+      access_token: "fake-jwt-token",
+      refresh_token: "fake-refresh-token",
+    });
   }),
 
   // Auth — verify
@@ -58,7 +61,7 @@ export const handlers = [
   }),
 
   // Users — me
-  http.get(`${API_BASE}/api/users/me`, ({ request }) => {
+  http.get(`${API_BASE}/api/v1/users/me`, ({ request }) => {
     const auth = request.headers.get("Authorization");
     if (!auth) {
       return HttpResponse.json({ message: "Unauthorized" }, { status: 401 });
@@ -69,10 +72,5 @@ export const handlers = [
       fullName: "Alice Smith",
       preferredLanguage: "en",
     });
-  }),
-
-  http.patch(`${API_BASE}/api/users/me`, async ({ request }) => {
-    const body = (await request.json()) as Record<string, unknown>;
-    return HttpResponse.json({ ok: true, ...body });
   }),
 ];

@@ -1,10 +1,9 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("Smoke tests", () => {
-  test("homepage redirects to the default locale", async ({ page }) => {
+  test("protected dashboard redirects unauthenticated users to login", async ({ page }) => {
     const response = await page.goto("/");
-    // next-intl redirects to /en when localePrefix is 'as-needed' for 'en'
-    expect(response?.url()).toContain("/en");
+    expect(response?.url()).toContain("/login");
   });
 
   test("login page renders the sign-in form", async ({ page }) => {

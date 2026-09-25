@@ -37,7 +37,7 @@ jest.mock("@/lib/api-client", () => ({
 }));
 
 jest.mock("@/lib/auth-session", () => ({
-  resolvePostLoginPath: () => "/dashboard",
+  resolvePostLoginPath: () => "/",
   storeSession: (...args: unknown[]) => mockStoreSession(...args),
 }));
 
@@ -107,7 +107,7 @@ describe("LoginForm", () => {
       { access_token: "access-token" },
       undefined,
     );
-    expect(mockReplace).toHaveBeenCalledWith("/dashboard");
+    expect(mockReplace).toHaveBeenCalledWith("/");
   });
 
   it("disables submission and shows the loading label while the request is pending", async () => {
@@ -125,7 +125,7 @@ describe("LoginForm", () => {
 
     expect(await screen.findByRole("button", { name: "Signing in…" })).toBeDisabled();
     resolveRequest({ access_token: "access-token" });
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/dashboard"));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/"));
   });
 
   it("passes a resume token through the session commit", async () => {

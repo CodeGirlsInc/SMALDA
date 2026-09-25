@@ -4,6 +4,7 @@
   "description": "SMALDA - Secure Land Administration Platform",
   "scripts": {
     "install-hooks": "cp .githooks/pre-commit .git/hooks/ && chmod +x .git/hooks/pre-commit",
+    "sync:contracts": "node contracts/sync.mjs",
     "postinstall": "npm run install-hooks",
     "test": "npm test --workspace=backend"
   },

@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
+import { FileText } from "lucide-react";
 import { useRouter } from "@/i18n/navigation";
 import { EmptyState } from "@/components/EmptyState";
 
@@ -387,7 +388,11 @@ export default function AdminDocumentsPage() {
       )}
 
       {!loading && !error && documents.length === 0 && (
-        <EmptyState title={t("empty")} description={t("emptyHint")} />
+        <EmptyState
+          title={t("empty")}
+          description={t("emptyHint")}
+          icon={<FileText className="h-10 w-10" aria-hidden="true" />}
+        />
       )}
 
       {!loading && documents.length > 0 && (

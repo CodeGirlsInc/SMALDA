@@ -3,40 +3,34 @@
 import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { request } from "@/lib/api-client";
+import { API_PREFIX } from "@/lib/api-contracts";
+import {
+  disputeListResponseSchema,
+  disputeStatusValues,
+  type DisputeResponse,
+  type DisputeStatus,
+} from "@/lib/schemas/dispute";
+import type {
+  DocumentListItem,
+  DocumentListResponse,
+} from "@/lib/schemas/document";
 import { FileDisputeModal } from "@/components/disputes/FileDisputeModal";
-import { useToast } from "@/components/ui/use-toast";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type DisputeStatus = "OPEN" | "UNDER_REVIEW" | "RESOLVED" | "REJECTED";
-
-interface Dispute {
-  id: string;
-  documentId: string;
-  description: string;
-  reason: string | null;
-  status: DisputeStatus;
-  filedBy: string;
-  createdAt: string;
-  resolution?: string | null;
-}
-
-interface Document {
-  id: string;
-  title: string;
-}
+type Document = Pick<DocumentListItem, "id" | "title">;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 const STATUS_CLASSES: Record<DisputeStatus, string> = {
-  OPEN: "bg-blue-100 text-blue-800",
-  UNDER_REVIEW: "bg-yellow-100 text-yellow-800",
-  RESOLVED: "bg-green-100 text-green-800",
-  REJECTED: "bg-red-100 text-red-800",
+  open: "bg-blue-100 text-blue-800",
+  in_review: "bg-yellow-100 text-yellow-800",
+  resolved: "bg-green-100 text-green-800",
+  dismissed: "bg-red-100 text-red-800",
 };
 
 // ---------------------------------------------------------------------------
@@ -44,7 +38,7 @@ const STATUS_CLASSES: Record<DisputeStatus, string> = {
 // ---------------------------------------------------------------------------
 
 export default function DisputesPage() {
-  const [disputes, setDisputes] = useState<Dispute[]>([]);
+  const [disputes, setDisputes] = useState<DisputeResponse[]>([]);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -52,14 +46,15 @@ export default function DisputesPage() {
   const [statusFilter, setStatusFilter] = useState<DisputeStatus | "ALL">(
     "ALL",
   );
-  const { toast } = useToast();
 
   const fetchDisputes = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const disputesData = await request<Dispute[]>("/api/disputes");
-      setDisputes(disputesData);
+      const disputesData = disputeListResponseSchema.parse(
+        await request<unknown>(`${API_PREFIX}/disputes`),
+      );
+      setDisputes(disputesData.data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load disputes.");
     } finally {
@@ -69,10 +64,12 @@ export default function DisputesPage() {
 
   const fetchDocuments = useCallback(async () => {
     try {
-      const documentsData = await request<{ documents: Document[] }>(
-        "/api/documents",
+      const documentsData = await request<DocumentListResponse>(
+        `${API_PREFIX}/documents`,
       );
-      setDocuments(documentsData.documents);
+      setDocuments(
+        documentsData.data.map(({ id, title }) => ({ id, title })),
+      );
     } catch (err) {
       // Documents are optional for the page to render, so we don't set a page-level error
       console.error("Failed to load documents:", err);
@@ -84,7 +81,7 @@ export default function DisputesPage() {
     fetchDocuments();
   }, [fetchDisputes, fetchDocuments]);
 
-  const handleDisputeFiled = (newDispute: Dispute) => {
+  const handleDisputeFiled = (newDispute: DisputeResponse) => {
     setDisputes((prevDisputes) => [newDispute, ...prevDisputes]);
   };
 
@@ -132,10 +129,11 @@ export default function DisputesPage() {
           className="rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
         >
           <option value="ALL">All Statuses</option>
-          <option value="OPEN">Open</option>
-          <option value="UNDER_REVIEW">Under Review</option>
-          <option value="RESOLVED">Resolved</option>
-          <option value="REJECTED">Rejected</option>
+          {disputeStatusValues.map((status) => (
+            <option key={status} value={status}>
+              {status.replace("_", " ")}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -203,6 +201,11 @@ export default function DisputesPage() {
                     className="px-4 py-3 text-gray-700 truncate"
                     style={{ maxWidth: "200px" }}
                   >
+                    {dispute.reason && (
+                      <span className="font-medium">
+                        {dispute.reason.name}:{" "}
+                      </span>
+                    )}
                     {dispute.description}
                   </td>
                   <td className="px-4 py-3">

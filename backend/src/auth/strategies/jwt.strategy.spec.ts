@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { UnauthorizedException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { User } from '../../users/entities/user.entity';
+import { AuthService } from '../auth.service';
 
 describe('JwtStrategy', () => {
   let strategy: JwtStrategy;
@@ -23,6 +24,12 @@ describe('JwtStrategy', () => {
           provide: ConfigService,
           useValue: {
             get: jest.fn().mockReturnValue('test-secret'),
+          },
+        },
+        {
+          provide: AuthService,
+          useValue: {
+            isTokenBlacklisted: jest.fn().mockReturnValue(false),
           },
         },
       ],

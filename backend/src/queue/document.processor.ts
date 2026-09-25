@@ -116,6 +116,22 @@ export class DocumentProcessor implements OnModuleDestroy {
     const { txHash, ledger } = await this.stellarService.anchorHash(
       document.fileHash,
     );
+
+    const isAnchored = await this.stellarService.verifyHash(document.fileHash);
+    if (!isAnchored) {
+      this.logger.error(
+        `Document ${documentId} hash not found on Stellar after anchoring`,
+      );
+      await this.verificationService.create({
+        documentId,
+        stellarTxHash: txHash,
+        stellarLedger: ledger,
+        anchoredAt: new Date(),
+        status: VerificationStatus.FAILED,
+      });
+      return;
+    }
+
     await this.verificationService.create({
       documentId,
       stellarTxHash: txHash,
