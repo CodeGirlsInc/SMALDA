@@ -157,27 +157,28 @@ describe('App (e2e)', () => {
 
   describe('Auth flow', () => {
     it('should register a new user and return an access_token', async () => {
-      const res = await register('alice@test.com', 'password123', 'Alice');
+      const res = await register('alice@test.com', 'Password123!', 'Alice');
       expect(res.status).toBe(201);
       expect(res.body).toHaveProperty('access_token');
+      expect(res.body).toHaveProperty('refresh_token');
     });
 
     it('should login with valid credentials and return both tokens', async () => {
-      await register('bob@test.com', 'secret456', 'Bob');
-      const res = await login('bob@test.com', 'secret456');
+      await register('bob@test.com', 'Secret456!', 'Bob');
+      const res = await login('bob@test.com', 'Secret456!');
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('access_token');
       expect(res.body).toHaveProperty('refresh_token');
     });
 
     it('should reject duplicate email registration with 409', async () => {
-      await register('dup@test.com', 'password123', 'First');
-      const res = await register('dup@test.com', 'password123', 'Second');
+      await register('dup@test.com', 'Password123!', 'First');
+      const res = await register('dup@test.com', 'Password123!', 'Second');
       expect(res.status).toBe(409);
     });
 
     it('should reject login with wrong password with 401', async () => {
-      await register('wrong@test.com', 'correct', 'User');
+      await register('wrong@test.com', 'Correct123!', 'User');
       const res = await login('wrong@test.com', 'incorrect');
       expect(res.status).toBe(401);
     });
@@ -193,7 +194,7 @@ describe('App (e2e)', () => {
     beforeEach(async () => {
       const reg = await register(
         'docuser@test.com',
-        'password123',
+        'Password123!',
         'Doc User',
       );
       token = reg.body.access_token;
@@ -285,10 +286,10 @@ describe('App (e2e)', () => {
     let docIdA: string;
 
     beforeEach(async () => {
-      const regA = await register('usera@test.com', 'password123', 'User A');
+      const regA = await register('usera@test.com', 'Password123!', 'User A');
       tokenA = regA.body.access_token;
 
-      const regB = await register('userb@test.com', 'password123', 'User B');
+      const regB = await register('userb@test.com', 'Password123!', 'User B');
       tokenB = regB.body.access_token;
 
       // User A uploads a document

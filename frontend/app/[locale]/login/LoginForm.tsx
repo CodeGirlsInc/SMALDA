@@ -14,6 +14,7 @@ import {
   type LoginResponse,
 } from "@/lib/auth-session";
 import { ErrorBanner } from "@/components/ErrorBanner";
+import { persistOAuthRedirect } from "@/lib/oauth-redirect";
 import {
   Button,
   Card,
@@ -91,22 +92,19 @@ export function LoginForm() {
 
   const target = resolvePostLoginPath(searchParams.get("redirect"));
 
-  // OAuth is a full-page handoff to the backend, which redirects back with a
-  // token — so these are plain anchors, not locale-aware client-side links.
   const oauthHref = (provider: "google" | "github") =>
-    `${API_BASE}/api/auth/${provider}`;
+    `${API_BASE}/api/v1/auth/${provider}`;
 
   async function onSubmit(values: LoginInput) {
     setSubmitError(null);
     try {
       const data = await apiRequest<LoginResponse>(
-        `${API_BASE}/api/auth/login`,
+        "/api/v1/auth/login",
         {
           method: "POST",
           body: values,
-          // Lets the backend set a session cookie too, for when the token
-          // stops living in localStorage.
           credentials: "include",
+          anonymous: true,
         },
       );
       storeSession(data);
@@ -226,10 +224,20 @@ export function LoginForm() {
 
         <div className="flex flex-col gap-2">
           <Button asChild variant="outline" className="w-full">
-            <a href={oauthHref("google")}>{t("continueWithGoogle")}</a>
+            <a
+              href={oauthHref("google")}
+              onClick={() => persistOAuthRedirect(target)}
+            >
+              {t("continueWithGoogle")}
+            </a>
           </Button>
           <Button asChild variant="outline" className="w-full">
-            <a href={oauthHref("github")}>{t("continueWithGithub")}</a>
+            <a
+              href={oauthHref("github")}
+              onClick={() => persistOAuthRedirect(target)}
+            >
+              {t("continueWithGithub")}
+            </a>
           </Button>
         </div>
 

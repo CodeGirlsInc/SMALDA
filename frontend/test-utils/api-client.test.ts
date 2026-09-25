@@ -231,6 +231,51 @@ describe("request()", () => {
     expect(lsMock.getItem("auth-token")).toBe("new-jwt-token");
   });
 
+  it("adopts a refresh completed by another tab", async () => {
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({ message: "Unauthorized" }, { status: 401 }),
+    );
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({ message: "Rotated" }, { status: 401 }),
+    );
+    mockFetch.mockResolvedValueOnce(mockResponse({ data: "fresh" }));
+    setTokens("expired-jwt", "shared-refresh-token");
+
+    const winner = setTimeout(() => {
+      lsMock.setItem("auth-token", "winner-access-token");
+      lsMock.setItem("refresh-token", "winner-refresh-token");
+    }, 25);
+
+    const data = await request<{ data: string }>("/api/data");
+    clearTimeout(winner);
+
+    expect(data).toEqual({ data: "fresh" });
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    expect(mockFetch.mock.calls[2][1].headers.get("Authorization")).toBe(
+      "Bearer winner-access-token",
+    );
+    expect(lsMock.getItem("auth-token")).toBe("winner-access-token");
+    expect(lsMock.getItem("refresh-token")).toBe("winner-refresh-token");
+  });
+
+  it("does not rotate again when another tab already updated storage", async () => {
+    mockFetch.mockImplementationOnce(async () => {
+      lsMock.setItem("auth-token", "winner-access-token");
+      lsMock.setItem("refresh-token", "winner-refresh-token");
+      return mockResponse({ message: "Unauthorized" }, { status: 401 });
+    });
+    mockFetch.mockResolvedValueOnce(mockResponse({ data: "fresh" }));
+    setTokens("expired-jwt", "shared-refresh-token");
+
+    const data = await request<{ data: string }>("/api/data");
+
+    expect(data).toEqual({ data: "fresh" });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockFetch.mock.calls[1][1].headers.get("Authorization")).toBe(
+      "Bearer winner-access-token",
+    );
+  });
+
   // ── 401 → refresh failure → clear session + redirect ───────────────────
 
   it("clears session and redirects to /login when refresh fails", async () => {
@@ -253,7 +298,7 @@ describe("request()", () => {
 
     expect(lsMock.getItem("auth-token")).toBeNull();
     expect(lsMock.getItem("refresh-token")).toBeNull();
-    expect(locationHref).toBe("/login");
+    expect(locationHref).toBe("/login?redirect=%2F");
   });
 
   it("clears session and redirects when no refresh token exists", async () => {
@@ -271,7 +316,26 @@ describe("request()", () => {
     });
 
     expect(lsMock.getItem("auth-token")).toBeNull();
-    expect(locationHref).toBe("/login");
+    expect(locationHref).toBe("/login?redirect=%2F");
+  });
+
+  it("does not clear the session for a transient refresh failure", async () => {
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({ message: "Unauthorized" }, { status: 401 }),
+    );
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({ message: "Unavailable" }, { status: 503 }),
+    );
+    setTokens("access-token", "refresh-token");
+
+    await expect(request("/api/secret")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 503,
+      kind: "server",
+    });
+
+    expect(lsMock.getItem("auth-token")).toBe("access-token");
+    expect(lsMock.getItem("refresh-token")).toBe("refresh-token");
   });
 
   it("does not attempt refresh for anonymous requests", async () => {
@@ -295,9 +359,27 @@ describe("request()", () => {
 // ── clearSession ────────────────────────────────────────────────────────────
 
 describe("clearSession()", () => {
-  it("removes both tokens from localStorage", () => {
+  it("revokes the server session and removes both tokens", async () => {
+    mockFetch.mockResolvedValueOnce(mockResponse({ message: "Logged out" }));
     setTokens("access", "refresh");
-    clearSession();
+
+    expect(await clearSession()).toBe(true);
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      `${API_BASE}/api/v1/auth/logout`,
+      expect.objectContaining({ method: "POST", credentials: "include" }),
+    );
+    expect(lsMock.getItem("auth-token")).toBeNull();
+    expect(lsMock.getItem("refresh-token")).toBeNull();
+  });
+
+  it("clears local state when the server cannot confirm logout", async () => {
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({ message: "Unavailable" }, { status: 503 }),
+    );
+    setTokens("access", "refresh");
+
+    expect(await clearSession()).toBe(false);
     expect(lsMock.getItem("auth-token")).toBeNull();
     expect(lsMock.getItem("refresh-token")).toBeNull();
   });
