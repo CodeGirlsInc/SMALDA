@@ -23,6 +23,11 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  images: {
+    loader: "custom",
+    loaderFile: "./lib/image-loader.ts",
+    formats: ["image/avif", "image/webp"],
+  },
   async headers() {
     return [
       {

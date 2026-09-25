@@ -7,7 +7,7 @@ import { useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { Link, useRouter } from "@/i18n/navigation";
 import { loginSchema, type LoginInput } from "@/lib/schemas/auth";
-import { ApiError, apiRequest } from "@/lib/api-client";
+import { API_V1_BASE, ApiError, apiRequest } from "@/lib/api-client";
 import {
   resolvePostLoginPath,
   storeSession,
@@ -24,8 +24,6 @@ import {
   CardTitle,
   Input,
 } from "@/components/ui";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 function ResetSuccessToast({ message }: { message: string }) {
   const [visible, setVisible] = useState(true);
@@ -91,15 +89,16 @@ export function LoginForm() {
   });
 
   const target = resolvePostLoginPath(searchParams.get("redirect"));
+  const resumeId = searchParams.get("resume");
 
   const oauthHref = (provider: "google" | "github") =>
-    `${API_BASE}/api/v1/auth/${provider}`;
+    `${API_V1_BASE}/auth/${provider}`;
 
   async function onSubmit(values: LoginInput) {
     setSubmitError(null);
     try {
       const data = await apiRequest<LoginResponse>(
-        "/api/v1/auth/login",
+        `${API_V1_BASE}/auth/login`,
         {
           method: "POST",
           body: values,
@@ -107,7 +106,11 @@ export function LoginForm() {
           anonymous: true,
         },
       );
-      storeSession(data);
+      const stored = storeSession(data, resumeId ?? undefined);
+      if (!stored.ok) {
+        setSubmitError({ kind: "api", messageKey: "errors.status.unknown" });
+        return;
+      }
       // replace, so Back does not land the user on a login page they have
       // already passed through.
       router.replace(target);

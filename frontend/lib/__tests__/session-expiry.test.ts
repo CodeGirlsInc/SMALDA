@@ -59,7 +59,7 @@ describe("Concurrent 401 → single refresh (Issue #1024)", () => {
     // the refresh call returns 200 with a new token,
     // and retried calls return 200.
     (global as any).fetch = jest.fn((url: string) => {
-      if (url.includes("/auth/refresh")) {
+      if (url.includes("/api/v1/auth/refresh")) {
         refreshCallCount += 1;
         return Promise.resolve(
           new Response(
@@ -100,7 +100,7 @@ describe("Concurrent 401 → single refresh (Issue #1024)", () => {
     (window as any).location = { href: "" };
 
     (global as any).fetch = jest.fn((url: string) => {
-      if (url.includes("/auth/refresh")) {
+      if (url.includes("/api/v1/auth/refresh")) {
         return Promise.resolve(
           new Response(JSON.stringify({ error: "invalid_grant" }), {
             status: 401,

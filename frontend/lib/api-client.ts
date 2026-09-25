@@ -15,10 +15,26 @@
  * never surfaced.
  */
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001").replace(
-  /\/+$/,
-  "",
+import {
+  clearAllSessionState,
+  getPendingSessionResumeId,
+  type SessionStateError,
+  type SessionStateResult,
+} from "@/lib/session-state-preserver";
+
+function normalizeApiBase(value: string): string {
+  return value
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/(?:\/api)+(?:\/v1)?$/, "");
+}
+
+const API_BASE = normalizeApiBase(
+  process.env.NEXT_PUBLIC_API_URL?.trim() || "http://localhost:3001",
 );
+export const API_V1_BASE = `${API_BASE}/api/v1`;
+const REFRESH_ENDPOINT = `${API_V1_BASE}/auth/refresh`;
+const LOGOUT_ENDPOINT = `${API_V1_BASE}/auth/logout`;
 
 const ACCESS_TOKEN_KEY = "auth-token";
 const REFRESH_TOKEN_KEY = "refresh-token";
@@ -42,12 +58,14 @@ export class ApiError extends Error {
   readonly kind: ApiErrorKind;
   readonly messageKey: string;
   readonly backendMessage?: string;
+  readonly stateError?: SessionStateError;
 
   constructor(opts: {
     status: number | null;
     kind: ApiErrorKind;
     messageKey: string;
     backendMessage?: string;
+    stateError?: SessionStateError;
   }) {
     super(opts.messageKey);
     this.name = "ApiError";
@@ -55,6 +73,7 @@ export class ApiError extends Error {
     this.kind = opts.kind;
     this.messageKey = opts.messageKey;
     this.backendMessage = opts.backendMessage;
+    this.stateError = opts.stateError;
   }
 }
 
@@ -79,6 +98,17 @@ export function isDefinitiveRefreshError(error: unknown): boolean {
   return error instanceof RefreshError && error.definitive;
 }
 
+export class RefreshInvalidatedError extends Error {
+  constructor() {
+    super("Refresh invalidated");
+    this.name = "RefreshInvalidatedError";
+  }
+}
+
+export function isRefreshInvalidatedError(error: unknown): boolean {
+  return error instanceof RefreshInvalidatedError;
+}
+
 export function classifyStatus(status: number): ApiErrorMapping {
   switch (status) {
     case 401:
@@ -101,12 +131,20 @@ export function classifyStatus(status: number): ApiErrorMapping {
 
 function getAccessToken(): string | null {
   if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(ACCESS_TOKEN_KEY);
+  try {
+    return window.localStorage.getItem(ACCESS_TOKEN_KEY);
+  } catch {
+    return null;
+  }
 }
 
 function getRefreshToken(): string | null {
   if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(REFRESH_TOKEN_KEY);
+  try {
+    return window.localStorage.getItem(REFRESH_TOKEN_KEY);
+  } catch {
+    return null;
+  }
 }
 
 function setAccessToken(token: string): void {
@@ -126,6 +164,11 @@ function getRefreshSnapshot(): RefreshSnapshot {
   };
 }
 
+/**
+ * If another tab already rotated the tokens while we were mid-refresh, adopt
+ * its result instead of racing it (avoids the server treating our stale
+ * refresh token as reused and revoking the whole token family — see #1398).
+ */
 function getAdoptedRefreshToken(snapshot: RefreshSnapshot): string | null {
   const accessToken = getAccessToken();
   const refreshToken = getRefreshToken();
@@ -171,14 +214,14 @@ function waitForCrossTabRefresh(snapshot: RefreshSnapshot): Promise<string | nul
   });
 }
 
-async function logoutServerSession(): Promise<boolean> {
-  if (typeof window === "undefined") return false;
+// ── Session clearing ────────────────────────────────────────────────────────
 
-  const token = window.localStorage.getItem(ACCESS_TOKEN_KEY);
+async function logoutServerSession(token: string | null): Promise<boolean> {
+  if (typeof window === "undefined") return false;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), LOGOUT_TIMEOUT_MS);
   try {
-    const response = await fetch(`${API_BASE}/api/v1/auth/logout`, {
+    const response = await fetch(LOGOUT_ENDPOINT, {
       method: "POST",
       credentials: "include",
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -192,23 +235,53 @@ async function logoutServerSession(): Promise<boolean> {
   }
 }
 
-export async function clearSession(): Promise<boolean> {
-  if (typeof window === "undefined") return false;
-  const logoutRequest = logoutServerSession();
-  window.localStorage.removeItem(ACCESS_TOKEN_KEY);
-  window.localStorage.removeItem(REFRESH_TOKEN_KEY);
-  // Signal other tabs to also redirect to login
-  window.localStorage.setItem("logout-event", Date.now().toString());
-  return logoutRequest;
+/**
+ * Clears the local session (and, best-effort, revokes it server-side).
+ *
+ * `preserveSessionState` skips clearing transactional form state preserved
+ * across a redirect (used when a 401 bounces the user to login mid-flow, so
+ * they don't lose in-progress work). `notify: false` skips broadcasting the
+ * cross-tab logout-event, used when reacting to *another* tab's logout to
+ * avoid an infinite storage-event ping-pong.
+ */
+export function clearSession(
+  options: { preserveSessionState?: boolean; notify?: boolean } = {},
+): SessionStateResult<void> {
+  invalidateRefresh();
+  if (typeof window === "undefined") {
+    return { ok: false, error: { code: "unavailable" } };
+  }
+
+  // Best-effort server-side revocation; do not block local logout on it.
+  void logoutServerSession(getAccessToken());
+
+  let result: SessionStateResult<void> = { ok: true, value: undefined };
+  try {
+    window.localStorage.removeItem(ACCESS_TOKEN_KEY);
+    window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+    if (options.notify !== false) {
+      window.localStorage.setItem("logout-event", Date.now().toString());
+    }
+  } catch {
+    result = { ok: false, error: { code: "storage" } };
+  }
+
+  if (options.preserveSessionState) return result;
+  const stateResult = clearAllSessionState();
+  return stateResult.ok ? result : stateResult;
 }
 
 /**
  * Preserve the current path (including locale) as the post-login destination,
  * then redirect to login. The login page's resolvePostLoginPath reads the
  * `?redirect=` param so the user lands back where they were after signing in.
+ * If a session-state resume group is pending, its id is attached as `?resume=`
+ * so the login/register flow can restore it after re-authenticating.
  */
-function redirectToLogin(): void {
-  if (typeof window === "undefined") return;
+function redirectToLogin(): SessionStateResult<void> {
+  if (typeof window === "undefined") {
+    return { ok: false, error: { code: "unavailable" } };
+  }
   const pathname =
     typeof window.location.pathname === "string" ? window.location.pathname : "/";
   const search =
@@ -216,12 +289,34 @@ function redirectToLogin(): void {
   const currentPath = pathname + search;
   const params = new URLSearchParams();
   params.set("redirect", currentPath);
+  const resume = getPendingSessionResumeId();
+  if (resume.ok && resume.value) params.set("resume", resume.value);
   window.location.href = `/login?${params.toString()}`;
+  return resume.ok ? { ok: true, value: undefined } : resume;
 }
 
 // ── Refresh logic ───────────────────────────────────────────────────────────
 
 let refreshPromise: Promise<string> | null = null;
+let refreshAbortController: AbortController | null = null;
+let authGeneration = 0;
+
+/**
+ * Invalidates any in-flight or future refresh tied to the current generation.
+ * Called on explicit login/logout so a stale refresh response from before a
+ * storeSession()/clearSession() call can never win a race against it.
+ */
+export function invalidateRefresh(): void {
+  authGeneration += 1;
+  refreshPromise = null;
+  const controller = refreshAbortController;
+  refreshAbortController = null;
+  try {
+    controller?.abort();
+  } catch {
+    return;
+  }
+}
 
 /**
  * Attempt a silent token refresh. Deduplicates concurrent refresh calls
@@ -239,19 +334,29 @@ async function refreshAccessToken(expectedAccessToken?: string): Promise<string>
     return currentAccessToken;
   }
 
+  const generation = authGeneration;
+  const controller = new AbortController();
+  refreshAbortController = controller;
+
   refreshPromise = (async () => {
     const snapshot = getRefreshSnapshot();
     try {
       const refreshToken = snapshot.refreshToken;
-      const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
+      if (!refreshToken) {
+        throw new RefreshError(null, true);
+      }
+
+      const res = await fetch(REFRESH_ENDPOINT, {
         method: "POST",
         credentials: "include",
-        headers: refreshToken
-          ? { "Content-Type": "application/json" }
-          : undefined,
-        body: refreshToken ? JSON.stringify({ refreshToken }) : undefined,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken }),
+        signal: controller.signal,
       });
 
+      if (generation !== authGeneration || controller.signal.aborted) {
+        throw new RefreshInvalidatedError();
+      }
       if (!res.ok) {
         throw new RefreshError(
           res.status,
@@ -266,24 +371,36 @@ async function refreshAccessToken(expectedAccessToken?: string): Promise<string>
       if (typeof data.access_token !== "string" || !data.access_token) {
         throw new RefreshError(res.status, false);
       }
-      setAccessToken(data.access_token);
       if (
-        typeof data.refresh_token === "string" &&
-        data.refresh_token &&
-        typeof window !== "undefined"
+        generation !== authGeneration ||
+        controller.signal.aborted ||
+        getRefreshToken() !== refreshToken
       ) {
+        throw new RefreshInvalidatedError();
+      }
+
+      setAccessToken(data.access_token);
+      // The backend rotates the refresh token on every use (see #1398's
+      // reuse-detection); persist whatever it returns or the next refresh
+      // will look like reuse of an already-rotated token.
+      if (typeof data.refresh_token === "string" && data.refresh_token) {
         window.localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
-      } else if (typeof window !== "undefined") {
+      } else {
         window.localStorage.removeItem(REFRESH_TOKEN_KEY);
       }
       return data.access_token;
     } catch (error) {
+      if (error instanceof RefreshInvalidatedError) throw error;
+      if (generation !== authGeneration || controller.signal.aborted) {
+        throw new RefreshInvalidatedError();
+      }
       const adoptedToken = await waitForCrossTabRefresh(snapshot);
       if (adoptedToken) return adoptedToken;
       if (error instanceof RefreshError) throw error;
       throw new RefreshError(null, false);
     } finally {
-      refreshPromise = null;
+      if (refreshPromise) refreshPromise = null;
+      if (refreshAbortController === controller) refreshAbortController = null;
     }
   })();
 
@@ -326,11 +443,34 @@ async function extractBackendMessage(
   return undefined;
 }
 
+function invalidatedRequestError(): ApiError {
+  return new ApiError({
+    status: null,
+    kind: "network",
+    messageKey: "errors.status.network",
+  });
+}
+
+function authRequiredError(): ApiError {
+  const cleared = clearSession({ preserveSessionState: true });
+  const redirected = redirectToLogin();
+  let stateError: SessionStateError | undefined;
+  if (!cleared.ok) stateError = cleared.error;
+  else if (!redirected.ok) stateError = redirected.error;
+  return new ApiError({
+    status: 401,
+    kind: "authRequired",
+    messageKey: "errors.status.unauthorized",
+    stateError,
+  });
+}
+
 async function executeRequest(
   path: string,
   options: RequestOptions,
 ): Promise<Response> {
   const { anonymous = false, ...fetchOpts } = options;
+  const requestGeneration = authGeneration;
   const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
 
   const doFetch = async (token: string | null): Promise<Response> => {
@@ -377,19 +517,20 @@ async function executeRequest(
     });
   }
 
+  if (requestGeneration !== authGeneration) {
+    throw invalidatedRequestError();
+  }
+
   if (res.status === 401 && !anonymous) {
     try {
       const newToken = await refreshAccessToken(requestAccessToken ?? undefined);
       res = await doFetch(newToken);
     } catch (error) {
+      if (isRefreshInvalidatedError(error)) {
+        throw invalidatedRequestError();
+      }
       if (isDefinitiveRefreshError(error)) {
-        await clearSession();
-        redirectToLogin();
-        throw new ApiError({
-          status: 401,
-          kind: "authRequired",
-          messageKey: "errors.status.unauthorized",
-        });
+        throw authRequiredError();
       }
       if (error instanceof RefreshError) {
         const mapping =
@@ -402,6 +543,13 @@ async function executeRequest(
         });
       }
       throw error;
+    }
+
+    if (requestGeneration !== authGeneration) {
+      throw invalidatedRequestError();
+    }
+    if (res.status === 401) {
+      throw authRequiredError();
     }
   }
 
