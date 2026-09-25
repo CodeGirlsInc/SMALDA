@@ -1,25 +1,12 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
+import type { DocumentStatus, ParcelDocument } from "@/types/parcel";
 
-// ─────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────
-export type DocumentStatus = "VERIFIED" | "PENDING" | "FLAGGED" | "REJECTED";
-
-export interface ParcelDocument {
-  id: string;
-  name: string;
-  status: DocumentStatus;
-  /** 0–100 */
-  riskScore: number;
-  ownerName: string | null;
-  isOwnedByViewer: boolean;
-  stellarAnchorDate: string | null;
-  stellarTxHash: string | null;
-  flags: string[];
-  detailsUrl: string;
-}
+// Re-exported for backward compatibility with any existing imports of
+// these types from this component file; the canonical definitions now
+// live in @/types/parcel.
+export type { DocumentStatus, ParcelDocument };
 
 interface ParcelSidebarProps {
   document: ParcelDocument | null;
