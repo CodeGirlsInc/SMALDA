@@ -18,6 +18,8 @@ import { User, UserRole } from '../users/entities/user.entity';
 @Injectable()
 export class AuthService {
   private readonly tokenBlacklist = new Set<string>();
+  private readonly refreshTokenBlacklist = new Set<string>();
+  private readonly maxBlacklistEntries = 10000;
 
   constructor(
     private readonly usersService: UsersService,
@@ -41,7 +43,8 @@ export class AuthService {
     });
 
     const access_token = await this.generateAccessToken(user);
-    return { access_token };
+    const refresh_token = await this.generateRefreshToken(user);
+    return { access_token, refresh_token };
   }
 
   async login(dto: LoginAuthDto) {
@@ -76,13 +79,18 @@ export class AuthService {
     }
 
     const access_token = await this.generateAccessToken(user);
-    return { access_token };
+    const refresh_token = await this.generateRefreshToken(user);
+    return { access_token, refresh_token };
   }
 
   async refreshToken(dto: RefreshAuthDto) {
-    const refreshToken = dto.refreshToken?.trim();
+    const refreshToken = dto?.refreshToken?.trim();
     if (!refreshToken) {
       throw new BadRequestException('Refresh token is required');
+    }
+
+    if (this.refreshTokenBlacklist.has(refreshToken)) {
+      throw new UnauthorizedException('Invalid refresh token');
     }
 
     try {
@@ -98,30 +106,86 @@ export class AuthService {
         throw new UnauthorizedException('Invalid refresh token');
       }
 
+      await this.revokeRefreshToken(refreshToken, payload);
       const access_token = await this.generateAccessToken(user);
-      return { access_token };
+      const refresh_token = await this.generateRefreshToken(user);
+      return { access_token, refresh_token };
     } catch {
       throw new UnauthorizedException('Invalid refresh token');
     }
   }
 
-  async logout(accessToken: string): Promise<void> {
-    try {
-      const payload = this.jwtService.decode<JwtPayload>(accessToken);
-      if (payload?.exp) {
-        const ttl = payload.exp - Math.floor(Date.now() / 1000);
-        if (ttl > 0) {
-          this.tokenBlacklist.add(accessToken);
-          setTimeout(() => this.tokenBlacklist.delete(accessToken), ttl * 1000);
-        }
-      }
-    } catch {
-      // Token is malformed, nothing to blacklist
+  async logout(
+    accessTokenOrTokens?: string | string[],
+    refreshToken?: string,
+  ): Promise<void> {
+    const accessTokens = Array.isArray(accessTokenOrTokens)
+      ? accessTokenOrTokens
+      : accessTokenOrTokens
+        ? [accessTokenOrTokens]
+        : [];
+    const distinctAccessTokens = [...new Set(accessTokens.filter(Boolean))];
+
+    await Promise.allSettled(
+      distinctAccessTokens.map((token) => this.blacklistAccessToken(token)),
+    );
+    if (refreshToken) {
+      await Promise.allSettled([this.revokeRefreshToken(refreshToken)]);
     }
   }
 
   isTokenBlacklisted(token: string): boolean {
     return this.tokenBlacklist.has(token);
+  }
+
+  private async blacklistAccessToken(token: string): Promise<void> {
+    try {
+      const payload = await this.jwtService.verifyAsync<JwtPayload>(token);
+      this.rememberToken(this.tokenBlacklist, token, this.getPayloadTtl(payload));
+    } catch {
+      return;
+    }
+  }
+
+  private async revokeRefreshToken(
+    token: string,
+    verifiedPayload?: JwtPayload,
+  ): Promise<void> {
+    let payload = verifiedPayload;
+    if (!payload) {
+      try {
+        payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
+          secret: this.getRefreshSecret(),
+        });
+      } catch {
+        return;
+      }
+    }
+    if (!payload) return;
+
+    this.rememberToken(
+      this.refreshTokenBlacklist,
+      token,
+      this.getPayloadTtl(payload),
+    );
+  }
+
+  private rememberToken(
+    blacklist: Set<string>,
+    token: string,
+    ttl: number | null,
+  ): void {
+    if (ttl === null || ttl <= 0 || blacklist.has(token)) return;
+
+    if (blacklist.size >= this.maxBlacklistEntries) return;
+
+    blacklist.add(token);
+    setTimeout(() => blacklist.delete(token), ttl * 1000);
+  }
+
+  private getPayloadTtl(payload: JwtPayload): number | null {
+    if (!payload.exp) return null;
+    return payload.exp - Math.floor(Date.now() / 1000);
   }
 
   private async validateCredentials(email: string, password: string) {

@@ -7,10 +7,10 @@
       "format": "email"
     },
     "password": {
-      "minLength": 6
+      "minLength": 8
     },
     "fullName": {
-      "minLength": 1
+      "minLength": 2
     }
   },
   "login": {

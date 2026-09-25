@@ -56,12 +56,12 @@ describe('buildCorsOptions', () => {
   it('should allow the configured origin in development', (done) => {
     const config = createConfigService({
       NODE_ENV: 'development',
-      FRONTEND_URL: 'http://localhost:3001',
+      FRONTEND_URL: 'http://localhost:3000',
     });
     const { corsOptions } = buildCorsOptions(config);
 
     (corsOptions.origin as Function)(
-      'http://localhost:3001',
+      'http://localhost:3000',
       (err: Error | null, allow?: boolean) => {
         expect(err).toBeNull();
         expect(allow).toBe(true);
@@ -116,7 +116,7 @@ describe('buildCorsOptions', () => {
     const { corsOptions } = buildCorsOptions(config);
 
     (corsOptions.origin as Function)(
-      'http://localhost:3001',
+      'http://localhost:3000',
       (err: Error | null, allow?: boolean) => {
         expect(err).toBeNull();
         expect(allow).toBe(true);
@@ -128,7 +128,7 @@ describe('buildCorsOptions', () => {
   it('should restrict methods and headers', () => {
     const config = createConfigService({
       NODE_ENV: 'development',
-      FRONTEND_URL: 'http://localhost:3001',
+      FRONTEND_URL: 'http://localhost:3000',
     });
     const { corsOptions } = buildCorsOptions(config);
 
@@ -156,7 +156,7 @@ describe('getFrontendUrl', () => {
 
   it('returns fallback when nothing is configured', () => {
     const config = createConfigService({});
-    expect(getFrontendUrl(config)).toBe('http://localhost:3001');
+    expect(getFrontendUrl(config)).toBe('http://localhost:3000');
 
   });
 });

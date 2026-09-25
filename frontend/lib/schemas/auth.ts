@@ -11,11 +11,22 @@ function contractEmailSchema(format: string, message: string) {
   return z.string().email({ message });
 }
 
+/**
+ * Mirrors backend/src/auth/dto/register-auth.dto.ts
+ * (class-validator: @IsEmail, @IsNotEmpty, @MinLength(apiContracts...), @Matches(...)).
+ * Update this file when the backend DTO or api-contracts.json changes.
+ */
 export const passwordPolicy = z
   .string()
   .min(1, { message: "errors.password.required" })
   .min(registerContract.password.minLength, {
-    message: "errors.password.minLength",
+    message: "auth.register.errors.passwordMin",
+  })
+  .regex(/[A-Z]/, { message: "auth.register.errors.passwordUppercase" })
+  .regex(/[a-z]/, { message: "auth.register.errors.passwordLowercase" })
+  .regex(/[0-9]/, { message: "auth.register.errors.passwordNumber" })
+  .regex(/[^A-Za-z0-9]/, {
+    message: "auth.register.errors.passwordSpecial",
   });
 
 export const registerSchema = z.object({

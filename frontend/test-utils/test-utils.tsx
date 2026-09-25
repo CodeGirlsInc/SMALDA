@@ -1,6 +1,7 @@
 import React, { ReactElement } from "react";
 import { render, RenderOptions } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
+import { http, HttpResponse } from "msw";
 
 const testMessages = {
   common: {
@@ -57,6 +58,73 @@ export function renderWithProviders(ui: ReactElement, options: CustomRenderOptio
     wrapper: ({ children }) => <AllProviders locale={locale}>{children}</AllProviders>,
     ...renderOptions,
   });
+}
+
+/**
+ * Mock helpers for the Stellar verification API
+ * 
+ * The verification API endpoint is GET /verify/:hash
+ * It returns:
+ * - { verified: true, stellarTxHash, stellarLedger, anchoredAt, documentStatus } for verified documents
+ * - { verified: false, message: 'Document not found', documentStatus: null } for unknown hashes
+ * - { verified: false, message: 'Document has not been verified on Stellar', documentStatus } for unverified documents
+ * 
+ * Usage in tests:
+ * 
+ * import { verificationApiHandlers, createVerificationResponse } from '@/test-utils/test-utils';
+ * 
+ * // Add to your test's MSW handlers
+ * handlers: [...verificationApiHandlers]
+ * 
+ * // Or create custom responses
+ * const handlers = [
+ *   http.get('/verify/:hash', ({ params }) => {
+ *     const hash = params.hash as string;
+ *     return HttpResponse.json(createVerificationResponse(hash, { verified: true }));
+ *   })
+ * ];
+ */
+
+export const verificationApiHandlers = [
+  http.get(`${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/verify/:hash`, ({ params }) => {
+    const hash = params.hash as string;
+    
+    // Default: return not found for unknown hashes
+    return HttpResponse.json({
+      verified: false,
+      message: 'Document not found',
+      documentStatus: null,
+    });
+  }),
+];
+
+export function createVerificationResponse(
+  hash: string,
+  options: {
+    verified?: boolean;
+    documentStatus?: string | null;
+    stellarTxHash?: string;
+    stellarLedger?: number;
+    anchoredAt?: string;
+  } = {}
+) {
+  const { verified = false, documentStatus = null, stellarTxHash, stellarLedger, anchoredAt } = options;
+  
+  if (!verified) {
+    return {
+      verified: false,
+      message: documentStatus ? 'Document has not been verified on Stellar' : 'Document not found',
+      documentStatus,
+    };
+  }
+  
+  return {
+    verified: true,
+    stellarTxHash: stellarTxHash ?? `tx_${hash.slice(0, 16)}`,
+    stellarLedger: stellarLedger ?? 12345678,
+    anchoredAt: anchoredAt ?? new Date().toISOString(),
+    documentStatus,
+  };
 }
 
 export { testMessages };

@@ -13,6 +13,7 @@ export default function GlobalNotFound() {
     <NotFoundContent
       description="The page you are looking for could not be found."
       homeLabel="Go back home"
+      dashboardLabel="Return to dashboard"
     />
   );
 }
