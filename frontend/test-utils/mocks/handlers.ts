@@ -4,7 +4,7 @@ const API_BASE = "http://localhost:3001";
 
 export const handlers = [
   // Auth — login
-  http.post(`${API_BASE}/api/auth/login`, async ({ request }) => {
+  http.post(`${API_BASE}/api/v1/auth/login`, async ({ request }) => {
     const body = (await request.json()) as { email: string; password: string };
     if (body.email === "bad@example.com") {
       return HttpResponse.json(
@@ -16,7 +16,7 @@ export const handlers = [
   }),
 
   // Auth — verify
-  http.get(`${API_BASE}/api/auth/verify`, ({ request }) => {
+  http.get(`${API_BASE}/api/v1/auth/verify`, ({ request }) => {
     const auth = request.headers.get("Authorization");
     if (!auth || !auth.startsWith("Bearer ")) {
       return HttpResponse.json({ message: "Unauthorized" }, { status: 401 });

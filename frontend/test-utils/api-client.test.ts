@@ -1,4 +1,12 @@
-import { ApiError, clearSession, request } from "@/lib/api-client";
+import {
+  ApiError,
+  clearSession,
+  invalidateRefresh,
+  refreshSession,
+  request,
+  RefreshInvalidatedError,
+} from "@/lib/api-client";
+import { preserveSessionState } from "@/lib/session-state-preserver";
 
 const API_BASE = "http://localhost:3001";
 
@@ -28,6 +36,21 @@ function createLocalStorageMock() {
 
 let lsMock: ReturnType<typeof createLocalStorageMock>;
 
+let sessionStore: Record<string, string>;
+const sessionStorageMock = {
+  getItem: jest.fn((key: string) => sessionStore[key] ?? null),
+  setItem: jest.fn((key: string, value: string) => {
+    sessionStore[key] = value;
+  }),
+  removeItem: jest.fn((key: string) => {
+    delete sessionStore[key];
+  }),
+  get length() {
+    return Object.keys(sessionStore).length;
+  },
+  key: jest.fn((index: number) => Object.keys(sessionStore)[index] ?? null),
+};
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function setTokens(access: string, refresh?: string) {
@@ -38,6 +61,14 @@ function setTokens(access: string, refresh?: string) {
 function clearTokens() {
   lsMock.removeItem("auth-token");
   lsMock.removeItem("refresh-token");
+}
+
+function makeToken(subject: string): string {
+  const payload = btoa(JSON.stringify({ sub: subject }))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+  return `header.${payload}.signature`;
 }
 
 /** Build a mock Response-like object */
@@ -95,11 +126,21 @@ beforeEach(() => {
   }
 
   clearTokens();
+  sessionStore = {};
+  Object.defineProperty(window, "sessionStorage", {
+    value: sessionStorageMock,
+    writable: true,
+    configurable: true,
+  });
+  sessionStorageMock.getItem.mockClear();
+  sessionStorageMock.setItem.mockClear();
+  sessionStorageMock.removeItem.mockClear();
+  sessionStorageMock.key.mockClear();
 
   mockFetch = jest.fn();
   globalThis.fetch = mockFetch;
 
-  // Prevent actual navigation on redirect
+  invalidateRefresh();
   locationHref = "";
   Object.defineProperty(window, "location", {
     value: {
@@ -233,6 +274,29 @@ describe("request()", () => {
 
   // ── 401 → refresh failure → clear session + redirect ───────────────────
 
+  it("clears the session when a refreshed request is still unauthorized", async () => {
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({ message: "Unauthorized" }, { status: 401 }),
+    );
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({ access_token: "new-jwt-token" }),
+    );
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({ message: "Unauthorized" }, { status: 401 }),
+    );
+
+    setTokens("expired-jwt", "valid-refresh-token");
+    await expect(request("/api/secret")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 401,
+      kind: "authRequired",
+    });
+
+    expect(lsMock.getItem("auth-token")).toBeNull();
+    expect(lsMock.getItem("refresh-token")).toBeNull();
+    expect(locationHref).toContain("/login?redirect=");
+  });
+
   it("clears session and redirects to /login when refresh fails", async () => {
     // First call: 401
     mockFetch.mockResolvedValueOnce(
@@ -243,7 +307,11 @@ describe("request()", () => {
       mockResponse({ message: "Invalid" }, { status: 401 }),
     );
 
-    setTokens("expired-token", "bad-refresh-token");
+    setTokens(makeToken("user-a"), "bad-refresh-token");
+    const preserved = preserveSessionState("upload-form", { title: "Land deed" });
+    expect(preserved.ok).toBe(true);
+    if (!preserved.ok) return;
+    const resumeId = preserved.value;
 
     await expect(request("/api/secret")).rejects.toMatchObject({
       name: "ApiError",
@@ -253,7 +321,8 @@ describe("request()", () => {
 
     expect(lsMock.getItem("auth-token")).toBeNull();
     expect(lsMock.getItem("refresh-token")).toBeNull();
-    expect(locationHref).toBe("/login");
+    expect(locationHref).toContain("resume=");
+    expect(locationHref).toContain(encodeURIComponent(resumeId));
   });
 
   it("clears session and redirects when no refresh token exists", async () => {
@@ -289,6 +358,65 @@ describe("request()", () => {
 
     // Only one fetch call — no refresh attempt
     expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("refreshSession()", () => {
+  it("uses the canonical refresh endpoint and stores the new access token", async () => {
+    setTokens("expired-jwt", "valid-refresh-token");
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({ access_token: "refreshed-jwt" }),
+    );
+
+    await refreshSession();
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      `${API_BASE}/api/v1/auth/refresh`,
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(lsMock.getItem("auth-token")).toBe("refreshed-jwt");
+  });
+
+  it("rejects asynchronously when no refresh token exists", async () => {
+    setTokens("access-token");
+    const pending = refreshSession();
+
+    expect(pending).toBeInstanceOf(Promise);
+    await expect(pending).rejects.toThrow("No refresh token available");
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("deduplicates concurrent refreshes", async () => {
+    let resolveRefresh!: (value: Response) => void;
+    const response = new Promise<Response>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    mockFetch.mockReturnValue(response);
+    setTokens("expired-jwt", "valid-refresh-token");
+
+    const first = refreshSession();
+    const second = refreshSession();
+    resolveRefresh(mockResponse({ access_token: "refreshed-jwt" }));
+
+    await Promise.all([first, second]);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not restore a token after refresh invalidation", async () => {
+    let resolveRefresh!: (value: Response) => void;
+    const response = new Promise<Response>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    mockFetch.mockReturnValue(response);
+    setTokens("old-access-jwt", "valid-refresh-token");
+
+    const pending = refreshSession();
+    await Promise.resolve();
+    invalidateRefresh();
+    resolveRefresh(mockResponse({ access_token: "stale-jwt" }));
+
+    await expect(pending).rejects.toBeInstanceOf(RefreshInvalidatedError);
+    expect(lsMock.getItem("auth-token")).toBe("old-access-jwt");
   });
 });
 

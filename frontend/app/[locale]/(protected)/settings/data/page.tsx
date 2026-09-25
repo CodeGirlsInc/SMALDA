@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { clearSession } from "@/lib/auth-session";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -15,9 +16,11 @@ function getAuthHeaders(): HeadersInit {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-function logout() {
-  localStorage.removeItem("auth-token");
-  document.cookie = "token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+function logout(): void {
+  const result = clearSession();
+  if (!result.ok) {
+    throw new Error("Unable to clear the session safely.");
+  }
 }
 
 const COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours

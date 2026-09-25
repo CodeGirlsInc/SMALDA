@@ -4,7 +4,7 @@
  * Exports a `request(path, options)` helper that:
  *   - reads NEXT_PUBLIC_API_URL as the base URL
  *   - attaches the JWT from localStorage as a Bearer header
- *   - on 401, attempts a silent refresh via POST /auth/refresh
+ *   - on 401, attempts a silent refresh via POST /api/v1/auth/refresh
  *   - if refresh also fails, clears the session and redirects to /login
  *   - parses JSON responses
  *   - throws typed ApiError for non-2xx responses
@@ -15,7 +15,25 @@
  * never surfaced.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+import {
+  clearAllSessionState,
+  getPendingSessionResumeId,
+  type SessionStateError,
+  type SessionStateResult,
+} from "@/lib/session-state-preserver";
+
+function normalizeApiBase(value: string): string {
+  return value
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/(?:\/api)+(?:\/v1)?$/, "");
+}
+
+const API_BASE = normalizeApiBase(
+  process.env.NEXT_PUBLIC_API_URL?.trim() || "http://localhost:3001",
+);
+export const API_V1_BASE = `${API_BASE}/api/v1`;
+const REFRESH_ENDPOINT = `${API_V1_BASE}/auth/refresh`;
 
 const ACCESS_TOKEN_KEY = "auth-token";
 const REFRESH_TOKEN_KEY = "refresh-token";
@@ -36,12 +54,14 @@ export class ApiError extends Error {
   readonly kind: ApiErrorKind;
   readonly messageKey: string;
   readonly backendMessage?: string;
+  readonly stateError?: SessionStateError;
 
   constructor(opts: {
     status: number | null;
     kind: ApiErrorKind;
     messageKey: string;
     backendMessage?: string;
+    stateError?: SessionStateError;
   }) {
     super(opts.messageKey);
     this.name = "ApiError";
@@ -49,6 +69,7 @@ export class ApiError extends Error {
     this.kind = opts.kind;
     this.messageKey = opts.messageKey;
     this.backendMessage = opts.backendMessage;
+    this.stateError = opts.stateError;
   }
 }
 
@@ -79,12 +100,20 @@ export function classifyStatus(status: number): ApiErrorMapping {
 
 function getAccessToken(): string | null {
   if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(ACCESS_TOKEN_KEY);
+  try {
+    return window.localStorage.getItem(ACCESS_TOKEN_KEY);
+  } catch {
+    return null;
+  }
 }
 
 function getRefreshToken(): string | null {
   if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(REFRESH_TOKEN_KEY);
+  try {
+    return window.localStorage.getItem(REFRESH_TOKEN_KEY);
+  } catch {
+    return null;
+  }
 }
 
 function setAccessToken(token: string): void {
@@ -92,13 +121,29 @@ function setAccessToken(token: string): void {
   window.localStorage.setItem(ACCESS_TOKEN_KEY, token);
 }
 
-export function clearSession(): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(ACCESS_TOKEN_KEY);
-  window.localStorage.removeItem(REFRESH_TOKEN_KEY);
-  document.cookie = "token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-  // Signal other tabs to also redirect to login
-  window.localStorage.setItem("logout-event", Date.now().toString());
+export function clearSession(
+  options: { preserveSessionState?: boolean; notify?: boolean } = {},
+): SessionStateResult<void> {
+  invalidateRefresh();
+  if (typeof window === "undefined") {
+    return { ok: false, error: { code: "unavailable" } };
+  }
+
+  let result: SessionStateResult<void> = { ok: true, value: undefined };
+  try {
+    window.localStorage.removeItem(ACCESS_TOKEN_KEY);
+    window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+    document.cookie = "token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    if (options.notify !== false) {
+      window.localStorage.setItem("logout-event", Date.now().toString());
+    }
+  } catch {
+    result = { ok: false, error: { code: "storage" } };
+  }
+
+  if (options.preserveSessionState) return result;
+  const stateResult = clearAllSessionState();
+  return stateResult.ok ? result : stateResult;
 }
 
 /**
@@ -106,51 +151,162 @@ export function clearSession(): void {
  * then redirect to login. The login page's resolvePostLoginPath reads the
  * `?redirect=` param so the user lands back where they were after signing in.
  */
-function redirectToLogin(): void {
-  if (typeof window === "undefined") return;
+function redirectToLogin(): SessionStateResult<void> {
+  if (typeof window === "undefined") {
+    return { ok: false, error: { code: "unavailable" } };
+  }
   const currentPath = window.location.pathname + window.location.search;
   const params = new URLSearchParams();
   params.set("redirect", currentPath);
+  const resume = getPendingSessionResumeId();
+  if (resume.ok && resume.value) params.set("resume", resume.value);
   window.location.href = `/login?${params.toString()}`;
+  return resume.ok
+    ? { ok: true, value: undefined }
+    : propagateStateFailure(resume);
+}
+
+function propagateStateFailure(
+  result: { ok: false; error: SessionStateError },
+): SessionStateResult<void> {
+  return result;
 }
 
 // ── Refresh logic ───────────────────────────────────────────────────────────
 
-let refreshPromise: Promise<string> | null = null;
+interface RefreshResult {
+  accessToken: string;
+  refreshToken: string;
+  generation: number;
+}
+
+export class RefreshInvalidatedError extends Error {
+  constructor() {
+    super("Refresh invalidated");
+    this.name = "RefreshInvalidatedError";
+  }
+}
+
+let refreshPromise: Promise<RefreshResult> | null = null;
+let refreshAbortController: AbortController | null = null;
+let authGeneration = 0;
+
+function isRefreshInvalidatedError(error: unknown): boolean {
+  return error instanceof RefreshInvalidatedError;
+}
+
+export function invalidateRefresh(): void {
+  authGeneration += 1;
+  refreshPromise = null;
+  const controller = refreshAbortController;
+  refreshAbortController = null;
+  try {
+    controller?.abort();
+  } catch {
+    return;
+  }
+}
 
 /**
  * Attempt a silent token refresh. Deduplicates concurrent refresh calls
  * so that multiple 401s in-flight only trigger one refresh request.
  */
-async function refreshAccessToken(): Promise<string> {
+function refreshAccessToken(): Promise<RefreshResult> {
   if (refreshPromise) return refreshPromise;
 
-  refreshPromise = (async () => {
+  const generation = authGeneration;
+  const controller = new AbortController();
+  refreshAbortController = controller;
+  const promise = Promise.resolve().then(async () => {
     try {
+      if (generation !== authGeneration || controller.signal.aborted) {
+        throw new RefreshInvalidatedError();
+      }
       const refreshToken = getRefreshToken();
       if (!refreshToken) {
         throw new Error("No refresh token available");
       }
 
-      const res = await fetch(`${API_BASE}/auth/refresh`, {
+      const res = await fetch(REFRESH_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken }),
+        signal: controller.signal,
       });
 
       if (!res.ok) {
         throw new Error("Refresh failed");
       }
 
-      const data = (await res.json()) as { access_token: string };
+      const data: unknown = await res.json();
+      if (
+        typeof data !== "object" ||
+        data === null ||
+        !("access_token" in data) ||
+        typeof data.access_token !== "string" ||
+        data.access_token.length === 0
+      ) {
+        throw new Error("Refresh response did not include an access token");
+      }
+      if (
+        generation !== authGeneration ||
+        controller.signal.aborted ||
+        getRefreshToken() !== refreshToken
+      ) {
+        throw new RefreshInvalidatedError();
+      }
       setAccessToken(data.access_token);
-      return data.access_token;
+      return {
+        accessToken: data.access_token,
+        refreshToken,
+        generation,
+      };
+    } catch (error) {
+      if (generation !== authGeneration || controller.signal.aborted) {
+        throw new RefreshInvalidatedError();
+      }
+      throw error;
     } finally {
-      refreshPromise = null;
+      if (refreshPromise === promise) refreshPromise = null;
+      if (refreshAbortController === controller) refreshAbortController = null;
     }
-  })();
+  });
 
-  return refreshPromise;
+  refreshPromise = promise;
+  return promise;
+}
+
+export async function refreshSession(): Promise<void> {
+  await refreshAccessToken();
+}
+
+function isRefreshResultCurrent(result: RefreshResult): boolean {
+  return (
+    result.generation === authGeneration &&
+    getRefreshToken() === result.refreshToken
+  );
+}
+
+function invalidatedRequestError(): ApiError {
+  return new ApiError({
+    status: null,
+    kind: "network",
+    messageKey: "errors.status.network",
+  });
+}
+
+function authRequiredError(): ApiError {
+  const cleared = clearSession({ preserveSessionState: true });
+  const redirected = redirectToLogin();
+  let stateError: SessionStateError | undefined;
+  if (!cleared.ok) stateError = cleared.error;
+  else if (!redirected.ok) stateError = redirected.error;
+  return new ApiError({
+    status: 401,
+    kind: "authRequired",
+    messageKey: "errors.status.unauthorized",
+    stateError,
+  });
 }
 
 // ── Request helper ──────────────────────────────────────────────────────────
@@ -191,7 +347,7 @@ async function extractBackendMessage(
  *   const data = await request<{ id: string }>("/documents", { method: "POST", body: { title: "..." } });
  *
  * On a 401 response the function will:
- *   1. Attempt a silent refresh via POST /auth/refresh
+ *   1. Attempt a silent refresh via POST /api/v1/auth/refresh
  *   2. If refresh succeeds, retry the original request with the new token
  *   3. If refresh also fails, clear the session and redirect to /login
  */
@@ -200,6 +356,7 @@ export async function request<T = unknown>(
   options: RequestOptions = {},
 ): Promise<T> {
   const { anonymous = false, ...fetchOpts } = options;
+  const requestGeneration = authGeneration;
 
   const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
 
@@ -242,21 +399,43 @@ export async function request<T = unknown>(
     });
   }
 
+  if (requestGeneration !== authGeneration) {
+    throw invalidatedRequestError();
+  }
+
   // Handle 401 with refresh
   if (res.status === 401 && !anonymous) {
+    let refreshed: RefreshResult;
     try {
-      const newToken = await refreshAccessToken();
-      res = await doFetch(newToken);
+      refreshed = await refreshAccessToken();
+    } catch (error) {
+      if (isRefreshInvalidatedError(error)) {
+        throw invalidatedRequestError();
+      }
+      throw authRequiredError();
+    }
+    if (
+      requestGeneration !== authGeneration ||
+      !isRefreshResultCurrent(refreshed)
+    ) {
+      throw invalidatedRequestError();
+    }
+    try {
+      res = await doFetch(refreshed.accessToken);
     } catch {
-      // Refresh failed — clear session and redirect
-      clearSession();
-      redirectToLogin();
       throw new ApiError({
-        status: 401,
-        kind: "authRequired",
-        messageKey: "errors.status.unauthorized",
+        status: null,
+        kind: "network",
+        messageKey: "errors.status.network",
       });
     }
+  }
+
+  if (requestGeneration !== authGeneration) {
+    throw invalidatedRequestError();
+  }
+  if (res.status === 401 && !anonymous) {
+    throw authRequiredError();
   }
 
   // Handle non-2xx
