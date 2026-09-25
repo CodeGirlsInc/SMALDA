@@ -6,7 +6,7 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: '*',
         allow: '/',
-        disallow: ['/verify/', '/dashboard/', '/api/'],
+        disallow: ['/', '/verify/', '/api/'],
       },
     ],
     sitemap: 'https://smalda.org/sitemap.xml',

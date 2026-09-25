@@ -1,5 +1,8 @@
 import { defineRouting } from "next-intl/routing";
 
+export const LOCALE_COOKIE_NAME = "NEXT_LOCALE";
+export const LOCALE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
+
 /**
  * Central i18n routing configuration shared by the middleware, the request
  * config and the navigation helpers.

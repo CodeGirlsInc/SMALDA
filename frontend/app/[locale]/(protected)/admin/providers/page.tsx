@@ -272,7 +272,7 @@ export default function AdminProvidersPage() {
     try {
       const payload = JSON.parse(atob(token.split(".")[1]));
       if (payload?.role !== "admin") {
-        router.replace("/dashboard");
+        router.replace("/");
       }
     } catch {
       router.replace("/login");
@@ -288,7 +288,7 @@ export default function AdminProvidersPage() {
         headers: getAuthHeaders(),
       });
       if (res.status === 403) {
-        router.replace("/dashboard");
+        router.replace("/");
         return;
       }
       if (!res.ok) throw new Error(`Failed to load provider stats: ${res.status}`);

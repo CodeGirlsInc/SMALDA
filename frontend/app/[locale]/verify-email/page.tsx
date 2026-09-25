@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
-import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { Link, useRouter } from "@/i18n/navigation";
+import { ApiError, request } from "@/lib/api-client";
 
 export default function VerifyEmailPage() {
   const searchParams = useSearchParams();
@@ -23,23 +24,21 @@ export default function VerifyEmailPage() {
 
     async function verify() {
       try {
-        const response = await fetch(`/api/auth/verify-email?token=${encodeURIComponent(token)}`, {
-          method: "GET",
-        });
-
-        if (response.ok) {
-          setStatus("success");
-          setTimeout(() => {
-            router.push("/login");
-          }, 3000);
-        } else {
-          const data = await response.json().catch(() => ({}));
-          setStatus("failure");
-          setErrorMessage(data.message || "Failed to verify email. The token may be expired or invalid.");
-        }
-      } catch (err) {
+        await request(
+          `/api/v1/auth/verify-email?token=${encodeURIComponent(token)}`,
+          { method: "GET", anonymous: true },
+        );
+        setStatus("success");
+        setTimeout(() => {
+          router.push("/login");
+        }, 3000);
+      } catch (error) {
         setStatus("failure");
-        setErrorMessage("Network error verifying email. Please check your connection.");
+        setErrorMessage(
+          error instanceof ApiError && error.backendMessage
+            ? error.backendMessage
+            : "Failed to verify email. The token may be expired or invalid.",
+        );
       }
     }
 
@@ -52,17 +51,12 @@ export default function VerifyEmailPage() {
 
     setResendStatus("sending");
     try {
-      const response = await fetch("/api/auth/resend-verification", {
+      await request("/api/v1/auth/resend-verification", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: resendEmail }),
+        anonymous: true,
+        body: { email: resendEmail },
       });
-
-      if (response.ok) {
-        setResendStatus("sent");
-      } else {
-        setResendStatus("error");
-      }
+      setResendStatus("sent");
     } catch {
       setResendStatus("error");
     }

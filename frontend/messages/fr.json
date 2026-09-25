@@ -44,6 +44,69 @@
       "continueWithGithub": "Continuer avec GitHub",
       "resetSuccessToast": "Votre mot de passe a été réinitialisé. Veuillez vous connecter."
     },
+    "sessionRefresh": {
+      "loading": "Actualisation de votre session…",
+      "errorTitle": "Votre session n'a pas pu être actualisée",
+      "errorDescription": "Veuillez vous reconnecter pour continuer."
+    },
+    "oauthCallback": {
+      "loading": "Connexion en cours…",
+      "errorTitle": "La connexion n'a pas pu être terminée",
+      "errorDescription": "Retournez à la page de connexion et réessayez.",
+      "signIn": "Retour à la connexion"
+    },
+    "register": {
+      "title": "Créer votre compte",
+      "subtitle": "Sécurisez vos documents fonciers avec SMALDA",
+      "fullNameLabel": "Nom complet",
+      "fullNamePlaceholder": "Saisissez votre nom complet",
+      "emailLabel": "Adresse e-mail",
+      "emailPlaceholder": "vous@exemple.com",
+      "passwordLabel": "Mot de passe",
+      "passwordPlaceholder": "Créez un mot de passe fort",
+      "confirmPasswordLabel": "Confirmer le mot de passe",
+      "confirmPasswordPlaceholder": "Saisissez à nouveau votre mot de passe",
+      "strengthLabel": "Force du mot de passe",
+      "requirementsLabel": "Exigences du mot de passe",
+      "requirementMet": "Rempli",
+      "requirementNeeded": "À ajouter",
+      "guidance": "Utilisez une phrase secrète plus longue et facile à retenir ; évitez les noms, les dates et les suites répétées.",
+      "strengthSummary": "Force du mot de passe : {label}",
+      "strength": {
+        "empty": "Vide",
+        "weak": "Faible",
+        "fair": "Moyen",
+        "good": "Bon",
+        "strong": "Fort"
+      },
+      "requirements": {
+        "length": "Au moins 8 caractères",
+        "uppercase": "Une lettre majuscule",
+        "lowercase": "Une lettre minuscule",
+        "number": "Un chiffre",
+        "special": "Un caractère spécial"
+      },
+      "submit": "Créer un compte",
+      "submitting": "Création du compte…",
+      "alreadyHaveAccount": "Vous avez déjà un compte ?",
+      "signIn": "Se connecter",
+      "apiErrors": {
+        "emailExists": "Un compte avec cette adresse e-mail existe déjà.",
+        "validation": "Veuillez vérifier les champs indiqués et réessayer.",
+        "generic": "Une erreur est survenue. Veuillez réessayer."
+      },
+      "errors": {
+        "fullNameMin": "Le nom complet doit contenir au moins 2 caractères",
+        "emailInvalid": "Saisissez une adresse e-mail valide",
+        "passwordMin": "Le mot de passe doit contenir au moins 8 caractères",
+        "passwordUppercase": "Le mot de passe doit contenir une lettre majuscule",
+        "passwordLowercase": "Le mot de passe doit contenir une lettre minuscule",
+        "passwordNumber": "Le mot de passe doit contenir un chiffre",
+        "passwordSpecial": "Le mot de passe doit contenir un caractère spécial",
+        "confirmRequired": "Veuillez confirmer votre mot de passe",
+        "passwordMismatch": "Les mots de passe ne correspondent pas"
+      }
+    },
     "forgotPassword": {
       "title": "Réinitialiser votre mot de passe",
       "subtitle": "Saisissez l'adresse e-mail associée à votre compte et nous vous enverrons un lien pour réinitialiser votre mot de passe.",

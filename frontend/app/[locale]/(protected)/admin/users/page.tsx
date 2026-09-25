@@ -156,7 +156,7 @@ export default function AdminUsersPage() {
     if (!token) { router.replace("/login"); return; }
     try {
       const payload = JSON.parse(atob(token.split(".")[1]));
-      if (payload?.role !== "admin") { router.replace("/dashboard"); }
+      if (payload?.role !== "admin") { router.replace("/"); }
     } catch {
       router.replace("/login");
     }
@@ -179,7 +179,7 @@ export default function AdminUsersPage() {
       const res = await fetch(`${API_BASE}/api/users?${params}`, {
         headers: getAuthHeaders(),
       });
-      if (res.status === 403) { router.replace("/dashboard"); return; }
+      if (res.status === 403) { router.replace("/"); return; }
       if (!res.ok) throw new Error(`Failed to load users: ${res.status}`);
       const json: PaginatedUsers = await res.json();
       setUsers(json.data);
