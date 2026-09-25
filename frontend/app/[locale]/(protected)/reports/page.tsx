@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
+import { SearchX } from "lucide-react";
 import jsPDF from "jspdf";
 import { EmptyState } from "@/components/EmptyState";
 
@@ -454,6 +455,7 @@ function DocumentsTable({
       <EmptyState
         title="No documents match these filters"
         description="Adjust the date range, status, or both to broaden the search."
+        icon={<SearchX className="h-10 w-10" aria-hidden="true" />}
         variant="no-match"
       />
     );

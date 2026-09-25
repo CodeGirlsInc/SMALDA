@@ -32,6 +32,15 @@ export function storeSession(tokens: LoginResponse): void {
 
 export { clearSession } from "./api-client";
 
+export function hasStoredSession(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return Boolean(window.localStorage.getItem(ACCESS_TOKEN_KEY)?.trim());
+  } catch {
+    return false;
+  }
+}
+
 export const DEFAULT_POST_LOGIN_PATH = "/";
 
 /**

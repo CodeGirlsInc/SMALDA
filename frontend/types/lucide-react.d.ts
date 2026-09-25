@@ -11,6 +11,8 @@ declare module "lucide-react" {
   export const RefreshCw: LucideIcon;
   export const XCircle: LucideIcon;
   export const Building2: LucideIcon;
+  export const FileText: LucideIcon;
+  export const SearchX: LucideIcon;
 
   export type { LucideIcon };
 }
