@@ -4,7 +4,6 @@ import { Throttle } from '@nestjs/throttler';
 import { DocumentsService } from '../documents/documents.service';
 import { VerificationService } from './verification.service';
 import { VerificationCacheService } from './verification-cache.service';
-import { DocumentStatus } from '../documents/entities/document.entity';
 
 // Stricter rate limiting for public endpoint (10 requests per minute)
 @Throttle({ default: { ttl: 60000, limit: 10 } })
