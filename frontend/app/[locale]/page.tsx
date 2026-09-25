@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
+import { FileText } from "lucide-react";
 import { Link } from "@/i18n/navigation";
 import { EmptyState } from "@/components/EmptyState";
 import Skeleton from "@/components/Skeleton";
@@ -233,6 +234,7 @@ export default function DashboardPage() {
         <EmptyState
           title={t("emptyTitle")}
           description={t("emptyDescription")}
+          icon={<FileText className="h-10 w-10" aria-hidden="true" />}
           action={
             <Link
               href="/documents"
