@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "@/i18n/navigation";
 import Link from "next/link";
+import { apiUrl } from "@/lib/api-config";
+import { getAccessToken } from "@/lib/session";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const WS_BASE = (
   process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:3001"
 ).replace(/^http/, "ws");
@@ -31,8 +32,7 @@ const NOTIFICATION_ICONS: Record<NotificationType, string> = {
 };
 
 function getAuthHeaders(): HeadersInit {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
+  const token = getAccessToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
@@ -83,10 +83,12 @@ export default function NotificationBell() {
     setLoading(true);
     try {
       const [listRes, countRes] = await Promise.all([
-        fetch(`${API_BASE}/api/notifications?limit=5`, {
+        fetch(apiUrl("/notifications", { limit: 5 }), {
+          credentials: "include",
           headers: getAuthHeaders(),
         }),
-        fetch(`${API_BASE}/api/notifications/unread-count`, {
+        fetch(apiUrl("/notifications/unread-count"), {
+          credentials: "include",
           headers: getAuthHeaders(),
         }),
       ]);
@@ -159,8 +161,9 @@ export default function NotificationBell() {
 
   async function handleMarkAllRead() {
     try {
-      await fetch(`${API_BASE}/api/notifications/read-all`, {
+      await fetch(apiUrl("/notifications/read-all"), {
         method: "PATCH",
+        credentials: "include",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
       });
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));

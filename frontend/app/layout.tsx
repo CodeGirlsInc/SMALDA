@@ -6,6 +6,7 @@ import { MAIN_CONTENT_ID } from "@/lib/main-content";
 import { SkipToContentLink } from "@/components/layout/SkipToContentLink";
 import { ToastProvider } from "@/components/ui/use-toast";
 import { Toaster } from "@/components/ui/toast";
+import { SessionSync } from "@/components/SessionSync";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -39,6 +40,7 @@ export default function RootLayout({
         <SystemThemeProvider>
           <SkipToContentLink />
           <ToastProvider>
+            <SessionSync />
             <div id={MAIN_CONTENT_ID} tabIndex={-1}>
               {children}
             </div>

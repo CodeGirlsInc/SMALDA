@@ -1,5 +1,6 @@
 import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import {
   Dialog,
   DialogTrigger,
@@ -57,6 +58,18 @@ describe("Dialog", () => {
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     fireEvent.keyDown(document, { key: "Escape", code: "Escape" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("keeps focus inside the open dialog", async () => {
+    render(<Fixture />);
+    open();
+    const dialog = await screen.findByRole("dialog");
+    const closeButton = screen.getByRole("button", { name: "Cancel" });
+    closeButton.focus();
+
+    await userEvent.tab();
+
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
   });
 
   it("closes when DialogClose is activated", async () => {

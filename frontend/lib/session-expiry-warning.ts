@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { clearSession } from "@/lib/api-client";
+import { clearLastViewedParcel } from "@/lib/map-state";
 
 const ACCESS_TOKEN_KEY = "auth-token";
 const WARNING_BEFORE_MS = 5 * 60 * 1000;
@@ -81,6 +82,7 @@ export function initCrossTabLogoutSync(): () => void {
   function handler(event: StorageEvent) {
     if (event.key === "logout-event" && event.newValue) {
       clearSession({ notify: false });
+      clearLastViewedParcel();
       window.location.href = "/login";
     }
   }

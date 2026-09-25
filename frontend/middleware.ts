@@ -58,6 +58,11 @@ export function isProtectedPath(pathname: string): boolean {
   );
 }
 
+export function isAdminPath(pathname: string): boolean {
+  const routePath = getPathnameWithoutLocale(pathname);
+  return routePath === "/admin" || routePath.startsWith("/admin/");
+}
+
 function getFirstSegment(pathname: string): string | undefined {
   return pathname.split("/").filter(Boolean)[0];
 }
@@ -161,9 +166,14 @@ function createAuthenticationUnavailableResponse(): NextResponse {
   });
 }
 
-async function verifyAccessToken(token: string): Promise<AuthCheck> {
-  if (!API_BASE) return "unavailable";
-  if (hasControlCharacter(token)) return "unauthenticated";
+interface AccessTokenVerification {
+  check: AuthCheck;
+  role?: string;
+}
+
+async function verifyAccessToken(token: string): Promise<AccessTokenVerification> {
+  if (!API_BASE) return { check: "unavailable" };
+  if (hasControlCharacter(token)) return { check: "unauthenticated" };
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), AUTH_CHECK_TIMEOUT_MS);
@@ -180,12 +190,21 @@ async function verifyAccessToken(token: string): Promise<AuthCheck> {
       signal: controller.signal,
     });
 
-    if (response.status === 401) return "unauthenticated";
-    if (response.status === 403) return "forbidden";
-    if (response.ok) return "authenticated";
-    return "unavailable";
+    if (response.status === 401) return { check: "unauthenticated" };
+    if (response.status === 403) return { check: "forbidden" };
+    if (!response.ok) return { check: "unavailable" };
+
+    const body: unknown = await response.json().catch(() => null);
+    const role =
+      body && typeof body === "object" && "role" in body
+        ? (body as { role?: unknown }).role
+        : undefined;
+    return {
+      check: "authenticated",
+      role: typeof role === "string" ? role : undefined,
+    };
   } catch {
-    return "unavailable";
+    return { check: "unavailable" };
   } finally {
     clearTimeout(timeout);
   }
@@ -216,17 +235,29 @@ export default async function middleware(request: NextRequest) {
     }
 
     const authCheck = await verifyAccessToken(accessToken);
-    if (authCheck === "unauthenticated") {
+    if (authCheck.check === "unauthenticated") {
       if (refreshToken && !hasControlCharacter(refreshToken)) {
         return createSessionRefreshRedirect(request, redirectPath);
       }
       return createLoginRedirect(request, redirectPath);
     }
-    if (authCheck === "forbidden") {
+    if (authCheck.check === "forbidden") {
       return createLoginRedirect(request, redirectPath);
     }
-    if (authCheck === "unavailable") {
+    if (authCheck.check === "unavailable") {
       return createAuthenticationUnavailableResponse();
+    }
+    if (isAdminPath(pathname) && authCheck.role !== "admin") {
+      const url = request.nextUrl.clone();
+      const locale = getRequestLocale(request);
+      const firstSegment = getFirstSegment(pathname);
+      const localePrefix =
+        isLocale(firstSegment) || locale !== routing.defaultLocale
+          ? `/${locale}`
+          : "";
+      url.pathname = localePrefix || "/";
+      url.search = "";
+      return NextResponse.redirect(url);
     }
     if (unsupportedLocale) {
       const url = request.nextUrl.clone();

@@ -5,6 +5,8 @@ import { useTranslations } from "next-intl";
 import { FileText } from "lucide-react";
 import { useRouter } from "@/i18n/navigation";
 import { EmptyState } from "@/components/EmptyState";
+import { apiUrl } from "@/lib/api-config";
+import { getAccessToken } from "@/lib/session";
 
 // ---------------------------------------------------------------------------
 // Types matching the backend Document entity + User owner
@@ -41,8 +43,6 @@ interface PaginatedResponse {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 function riskColor(score?: number | null): string {
   if (score == null) return "text-gray-400";
@@ -129,20 +129,15 @@ export default function AdminDocumentsPage() {
       if (f.dateTo) params.set("dateTo", f.dateTo);
 
       try {
-        const token =
-          typeof window !== "undefined"
-            ? localStorage.getItem("auth-token")
-            : null;
+        const token = getAccessToken();
 
-        const res = await fetch(
-          `${API_BASE}/api/admin/documents?${params.toString()}`,
-          {
-            headers: {
-              "Content-Type": "application/json",
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-          }
-        );
+        const res = await fetch(apiUrl("/admin/documents", params), {
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
 
         if (res.status === 403) {
           // FE-44 admin guard — non-admins must not see the listing.
@@ -182,13 +177,11 @@ export default function AdminDocumentsPage() {
 
   const handleDownload = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const token =
-      typeof window !== "undefined"
-        ? localStorage.getItem("auth-token")
-        : null;
+    const token = getAccessToken();
 
     try {
-      const res = await fetch(`${API_BASE}/api/documents/${id}/export/pdf`, {
+      const res = await fetch(apiUrl(`/documents/${id}/export/pdf`), {
+        credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) throw new Error("Download failed");

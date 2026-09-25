@@ -18,6 +18,27 @@ export const handlers = [
     });
   }),
 
+  http.get(`${API_BASE}/api/v1/auth/me`, ({ request }) => {
+    const auth = request.headers.get("Authorization");
+    if (!auth) {
+      return HttpResponse.json({ message: "Unauthorized" }, { status: 401 });
+    }
+    return HttpResponse.json({
+      id: "user-1",
+      email: "alice@example.com",
+      fullName: "Alice Smith",
+      role: "admin",
+    });
+  }),
+
+  http.post(`${API_BASE}/api/v1/auth/refresh`, () => {
+    return HttpResponse.json({ access_token: "refreshed-jwt-token" });
+  }),
+
+  http.post(`${API_BASE}/api/v1/auth/logout`, () => {
+    return HttpResponse.json({ message: "Logged out successfully" });
+  }),
+
   // Auth — verify
   http.get(`${API_BASE}/api/v1/auth/verify`, ({ request }) => {
     const auth = request.headers.get("Authorization");
@@ -28,7 +49,7 @@ export const handlers = [
   }),
 
   // Documents — list
-  http.get(`${API_BASE}/api/admin/documents`, ({ request }) => {
+  http.get(`${API_BASE}/api/v1/admin/documents`, ({ request }) => {
     const url = new URL(request.url);
     const page = Number(url.searchParams.get("page") ?? "1");
     return HttpResponse.json({
@@ -53,8 +74,21 @@ export const handlers = [
     });
   }),
 
+  http.get(`${API_BASE}/api/v1/documents`, () => {
+    return HttpResponse.json({
+      data: [],
+      total: 0,
+      page: 1,
+      limit: 20,
+    });
+  }),
+
+  http.get(`${API_BASE}/api/v1/disputes`, () => {
+    return HttpResponse.json({ data: [], total: 0 });
+  }),
+
   // Documents — export PDF
-  http.get(`${API_BASE}/api/documents/:id/export/pdf`, () => {
+  http.get(`${API_BASE}/api/v1/documents/:id/export/pdf`, () => {
     return HttpResponse.arrayBuffer(new ArrayBuffer(0), {
       headers: { "Content-Type": "application/pdf" },
     });

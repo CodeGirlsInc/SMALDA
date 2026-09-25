@@ -106,6 +106,23 @@ describe('AuthService', () => {
     });
   });
 
+  describe('OAuth exchange codes', () => {
+    it('consumes a code exactly once', async () => {
+      const code = await service.createOAuthExchangeCode({
+        access_token: 'access-token',
+        refresh_token: 'refresh-token',
+      });
+
+      await expect(service.exchangeOAuthCode(code)).resolves.toEqual({
+        access_token: 'access-token',
+        refresh_token: 'refresh-token',
+      });
+      await expect(service.exchangeOAuthCode(code)).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+  });
+
   describe('logout()', () => {
     it('should add a verified token to the blacklist', async () => {
       mockJwtService.verifyAsync.mockResolvedValueOnce({

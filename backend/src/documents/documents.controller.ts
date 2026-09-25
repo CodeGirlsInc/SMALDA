@@ -143,6 +143,7 @@ export class DocumentsController {
       query.page!,
       query.limit!,
       query.status,
+      query.search,
     );
 
     return {
@@ -291,13 +292,22 @@ export class DocumentsController {
   }
 }
 
+function toNullableNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const numberValue = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
 function toDocumentResponse(document: Document): DocumentResponseDto {
   return {
     id: document.id,
     title: document.title,
     status: document.status,
-    riskScore: document.riskScore,
-    riskFlags: document.riskFlags,
+    riskScore: toNullableNumber(document.riskScore),
+    riskFlags: document.riskFlags ?? null,
+    fileSize: document.fileSize,
+    latitude: toNullableNumber(document.latitude),
+    longitude: toNullableNumber(document.longitude),
     createdAt: document.createdAt,
     updatedAt: document.updatedAt,
   };

@@ -212,7 +212,7 @@ export default function SettingsDataPage() {
         body: { password },
       });
 
-      if (!(await logout())) {
+      if (!logout()) {
         throw new Error("Sign out failed. Please try again.");
       }
       router.push("/?deleted=true");
