@@ -4,8 +4,8 @@ import { useTransition } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { usePathname, useRouter } from "@/i18n/navigation";
 import { routing } from "@/i18n/routing";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+import { getApiUrl, requestRaw } from "@/lib/api-client";
+import { hasStoredSession } from "@/lib/auth-session";
 
 /**
  * Persist the chosen language to the backend so it can be reused elsewhere
@@ -14,21 +14,11 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
  */
 async function persistPreferredLanguage(language: string): Promise<void> {
   try {
-    const token =
-      typeof window !== "undefined"
-        ? localStorage.getItem("auth-token")
-        : null;
+    if (!hasStoredSession()) return;
 
-    // Not signed in — the language still switches locally via the cookie/URL.
-    if (!token) return;
-
-    await fetch(`${API_BASE}/api/users/me`, {
+    await requestRaw(getApiUrl("users/me"), {
       method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ preferredLanguage: language }),
+      body: { preferredLanguage: language },
     });
   } catch {
     // Swallow — persistence is non-blocking.

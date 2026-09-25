@@ -3,8 +3,7 @@
 import React, { useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+import { ApiError, getApiUrl, requestRaw } from "@/lib/api-client";
 
 export default function ForgotPasswordPage() {
   const t = useTranslations("auth.forgotPassword");
@@ -25,17 +24,18 @@ export default function ForgotPasswordPage() {
 
     setLoading(true);
     try {
-      await fetch(`${API_BASE}/api/auth/forgot-password`, {
+      await requestRaw(getApiUrl("auth/forgot-password"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: { email },
+        anonymous: true,
       });
-      // The confirmation is shown unconditionally: whether the response was
-      // ok, not-found, or anything else, the account's existence must never
-      // leak through this form.
       setSubmitted(true);
-    } catch {
-      setError(t("errorGeneric"));
+    } catch (error: unknown) {
+      if (error instanceof ApiError) {
+        setSubmitted(true);
+      } else {
+        setError(t("errorGeneric"));
+      }
     } finally {
       setLoading(false);
     }

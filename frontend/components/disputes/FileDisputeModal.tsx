@@ -2,16 +2,16 @@
 
 import React, { useState } from "react";
 import { request } from "@/lib/api-client";
+import {
+  normalizeDispute,
+  type Dispute,
+  type DisputeDocumentSummary,
+} from "@/lib/disputes";
 import { useToast } from "@/components/ui/use-toast";
 
-interface Document {
-  id: string;
-  title: string;
-}
-
 interface FileDisputeModalProps {
-  documents: Document[];
-  onDisputeFiled: (newDispute: any) => void;
+  documents: DisputeDocumentSummary[];
+  onDisputeFiled: (newDispute: Dispute) => void;
   onClose: () => void;
 }
 
@@ -25,6 +25,7 @@ export function FileDisputeModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
+  const availableDocuments = Array.isArray(documents) ? documents : [];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,11 +41,11 @@ export function FileDisputeModal({
     setSubmitting(true);
 
     try {
-      const newDispute = await request("/api/disputes", {
+      const response = await request<unknown>("disputes", {
         method: "POST",
         body: { documentId, description },
       });
-      onDisputeFiled(newDispute);
+      onDisputeFiled(normalizeDispute(response));
       toast({
         title: "Dispute Filed",
         description: "Your dispute has been successfully filed.",
@@ -78,7 +79,7 @@ export function FileDisputeModal({
               className="mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-base focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
             >
               <option value="">Select a document</option>
-              {documents.map((doc) => (
+              {availableDocuments.map((doc) => (
                 <option key={doc.id} value={doc.id}>
                   {doc.title}
                 </option>

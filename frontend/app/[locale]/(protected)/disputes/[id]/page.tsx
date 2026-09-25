@@ -1,54 +1,26 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
-import Link from "next/link";
+import React, { useCallback, useEffect, useState } from "react";
+import { Link } from "@/i18n/navigation";
 import { useParams } from "next/navigation";
 import { request } from "@/lib/api-client";
+import {
+  disputeStatusLabel,
+  disputeStatuses,
+  normalizeAuthUser,
+  normalizeDispute,
+  type AuthUser,
+  type Dispute,
+  type DisputeStatus,
+} from "@/lib/disputes";
 import { useToast } from "@/components/ui/use-toast";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-type DisputeStatus = "OPEN" | "UNDER_REVIEW" | "RESOLVED" | "REJECTED";
-
-interface Dispute {
-  id: string;
-  documentId: string;
-  description: string;
-  reason: string | null;
-  status: DisputeStatus;
-  filedBy: string;
-  createdAt: string;
-  timeline: { status: DisputeStatus; createdAt: string }[];
-  resolution?: string | null;
-  resolvedAt?: string | null;
-  document: {
-    title: string;
-    status: string;
-    riskScore: number;
-  };
-}
-
-interface User {
-  id: string;
-  role: "USER" | "ADMIN";
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 const STATUS_CLASSES: Record<DisputeStatus, string> = {
-  OPEN: "bg-blue-100 text-blue-800",
-  UNDER_REVIEW: "bg-yellow-100 text-yellow-800",
-  RESOLVED: "bg-green-100 text-green-800",
-  REJECTED: "bg-red-100 text-red-800",
+  open: "bg-blue-100 text-blue-800",
+  in_review: "bg-yellow-100 text-yellow-800",
+  resolved: "bg-green-100 text-green-800",
+  dismissed: "bg-red-100 text-red-800",
 };
-
-// ---------------------------------------------------------------------------
-// Page
-// ---------------------------------------------------------------------------
 
 export default function DisputeDetailPage() {
   const params = useParams<{ id: string }>();
@@ -56,22 +28,25 @@ export default function DisputeDetailPage() {
   const { toast } = useToast();
 
   const [dispute, setDispute] = useState<Dispute | null>(null);
-  const [user, setUser] = useState<User | null>(null); // Assume we get user info from an auth hook
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [adminStatus, setAdminStatus] = useState<DisputeStatus>("OPEN");
-  const [adminResolution, setAdminResolution] = useState("");
+  const [adminStatus, setAdminStatus] = useState<DisputeStatus>("open");
 
   const fetchDispute = useCallback(async () => {
     if (!disputeId) return;
     setLoading(true);
+    setError(null);
     try {
-      const disputeData = await request<Dispute>(`/api/disputes/${disputeId}`);
-      setDispute(disputeData);
-      setAdminStatus(disputeData.status);
-      // In a real app, user data would come from a context or hook
-      const userData = await request<User>("/api/users/me");
-      setUser(userData);
+      const [disputeResponse, userResponse] = await Promise.all([
+        request<unknown>(`disputes/${disputeId}`),
+        request<unknown>("auth/me"),
+      ]);
+      const normalizedDispute = normalizeDispute(disputeResponse);
+      setDispute(normalizedDispute);
+      setAdminStatus(normalizedDispute.status);
+      setUser(normalizeAuthUser(userResponse));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load dispute.");
     } finally {
@@ -80,45 +55,36 @@ export default function DisputeDetailPage() {
   }, [disputeId]);
 
   useEffect(() => {
-    fetchDispute();
+    void fetchDispute();
   }, [fetchDispute]);
 
-  const handleWithdrawDispute = async () => {
-    if (!disputeId) return;
-    try {
-      await request(`/api/disputes/${disputeId}`, { method: "DELETE" });
-      toast({
-        title: "Dispute Withdrawn",
-        description: "The dispute has been successfully withdrawn.",
-      });
-      // Redirect or update UI
-    } catch (err) {
-      toast({
-        title: "Error",
-        description: "Failed to withdraw the dispute.",
-        variant: "destructive",
-      });
-    }
-  };
-
   const handleAdminUpdate = async () => {
-    if (!disputeId) return;
+    if (!disputeId || user?.role !== "admin") return;
+    setUpdating(true);
     try {
-      await request(`/api/disputes/${disputeId}`, {
-        method: "PATCH",
-        body: { status: adminStatus, resolution: adminResolution },
-      });
+      const response = await request<unknown>(
+        `disputes/${disputeId}/status`,
+        {
+          method: "PATCH",
+          body: { status: adminStatus },
+        },
+      );
+      const updatedDispute = normalizeDispute(response);
+      setDispute(updatedDispute);
+      setAdminStatus(updatedDispute.status);
       toast({
         title: "Dispute Updated",
-        description: "The dispute has been successfully updated.",
+        description: "The dispute status has been successfully updated.",
       });
-      fetchDispute(); // Refetch to show updated data
     } catch (err) {
       toast({
         title: "Error",
-        description: "Failed to update the dispute.",
+        description:
+          err instanceof Error ? err.message : "Failed to update dispute status.",
         variant: "destructive",
       });
+    } finally {
+      setUpdating(false);
     }
   };
 
@@ -134,7 +100,9 @@ export default function DisputeDetailPage() {
   if (!dispute) {
     return (
       <main className="mx-auto max-w-2xl px-4 py-8">
-        <p className="text-sm text-red-600">{error ?? "Dispute not found."}</p>
+        <p className="text-sm text-red-600">
+          {error ?? "Dispute not found."}
+        </p>
         <Link
           href="/disputes"
           className="mt-3 block text-sm text-blue-600 underline"
@@ -144,6 +112,12 @@ export default function DisputeDetailPage() {
       </main>
     );
   }
+
+  const documentStatus = dispute.document?.status;
+  const documentRiskScore = dispute.document?.riskScore;
+  const timeline = dispute.timeline;
+  const resolution = dispute.resolution;
+  const resolvedAt = dispute.resolvedAt;
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
@@ -159,11 +133,11 @@ export default function DisputeDetailPage() {
           Dispute #{dispute.id.substring(0, 8)}
         </h1>
         <span
-          className={`inline-block rounded-full px-3 py-1 text-sm font-semibold ${
+          className={`inline-block rounded-full px-3 py-1 text-sm font-semibold capitalize ${
             STATUS_CLASSES[dispute.status]
           }`}
         >
-          {dispute.status.replace("_", " ")}
+          {disputeStatusLabel(dispute.status)}
         </span>
       </div>
       <p className="text-sm text-gray-500">
@@ -180,13 +154,17 @@ export default function DisputeDetailPage() {
               href={`/documents/${dispute.documentId}`}
               className="text-blue-600 hover:underline"
             >
-              {dispute.document.title}
+              {dispute.document?.title ?? `Document ${dispute.documentId}`}
             </Link>
           </p>
-          <div className="mt-2 flex space-x-4 text-xs">
-            <span>Status: {dispute.document.status}</span>
-            <span>Risk Score: {dispute.document.riskScore}%</span>
-          </div>
+          {(documentStatus || typeof documentRiskScore === "number") && (
+            <div className="mt-2 flex space-x-4 text-xs">
+              {documentStatus && <span>Status: {documentStatus}</span>}
+              {typeof documentRiskScore === "number" && (
+                <span>Risk Score: {documentRiskScore}%</span>
+              )}
+            </div>
+          )}
         </section>
 
         <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -198,55 +176,62 @@ export default function DisputeDetailPage() {
           </p>
           {dispute.reason && (
             <p className="mt-2 text-xs text-gray-500">
-              Classified as: {dispute.reason}
+              Classified as: {dispute.reason.name}
             </p>
           )}
         </section>
 
-        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-semibold text-gray-900">
-            Status Timeline
-          </h2>
-          <ol className="mt-4 space-y-4">
-            {dispute.timeline.map((event, index) => (
-              <li key={index} className="flex items-start gap-3">
-                <span
-                  aria-hidden="true"
-                  className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
-                    index === dispute.timeline.length - 1
-                      ? "bg-green-500"
-                      : "bg-gray-300"
-                  }`}
-                />
-                <div>
-                  <p className="text-sm font-medium text-gray-900">
-                    {event.status.replace("_", " ")}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {new Date(event.createdAt).toLocaleString()}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ol>
-        </section>
+        {timeline.length > 0 && (
+          <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <h2 className="text-sm font-semibold text-gray-900">
+              Status Timeline
+            </h2>
+            <ol className="mt-4 space-y-4">
+              {timeline.map((event, index) => (
+                <li
+                  key={`${event.status}-${event.createdAt}`}
+                  className="flex items-start gap-3"
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
+                      index === timeline.length - 1
+                        ? "bg-green-500"
+                        : "bg-gray-300"
+                    }`}
+                  />
+                  <div>
+                    <p className="text-sm font-medium capitalize text-gray-900">
+                      {disputeStatusLabel(event.status)}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {new Date(event.createdAt).toLocaleString()}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
 
-        {(dispute.status === "RESOLVED" || dispute.status === "REJECTED") &&
-          dispute.resolution && (
+        {(dispute.status === "resolved" || dispute.status === "dismissed") &&
+          resolution && (
             <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
               <h2 className="text-sm font-semibold text-gray-900">
                 Resolution
               </h2>
               <p className="mt-2 whitespace-pre-line text-sm text-gray-700">
-                {dispute.resolution}
+                {resolution}
               </p>
-              <p className="mt-2 text-xs text-gray-500">
-                Resolved on {new Date(dispute.resolvedAt!).toLocaleDateString()}
-              </p>
+              {resolvedAt && (
+                <p className="mt-2 text-xs text-gray-500">
+                  Resolved on {new Date(resolvedAt).toLocaleDateString()}
+                </p>
+              )}
             </section>
           )}
 
-        {user?.role === "ADMIN" && (
+        {user?.role === "admin" && (
           <section className="rounded-xl border border-blue-200 bg-blue-50 p-5 shadow-sm">
             <h2 className="text-sm font-semibold text-blue-900">
               Admin Controls
@@ -262,51 +247,28 @@ export default function DisputeDetailPage() {
                 <select
                   id="admin-status"
                   value={adminStatus}
-                  onChange={(e) =>
-                    setAdminStatus(e.target.value as DisputeStatus)
+                  onChange={(event) =>
+                    setAdminStatus(event.target.value as DisputeStatus)
                   }
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
                 >
-                  <option>OPEN</option>
-                  <option>UNDER_REVIEW</option>
-                  <option>RESOLVED</option>
-                  <option>REJECTED</option>
+                  {disputeStatuses.map((status) => (
+                    <option key={status} value={status}>
+                      {disputeStatusLabel(status)}
+                    </option>
+                  ))}
                 </select>
               </div>
-              <div>
-                <label
-                  htmlFor="admin-resolution"
-                  className="block text-sm font-medium text-gray-700"
-                >
-                  Resolution Notes
-                </label>
-                <textarea
-                  id="admin-resolution"
-                  rows={4}
-                  value={adminResolution}
-                  onChange={(e) => setAdminResolution(e.target.value)}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-                />
-              </div>
               <button
+                type="button"
                 onClick={handleAdminUpdate}
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                disabled={updating || adminStatus === dispute.status}
+                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
               >
-                Save Changes
+                {updating ? "Saving..." : "Save Changes"}
               </button>
             </div>
           </section>
-        )}
-
-        {dispute.status === "OPEN" && user?.id === dispute.filedBy && (
-          <div className="mt-6">
-            <button
-              onClick={handleWithdrawDispute}
-              className="text-sm text-red-600 hover:underline"
-            >
-              Withdraw Dispute
-            </button>
-          </div>
         )}
       </div>
     </main>

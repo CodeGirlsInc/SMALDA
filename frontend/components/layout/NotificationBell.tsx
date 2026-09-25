@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "@/i18n/navigation";
 import Link from "next/link";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+import { getApiUrl, request, requestRaw } from "@/lib/api-client";
 const WS_BASE = (
   process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:3001"
 ).replace(/^http/, "ws");
@@ -29,12 +28,6 @@ const NOTIFICATION_ICONS: Record<NotificationType, string> = {
   verification_complete: "\u2713",
   dispute_update: "\u2691",
 };
-
-function getAuthHeaders(): HeadersInit {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
 
 function formatRelativeTime(iso: string): string {
   const now = Date.now();
@@ -82,23 +75,18 @@ export default function NotificationBell() {
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
     try {
-      const [listRes, countRes] = await Promise.all([
-        fetch(`${API_BASE}/api/notifications?limit=5`, {
-          headers: getAuthHeaders(),
-        }),
-        fetch(`${API_BASE}/api/notifications/unread-count`, {
-          headers: getAuthHeaders(),
-        }),
+      const [listData, countData] = await Promise.all([
+        request<unknown>(getApiUrl("notifications?limit=5")),
+        request<{ count?: number; unreadCount?: number }>(
+          getApiUrl("notifications/unread-count"),
+        ),
       ]);
-
-      if (listRes.ok) {
-        const data = await listRes.json();
-        setNotifications(Array.isArray(data) ? data : (data?.data ?? []));
-      }
-      if (countRes.ok) {
-        const data = await countRes.json();
-        setUnreadCount(data?.count ?? data?.unreadCount ?? 0);
-      }
+      setNotifications(
+        Array.isArray(listData)
+          ? (listData as Notification[])
+          : ((listData as { data?: Notification[] })?.data ?? []),
+      );
+      setUnreadCount(countData.count ?? countData.unreadCount ?? 0);
     } catch {
       // Silently fail — notification polling is non-critical
     } finally {
@@ -159,9 +147,8 @@ export default function NotificationBell() {
 
   async function handleMarkAllRead() {
     try {
-      await fetch(`${API_BASE}/api/notifications/read-all`, {
+      await requestRaw(getApiUrl("notifications/read-all"), {
         method: "PATCH",
-        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
       });
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
       setUnreadCount(0);

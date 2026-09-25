@@ -1,24 +1,16 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+import {
+  getApiUrl,
+  logoutSession,
+  request,
+  requestBlob,
+} from "@/lib/api-client";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function getAuthHeaders(): HeadersInit {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-function logout() {
-  localStorage.removeItem("auth-token");
-  document.cookie = "token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-}
 
 const COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
 const STORAGE_KEY = "last_data_export_ts";
@@ -162,8 +154,6 @@ function DeleteConfirmationModal({
 // ---------------------------------------------------------------------------
 
 export default function SettingsDataPage() {
-  const router = useRouter();
-
   // ── Export state ───────────────────────────────────────────────────────────
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -184,11 +174,7 @@ export default function SettingsDataPage() {
     setIsExporting(true);
     setExportError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/users/me/export`, {
-        headers: getAuthHeaders(),
-      });
-      if (!res.ok) throw new Error(`Export failed: ${res.status}`);
-      const blob = await res.blob();
+      const blob = await requestBlob(getApiUrl("users/me/export"));
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -215,24 +201,13 @@ export default function SettingsDataPage() {
     setIsDeleting(true);
     setDeleteError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/users/me/data`, {
+      await request(getApiUrl("users/me/data"), {
         method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-          ...getAuthHeaders(),
-        },
-        body: JSON.stringify({ password }),
+        body: { password },
       });
 
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(
-          body?.message ?? `Deletion failed: ${res.status}`
-        );
-      }
-
-      logout();
-      router.push("/?deleted=true");
+      await logoutSession();
+      window.location.assign("/?deleted=true");
     } catch (err: unknown) {
       setDeleteError(
         err instanceof Error ? err.message : "Deletion failed. Please try again."

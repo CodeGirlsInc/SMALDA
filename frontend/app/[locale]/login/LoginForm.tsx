@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { Link, useRouter } from "@/i18n/navigation";
 import { loginSchema, type LoginInput } from "@/lib/schemas/auth";
-import { ApiError, apiRequest } from "@/lib/api-client";
+import { ApiError, getApiUrl, request } from "@/lib/api-client";
 import {
   resolvePostLoginPath,
   storeSession,
@@ -23,8 +23,6 @@ import {
   CardTitle,
   Input,
 } from "@/components/ui";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 function ResetSuccessToast({ message }: { message: string }) {
   const [visible, setVisible] = useState(true);
@@ -60,6 +58,7 @@ type SubmitError =
 
 export function LoginForm() {
   const t = useTranslations("auth.login");
+  const locale = useLocale();
   // Field-level messages arrive from the zod schema as full key paths
   // (`errors.email.invalid`), so they resolve against the message root.
   const tKey = useTranslations();
@@ -89,27 +88,31 @@ export function LoginForm() {
     defaultValues: { email: "", password: "" },
   });
 
-  const target = resolvePostLoginPath(searchParams.get("redirect"));
+  const target = resolvePostLoginPath(searchParams.get("redirect"), locale);
 
   // OAuth is a full-page handoff to the backend, which redirects back with a
   // token — so these are plain anchors, not locale-aware client-side links.
   const oauthHref = (provider: "google" | "github") =>
-    `${API_BASE}/api/auth/${provider}`;
+    getApiUrl(`auth/${provider}`);
 
   async function onSubmit(values: LoginInput) {
     setSubmitError(null);
     try {
-      const data = await apiRequest<LoginResponse>(
-        `${API_BASE}/api/auth/login`,
+      const data = await request<LoginResponse>(
+        getApiUrl("auth/login"),
         {
           method: "POST",
           body: values,
+          anonymous: true,
           // Lets the backend set a session cookie too, for when the token
           // stops living in localStorage.
           credentials: "include",
         },
       );
-      storeSession(data);
+      if (!storeSession(data)) {
+        setSubmitError({ kind: "api", messageKey: "errors.status.unknown" });
+        return;
+      }
       // replace, so Back does not land the user on a login page they have
       // already passed through.
       router.replace(target);

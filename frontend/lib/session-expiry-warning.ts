@@ -1,21 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
+import { getJwtExpiration } from "./auth-session";
 
 const ACCESS_TOKEN_KEY = "auth-token";
-
-// ── JWT expiry helper ───────────────────────────────────────────────────────
-
-function getTokenExpiryMs(token: string): number | null {
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
-    if (!payload.exp) return null;
-    // exp is in seconds; return ms until expiry
-    return payload.exp * 1000 - Date.now();
-  } catch {
-    return null;
-  }
-}
 
 // ── Cross-tab logout sync ───────────────────────────────────────────────────
 
@@ -78,8 +66,10 @@ export function useSessionExpiryWarning({
       const token = window.localStorage.getItem(ACCESS_TOKEN_KEY);
       if (!token) return;
 
-      const remainingMs = getTokenExpiryMs(token);
-      if (remainingMs === null || remainingMs <= 0) return;
+      const expiration = getJwtExpiration(token);
+      if (expiration === null) return;
+      const remainingMs = expiration * 1000 - Date.now();
+      if (remainingMs <= 0) return;
 
       const delayMs = Math.max(remainingMs - WARNING_BEFORE_MS, 0);
 

@@ -12,6 +12,20 @@ jest.mock("@/i18n/navigation", () => ({
   useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
 }));
 
+function createJwt(): string {
+  const encode = (value: object) =>
+    btoa(JSON.stringify(value))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+  return `${encode({ alg: "HS256", typ: "JWT" })}.${encode({
+    sub: "user-1",
+    email: "user@example.com",
+    role: "user",
+    exp: Math.floor(Date.now() / 1000) + 3600,
+  })}.signature`;
+}
+
 function renderSwitcher(locale = "en") {
   return render(
     <NextIntlClientProvider locale={locale} messages={messages}>
@@ -48,7 +62,7 @@ describe("LanguageSwitcher", () => {
   });
 
   it("saves the preferred language to the backend when authenticated", async () => {
-    localStorage.setItem("auth-token", "test-token");
+    localStorage.setItem("auth-token", createJwt());
     const fetchMock = jest.fn().mockResolvedValue({ ok: true } as Response);
     global.fetch = fetchMock as unknown as typeof fetch;
 
@@ -57,7 +71,7 @@ describe("LanguageSwitcher", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     const [url, options] = fetchMock.mock.calls[0];
-    expect(String(url)).toContain("/api/users/me");
+    expect(String(url)).toContain("/api/v1/users/me");
     expect(options).toMatchObject({ method: "PATCH" });
     expect(
       JSON.parse((options as RequestInit).body as string)

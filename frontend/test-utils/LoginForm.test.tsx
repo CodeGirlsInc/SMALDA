@@ -32,11 +32,12 @@ jest.mock("@/lib/api-client", () => ({
       this.messageKey = messageKey;
     }
   },
-  apiRequest: (...args: unknown[]) => mockApiRequest(...args),
+  request: (...args: unknown[]) => mockApiRequest(...args),
+  getApiUrl: (path: string) => `http://localhost:3001/api/v1/${path}`,
 }));
 
 jest.mock("@/lib/auth-session", () => ({
-  resolvePostLoginPath: () => "/dashboard",
+  resolvePostLoginPath: () => "/",
   storeSession: (...args: unknown[]) => mockStoreSession(...args),
 }));
 
@@ -52,7 +53,8 @@ describe("LoginForm", () => {
   beforeEach(() => {
     mockReplace.mockClear();
     mockApiRequest.mockReset();
-    mockStoreSession.mockClear();
+    mockStoreSession.mockReset();
+    mockStoreSession.mockReturnValue(true);
     mockSearchParams.delete("redirect");
     mockSearchParams.delete("reset");
   });
@@ -62,11 +64,11 @@ describe("LoginForm", () => {
 
     expect(screen.getByRole("link", { name: "Continue with Google" })).toHaveAttribute(
       "href",
-      "http://localhost:3001/api/auth/google",
+      "http://localhost:3001/api/v1/auth/google",
     );
     expect(screen.getByRole("link", { name: "Continue with GitHub" })).toHaveAttribute(
       "href",
-      "http://localhost:3001/api/auth/github",
+      "http://localhost:3001/api/v1/auth/github",
     );
   });
 
@@ -93,11 +95,15 @@ describe("LoginForm", () => {
 
     await waitFor(() => expect(mockApiRequest).toHaveBeenCalledTimes(1));
     expect(mockApiRequest).toHaveBeenCalledWith(
-      "http://localhost:3001/api/auth/login",
-      expect.objectContaining({ method: "POST", credentials: "include" }),
+      "http://localhost:3001/api/v1/auth/login",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        anonymous: true,
+      }),
     );
     expect(mockStoreSession).toHaveBeenCalledWith({ access_token: "access-token" });
-    expect(mockReplace).toHaveBeenCalledWith("/dashboard");
+    expect(mockReplace).toHaveBeenCalledWith("/");
   });
 
   it("disables submission and shows the loading label while the request is pending", async () => {
@@ -115,7 +121,7 @@ describe("LoginForm", () => {
 
     expect(await screen.findByRole("button", { name: "Signing in…" })).toBeDisabled();
     resolveRequest({ access_token: "access-token" });
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/dashboard"));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/"));
   });
 
   it("renders an inline error when credentials are rejected", async () => {

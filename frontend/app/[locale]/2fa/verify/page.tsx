@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { ApiError, getApiUrl, requestRaw } from "@/lib/api-client";
 
 export default function TwoFactorVerifyPage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const challengeToken = searchParams.get("challenge");
 
@@ -36,31 +36,30 @@ export default function TwoFactorVerifyPage() {
     setError("");
 
     try {
-      const response = await fetch("/api/auth/2fa/challenge", {
+      await requestRaw(getApiUrl("auth/2fa/challenge"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          challengeToken,
-          code,
-          isBackupCode,
-        }),
+        body: { challengeToken, code, isBackupCode },
+        anonymous: true,
       });
-
-      if (response.ok) {
-        router.push("/dashboard");
-      } else {
+      window.location.assign("/");
+    } catch (error: unknown) {
+      if (error instanceof ApiError && error.status !== null) {
         const nextAttempts = failedAttempts + 1;
         setFailedAttempts(nextAttempts);
 
         if (nextAttempts >= 3) {
           setLockoutSeconds(15);
-          setError("Too many failed attempts. Please wait 15 seconds before trying again.");
+          setError(
+            "Too many failed attempts. Please wait 15 seconds before trying again.",
+          );
         } else {
-          setError(`Invalid 2FA code. Attempt ${nextAttempts} of 3 before temporary lockout.`);
+          setError(
+            `Invalid 2FA code. Attempt ${nextAttempts} of 3 before temporary lockout.`,
+          );
         }
+      } else {
+        setError("Network error during verification.");
       }
-    } catch {
-      setError("Network error during verification.");
     } finally {
       setLoading(false);
     }

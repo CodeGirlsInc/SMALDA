@@ -1,5 +1,5 @@
 import { sanitizeText, isSafeUrl } from '../lib/sanitize';
-import { toPublicDocumentView } from '../lib/document-sanitizer';
+import { toPublicDocumentView } from '../lib/document-mapper';
 
 describe('abdulrcrtw Frontend Features (FE-95, FE-94, FE-93, FE-92)', () => {
   it('sanitizeText escapes HTML characters', () => {

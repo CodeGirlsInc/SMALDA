@@ -1,26 +1,58 @@
 /**
- * Central fetch wrapper with JWT handling and auto refresh-on-401.
- *
- * Exports a `request(path, options)` helper that:
- *   - reads NEXT_PUBLIC_API_URL as the base URL
- *   - attaches the JWT from localStorage as a Bearer header
- *   - on 401, attempts a silent refresh via POST /auth/refresh
- *   - if refresh also fails, clears the session and redirects to /login
- *   - parses JSON responses
- *   - throws typed ApiError for non-2xx responses
- *
- * Status codes map to i18n keys under `errors.status.*`. Consumers
- * catch ApiError and render <ErrorBanner messageKey={err.messageKey} />.
- * Raw backend error text, stack traces, and internal identifiers are
- * never surfaced.
+ * Central fetch wrapper for the versioned SMALDA API. Managed authentication is
+ * limited to the configured API origin under /api/v1; callers receive the same
+ * typed ApiError contract after one bounded reauthentication attempt.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+import {
+  clearSession,
+  getValidAccessToken,
+  getValidRefreshToken,
+  hasStoredSession,
+  setAccessToken,
+} from "./auth-session";
 
-const ACCESS_TOKEN_KEY = "auth-token";
-const REFRESH_TOKEN_KEY = "refresh-token";
+export { clearSession } from "./auth-session";
 
-// ── ApiError ────────────────────────────────────────────────────────────────
+const CONFIGURED_API_URL =
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+const API_ORIGIN = new URL(CONFIGURED_API_URL).origin;
+const API_ROOT_PATH = "/api/v1";
+
+export const API_V1_ROOT = `${API_ORIGIN}${API_ROOT_PATH}`;
+
+function apiPath(path: string): string {
+  const trimmedPath = path.trim();
+  if (
+    trimmedPath.startsWith("//") ||
+    /^[A-Za-z][A-Za-z0-9+.-]*:/.test(trimmedPath) ||
+    /[\\\u0000-\u001f\u007f]/i.test(path) ||
+    /%(?:5c|0[0-9a-f]|1[0-9a-f]|7f)/i.test(path)
+  ) {
+    throw new Error("API path must be a safe relative path");
+  }
+
+  let normalized = trimmedPath.replace(/^\/+/, "");
+  if (normalized === "api" || normalized === "api/v1") normalized = "";
+  else if (normalized.startsWith("api/v1/")) normalized = normalized.slice(7);
+  else if (normalized.startsWith("api/")) normalized = normalized.slice(4);
+
+  const url = new URL(normalized, `${API_V1_ROOT}/`);
+  if (
+    url.origin !== API_ORIGIN ||
+    (url.pathname !== API_ROOT_PATH &&
+      !url.pathname.startsWith(`${API_ROOT_PATH}/`))
+  ) {
+    throw new Error("API path escaped the configured API root");
+  }
+
+  return url.toString();
+}
+
+/** Builds a canonical backend URL while treating NEXT_PUBLIC_API_URL as the origin. */
+export function getApiUrl(path: string): string {
+  return apiPath(path);
+}
 
 export type ApiErrorKind =
   | "authRequired"
@@ -75,76 +107,76 @@ export function classifyStatus(status: number): ApiErrorMapping {
   }
 }
 
-// ── Token helpers ───────────────────────────────────────────────────────────
-
-function getAccessToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(ACCESS_TOKEN_KEY);
-}
-
-function getRefreshToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(REFRESH_TOKEN_KEY);
-}
-
-function setAccessToken(token: string): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(ACCESS_TOKEN_KEY, token);
-}
-
-export function clearSession(): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(ACCESS_TOKEN_KEY);
-  window.localStorage.removeItem(REFRESH_TOKEN_KEY);
-  document.cookie = "token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-  // Signal other tabs to also redirect to login
-  window.localStorage.setItem("logout-event", Date.now().toString());
-}
-
-/**
- * Preserve the current path (including locale) as the post-login destination,
- * then redirect to login. The login page's resolvePostLoginPath reads the
- * `?redirect=` param so the user lands back where they were after signing in.
- */
 function redirectToLogin(): void {
   if (typeof window === "undefined") return;
+
   const currentPath = window.location.pathname + window.location.search;
   const params = new URLSearchParams();
   params.set("redirect", currentPath);
   window.location.href = `/login?${params.toString()}`;
 }
 
-// ── Refresh logic ───────────────────────────────────────────────────────────
+class RefreshError extends Error {
+  readonly kind: "network" | "transient" | "session";
+  readonly status: number | null;
+
+  constructor(
+    kind: "network" | "transient" | "session",
+    status: number | null = null,
+  ) {
+    super(kind);
+    this.name = "RefreshError";
+    this.kind = kind;
+    this.status = status;
+  }
+}
 
 let refreshPromise: Promise<string> | null = null;
 
-/**
- * Attempt a silent token refresh. Deduplicates concurrent refresh calls
- * so that multiple 401s in-flight only trigger one refresh request.
- */
 async function refreshAccessToken(): Promise<string> {
   if (refreshPromise) return refreshPromise;
 
   refreshPromise = (async () => {
     try {
-      const refreshToken = getRefreshToken();
-      if (!refreshToken) {
-        throw new Error("No refresh token available");
+      const refreshToken = getValidRefreshToken();
+      if (!refreshToken) throw new RefreshError("session");
+
+      let response: Response;
+      try {
+        response = await fetch(getApiUrl("auth/refresh"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          cache: "no-store",
+          body: JSON.stringify({ refreshToken }),
+        });
+      } catch {
+        throw new RefreshError("network");
       }
 
-      const res = await fetch(`${API_BASE}/auth/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken }),
-      });
-
-      if (!res.ok) {
-        throw new Error("Refresh failed");
+      if (!response.ok) {
+        if ([400, 401, 403].includes(response.status)) {
+          throw new RefreshError("session", response.status);
+        }
+        throw new RefreshError("transient", response.status);
       }
 
-      const data = (await res.json()) as { access_token: string };
-      setAccessToken(data.access_token);
-      return data.access_token;
+      let data: unknown;
+      try {
+        data = await response.json();
+      } catch {
+        throw new RefreshError("transient", 502);
+      }
+
+      const accessToken =
+        typeof data === "object" && data !== null
+          ? (data as Record<string, unknown>).access_token
+          : null;
+      if (typeof accessToken !== "string" || !setAccessToken(accessToken)) {
+        throw new RefreshError("transient", 502);
+      }
+
+      return accessToken;
     } finally {
       refreshPromise = null;
     }
@@ -153,7 +185,83 @@ async function refreshAccessToken(): Promise<string> {
   return refreshPromise;
 }
 
-// ── Request helper ──────────────────────────────────────────────────────────
+function networkError(): ApiError {
+  return new ApiError({
+    status: null,
+    kind: "network",
+    messageKey: "errors.status.network",
+  });
+}
+
+function authRequiredError(): ApiError {
+  return new ApiError({
+    status: 401,
+    kind: "authRequired",
+    messageKey: "errors.status.unauthorized",
+  });
+}
+
+function handleRefreshFailure(error: unknown): never {
+  if (error instanceof RefreshError) {
+    if (error.kind === "network") throw networkError();
+    if (error.kind === "transient") {
+      const status = error.status ?? 503;
+      const { kind, messageKey } = classifyStatus(status);
+      throw new ApiError({ status, kind, messageKey });
+    }
+  }
+
+  clearSession();
+  redirectToLogin();
+  throw authRequiredError();
+}
+
+/** Returns a current access token, refreshing proactively when a valid refresh token exists. */
+export async function ensureValidSession(): Promise<string | null> {
+  const accessToken = getValidAccessToken();
+  if (accessToken) return accessToken;
+  if (!hasStoredSession()) return null;
+
+  try {
+    return await refreshAccessToken();
+  } catch (error) {
+    handleRefreshFailure(error);
+  }
+}
+
+/**
+ * Attempts access-token revocation only; the backend logout contract has no
+ * refresh-token or session identifier. Local credentials are always cleared.
+ */
+export async function logoutSession(): Promise<boolean> {
+  let accessToken = getValidAccessToken();
+  if (!accessToken && hasStoredSession()) {
+    try {
+      accessToken = await refreshAccessToken();
+    } catch {
+      clearSession();
+      return false;
+    }
+  }
+
+  let acknowledged = false;
+  if (accessToken) {
+    try {
+      const response = await fetch(getApiUrl("auth/logout"), {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+        credentials: "omit",
+        cache: "no-store",
+      });
+      acknowledged = response.ok;
+    } catch {
+      acknowledged = false;
+    }
+  }
+
+  clearSession();
+  return acknowledged;
+}
 
 export interface RequestOptions extends Omit<RequestInit, "body"> {
   body?: BodyInit | null | unknown;
@@ -161,122 +269,186 @@ export interface RequestOptions extends Omit<RequestInit, "body"> {
   anonymous?: boolean;
 }
 
-/**
- * Extract a human-readable error message from the backend's error response.
- * Handles common NestJS error shapes:
- *   { message: "..." }
- *   { message: ["...", "..."] }
- *   { error: "..." }
- */
 async function extractBackendMessage(
-  res: Response,
+  response: Response,
 ): Promise<string | undefined> {
   try {
-    const body = await res.json();
+    const body = await response.json();
     if (typeof body === "object" && body !== null) {
       if (typeof body.message === "string") return body.message;
-      if (Array.isArray(body.message) && body.message.length > 0)
+      if (Array.isArray(body.message) && body.message.length > 0) {
         return body.message.join(", ");
+      }
       if (typeof body.error === "string") return body.error;
     }
   } catch {
-    // response body wasn't parseable as JSON — that's fine
+    return undefined;
   }
   return undefined;
 }
 
-/**
- * Core request function. Callers use this instead of raw `fetch`.
- *
- *   const data = await request<{ id: string }>("/documents", { method: "POST", body: { title: "..." } });
- *
- * On a 401 response the function will:
- *   1. Attempt a silent refresh via POST /auth/refresh
- *   2. If refresh succeeds, retry the original request with the new token
- *   3. If refresh also fails, clear the session and redirect to /login
- */
+async function throwForResponse(response: Response): Promise<void> {
+  if (response.ok) return;
+
+  const { kind, messageKey } = classifyStatus(response.status);
+  const backendMessage = await extractBackendMessage(response);
+  throw new ApiError({
+    status: response.status,
+    kind,
+    messageKey,
+    backendMessage,
+  });
+}
+
+function resolveUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  return getApiUrl(path);
+}
+
+function isManagedApiUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.origin === API_ORIGIN &&
+      (parsed.pathname === API_ROOT_PATH ||
+        parsed.pathname.startsWith(`${API_ROOT_PATH}/`))
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isRefreshEndpoint(url: string): boolean {
+  try {
+    return (
+      new URL(url).pathname.replace(/\/+$/, "") ===
+      `${API_ROOT_PATH}/auth/refresh`
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isFormDataBody(body: unknown): body is FormData {
+  return typeof FormData !== "undefined" && body instanceof FormData;
+}
+
+function isUrlSearchParamsBody(body: unknown): body is URLSearchParams {
+  return typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams;
+}
+
+function isDirectBody(body: unknown): body is BodyInit {
+  return (
+    typeof body === "string" ||
+    (typeof FormData !== "undefined" && body instanceof FormData) ||
+    (typeof URLSearchParams !== "undefined" &&
+      body instanceof URLSearchParams) ||
+    (typeof Blob !== "undefined" && body instanceof Blob) ||
+    (typeof ArrayBuffer !== "undefined" &&
+      (body instanceof ArrayBuffer || ArrayBuffer.isView(body)))
+  );
+}
+
+async function sendRequest(
+  path: string,
+  options: RequestOptions,
+): Promise<Response> {
+  const { anonymous = false, ...fetchOptions } = options;
+  const url = resolveUrl(path);
+  const managedApiRequest = isManagedApiUrl(url);
+  const callerSuppliedAuthorization = new Headers(
+    fetchOptions.headers,
+  ).has("Authorization");
+  const managesAuthentication =
+    managedApiRequest &&
+    !isRefreshEndpoint(url) &&
+    !anonymous &&
+    !callerSuppliedAuthorization;
+
+  const doFetch = async (token: string | null): Promise<Response> => {
+    const headers = new Headers(fetchOptions.headers);
+    if (
+      !headers.has("Content-Type") &&
+      !isFormDataBody(fetchOptions.body) &&
+      !isUrlSearchParamsBody(fetchOptions.body)
+    ) {
+      headers.set("Content-Type", "application/json");
+    }
+
+    if (!managedApiRequest) {
+      headers.delete("Authorization");
+    } else if (managesAuthentication && token) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
+
+    let body: BodyInit | null | undefined;
+    if (fetchOptions.body !== undefined && fetchOptions.body !== null) {
+      body = isDirectBody(fetchOptions.body)
+        ? fetchOptions.body
+        : JSON.stringify(fetchOptions.body);
+    }
+
+    return fetch(url, { ...fetchOptions, headers, body });
+  };
+
+  let token: string | null = null;
+  if (managesAuthentication) token = await ensureValidSession();
+
+  let response: Response;
+  try {
+    response = await doFetch(token);
+  } catch {
+    throw networkError();
+  }
+
+  if (response.status === 401 && managesAuthentication) {
+    let replacementToken = getValidAccessToken();
+    if (!replacementToken || replacementToken === token) {
+      try {
+        replacementToken = await refreshAccessToken();
+      } catch (error) {
+        handleRefreshFailure(error);
+      }
+    }
+
+    try {
+      response = await doFetch(replacementToken);
+    } catch {
+      throw networkError();
+    }
+  }
+
+  return response;
+}
+
+export async function requestRaw(
+  path: string,
+  options: RequestOptions = {},
+): Promise<Response> {
+  const response = await sendRequest(path, options);
+  await throwForResponse(response);
+  return response;
+}
+
+export async function requestBlob(
+  path: string,
+  options: RequestOptions = {},
+): Promise<Blob> {
+  const response = await sendRequest(path, options);
+  await throwForResponse(response);
+  if (response.status === 204) return new Blob();
+  return response.blob();
+}
+
 export async function request<T = unknown>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
-  const { anonymous = false, ...fetchOpts } = options;
-
-  const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
-
-  const doFetch = async (token: string | null): Promise<Response> => {
-    const headers = new Headers(fetchOpts.headers);
-    if (!headers.has("Content-Type") && !(fetchOpts.body instanceof FormData)) {
-      headers.set("Content-Type", "application/json");
-    }
-    if (!anonymous && token && !headers.has("Authorization")) {
-      headers.set("Authorization", `Bearer ${token}`);
-    }
-
-    let body: BodyInit | null | undefined = undefined;
-    if (fetchOpts.body !== undefined && fetchOpts.body !== null) {
-      if (
-        typeof fetchOpts.body === "string" ||
-        fetchOpts.body instanceof FormData ||
-        fetchOpts.body instanceof Blob ||
-        fetchOpts.body instanceof ArrayBuffer
-      ) {
-        body = fetchOpts.body as BodyInit;
-      } else {
-        body = JSON.stringify(fetchOpts.body);
-      }
-    }
-
-    return fetch(url, { ...fetchOpts, headers, body });
-  };
-
-  // First attempt
-  let res: Response;
-  try {
-    const token = getAccessToken();
-    res = await doFetch(token);
-  } catch {
-    throw new ApiError({
-      status: null,
-      kind: "network",
-      messageKey: "errors.status.network",
-    });
-  }
-
-  // Handle 401 with refresh
-  if (res.status === 401 && !anonymous) {
-    try {
-      const newToken = await refreshAccessToken();
-      res = await doFetch(newToken);
-    } catch {
-      // Refresh failed — clear session and redirect
-      clearSession();
-      redirectToLogin();
-      throw new ApiError({
-        status: 401,
-        kind: "authRequired",
-        messageKey: "errors.status.unauthorized",
-      });
-    }
-  }
-
-  // Handle non-2xx
-  if (!res.ok) {
-    const { kind, messageKey } = classifyStatus(res.status);
-    const backendMessage = await extractBackendMessage(res);
-    throw new ApiError({
-      status: res.status,
-      kind,
-      messageKey,
-      backendMessage,
-    });
-  }
-
-  // 204 No Content
-  if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  const response = await sendRequest(path, options);
+  await throwForResponse(response);
+  if (response.status === 204) return undefined as T;
+  return (await response.json()) as T;
 }
-
-// ── Backward-compatible alias ───────────────────────────────────────────────
 
 /**
  * @deprecated Use `request` instead. Kept for backward compatibility.

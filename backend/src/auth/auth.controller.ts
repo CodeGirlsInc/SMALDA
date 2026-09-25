@@ -13,6 +13,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { Request, Response } from 'express';
 import { Profile as GoogleProfile } from 'passport-google-oauth20';
 import { Profile as GithubProfile } from 'passport-github2';
+import { User } from '../users/entities/user.entity';
 
 import { AuthService } from './auth.service';
 import { RegisterAuthDto } from './dto/register-auth.dto';
@@ -52,6 +53,13 @@ export class AuthController {
       await this.authService.logout(token);
     }
     return { message: 'Logged out successfully' };
+  }
+
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  getCurrentUser(@Req() req: Request & { user?: User }) {
+    const user = req.user!;
+    return { id: user.id, role: user.role };
   }
 
   @Get('google')

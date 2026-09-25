@@ -1,10 +1,9 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { getApiUrl, request } from "@/lib/api-client";
 
 export default function TwoFactorSetupPage() {
-  const router = useRouter();
   const [step, setStep] = useState<"loading" | "scan" | "confirmed">("loading");
   const [otpUri, setOtpUri] = useState<string>("");
   const [secret, setSecret] = useState<string>("");
@@ -16,15 +15,15 @@ export default function TwoFactorSetupPage() {
   useEffect(() => {
     async function init2FA() {
       try {
-        const response = await fetch("/api/auth/2fa/setup", { method: "POST" });
-        if (response.ok) {
-          const data = await response.json();
-          setOtpUri(data.otpauthUrl || `otpauth://totp/SMALDA?secret=${data.secret}`);
-          setSecret(data.secret || "JBSWY3DPEHPK3PXP");
-          setStep("scan");
-        } else {
-          setError("Failed to initialize 2FA setup. Please try again.");
-        }
+        const data = await request<{
+          otpauthUrl?: string;
+          secret?: string;
+        }>(getApiUrl("auth/2fa/setup"), { method: "POST" });
+        setOtpUri(
+          data.otpauthUrl || `otpauth://totp/SMALDA?secret=${data.secret}`,
+        );
+        setSecret(data.secret || "JBSWY3DPEHPK3PXP");
+        setStep("scan");
       } catch {
         setError("Network error initializing 2FA.");
       }
@@ -43,21 +42,23 @@ export default function TwoFactorSetupPage() {
     setError("");
 
     try {
-      const response = await fetch("/api/auth/2fa/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: totpCode, secret }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setBackupCodes(data.backupCodes || ["CODE-1234-5678", "CODE-8765-4321", "CODE-9988-7766"]);
-        setStep("confirmed");
-      } else {
-        setError("Invalid verification code. Please check your authenticator app.");
-      }
+      const data = await request<{ backupCodes?: string[] }>(
+        getApiUrl("auth/2fa/verify"),
+        {
+          method: "POST",
+          body: { code: totpCode, secret },
+        },
+      );
+      setBackupCodes(
+        data.backupCodes || [
+          "CODE-1234-5678",
+          "CODE-8765-4321",
+          "CODE-9988-7766",
+        ],
+      );
+      setStep("confirmed");
     } catch {
-      setError("Network error verifying code.");
+      setError("Invalid verification code. Please check your authenticator app.");
     } finally {
       setVerifying(false);
     }
@@ -167,7 +168,7 @@ export default function TwoFactorSetupPage() {
             </div>
 
             <button
-              onClick={() => router.push("/settings")}
+              onClick={() => window.location.assign("/settings")}
               className="mt-6 w-full rounded-md bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-500"
             >
               Done & Return to Settings

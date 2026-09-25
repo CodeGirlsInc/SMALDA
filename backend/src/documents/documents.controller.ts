@@ -37,7 +37,12 @@ import { FileValidationPipe } from './pipes/file-validation.pipe';
 import { ListDocumentsDto } from './dto/list-documents.dto';
 import { DocumentResponseDto } from './dto/document-response.dto';
 
-const ALLOWED_MIME_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
+const ALLOWED_MIME_TYPES = [
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'image/svg+xml',
+];
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
 const DEFAULT_USER_QUOTA = 20;
 
@@ -49,7 +54,9 @@ const fileFilter: multer.Options['fileFilter'] = (_req, file, callback) => {
   }
 
   return callback(
-    new BadRequestException('Only PDF, PNG, or JPEG files are allowed'),
+    new BadRequestException(
+      'Only PDF, PNG, JPEG, or SVG files are allowed',
+    ),
   );
 };
 

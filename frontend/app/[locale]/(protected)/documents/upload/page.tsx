@@ -1,9 +1,16 @@
 "use client";
 
 import React, { useState, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/i18n/navigation";
+import { getApiUrl, request } from "@/lib/api-client";
+import { sanitizeSvg } from "@/lib/document-sanitizer";
 
-const ALLOWED_TYPES = ["application/pdf", "image/png", "image/jpeg"];
+const ALLOWED_TYPES = [
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/svg+xml",
+];
 const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20MB
 
 export default function DocumentUploadPage() {
@@ -19,7 +26,9 @@ export default function DocumentUploadPage() {
 
   function validateFile(file: File): string | null {
     if (!ALLOWED_TYPES.includes(file.type)) {
-      return "Invalid file type. Only PDF, PNG, and JPEG files are allowed.";
+      return (
+        "Invalid file type. Only PDF, PNG, JPEG, and SVG files are allowed."
+      );
     }
     if (file.size > MAX_SIZE_BYTES) {
       return "File is too large. Maximum file size allowed is 20MB.";
@@ -27,19 +36,36 @@ export default function DocumentUploadPage() {
     return null;
   }
 
-  function handleFileChange(file: File | null) {
+  async function prepareFile(file: File): Promise<File | string> {
+    const validationError = validateFile(file);
+    if (validationError) return validationError;
+    if (file.type !== "image/svg+xml") return file;
+
+    try {
+      const sanitized = sanitizeSvg(await file.text());
+      const sanitizedFile = new File([sanitized], file.name, {
+        type: "image/svg+xml",
+        lastModified: file.lastModified,
+      });
+      return validateFile(sanitizedFile) ?? sanitizedFile;
+    } catch {
+      return "The SVG file could not be sanitized safely.";
+    }
+  }
+
+  async function handleFileChange(file: File | null) {
     if (!file) return;
-    const valError = validateFile(file);
-    if (valError) {
-      setError(valError);
+    const preparedFile = await prepareFile(file);
+    if (typeof preparedFile === "string") {
+      setError(preparedFile);
       setSelectedFile(null);
       return;
     }
 
     setError("");
-    setSelectedFile(file);
+    setSelectedFile(preparedFile);
     if (!title) {
-      setTitle(file.name.replace(/\.[^/.]+$/, ""));
+      setTitle(preparedFile.name.replace(/\.[^/.]+$/, ""));
     }
   }
 
@@ -88,26 +114,24 @@ export default function DocumentUploadPage() {
         setProgress((prev) => (prev >= 90 ? prev : prev + 20));
       }, 200);
 
-      const response = await fetch("/api/documents/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      clearInterval(interval);
-      setProgress(100);
-
-      if (response.status === 202 || response.ok) {
-        const data = await response.json().catch(() => ({ id: "new-doc-id" }));
+      try {
+        const data = await request<{ id?: string; documentId?: string }>(
+          getApiUrl("documents/upload"),
+          {
+            method: "POST",
+            body: formData,
+          },
+        );
+        setProgress(100);
         const docId = data.id || data.documentId || "new-doc-id";
         setTimeout(() => {
           router.push(`/documents/${docId}`);
         }, 500);
-      } else {
-        const data = await response.json().catch(() => ({}));
-        setError(data.message || "Failed to upload document. Please try again.");
+      } finally {
+        clearInterval(interval);
       }
     } catch {
-      setError("Network error uploading document.");
+      setError("Failed to upload document. Please try again.");
     } finally {
       setUploading(false);
     }
@@ -118,7 +142,8 @@ export default function DocumentUploadPage() {
       <div className="rounded-xl border border-gray-800 bg-gray-950 p-8 shadow-2xl">
         <h1 className="text-2xl font-bold">Upload New Document</h1>
         <p className="mt-1 text-xs text-gray-400">
-          Upload PDF, PNG, or JPEG documents (up to 20MB) for automated AI verification.
+          Upload PDF, PNG, JPEG, or SVG documents (up to 20MB) for automated
+          AI verification.
         </p>
 
         <form onSubmit={handleUpload} className="mt-6">
@@ -151,7 +176,7 @@ export default function DocumentUploadPage() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.png,.jpeg,.jpg"
+              accept=".pdf,.png,.jpeg,.jpg,.svg,image/svg+xml"
               className="hidden"
               onChange={(e) => handleFileChange(e.target.files?.[0] || null)}
             />
@@ -174,7 +199,9 @@ export default function DocumentUploadPage() {
                 <p className="text-sm font-medium text-gray-200">
                   Drag and drop your file here, or <span className="text-blue-400 underline">browse</span>
                 </p>
-                <p className="mt-1 text-xs text-gray-500">Supports PDF, PNG, JPEG (Max 20MB)</p>
+                <p className="mt-1 text-xs text-gray-500">
+                  Supports PDF, PNG, JPEG, SVG (Max 20MB)
+                </p>
               </div>
             )}
           </div>

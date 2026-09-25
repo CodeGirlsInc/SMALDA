@@ -10,6 +10,7 @@ export class MimeTypeValidationPipe implements PipeTransform {
     'application/pdf',
     'image/png',
     'image/jpeg',
+    'image/svg+xml',
   ];
 
   transform(file: { mimetype: string }) {

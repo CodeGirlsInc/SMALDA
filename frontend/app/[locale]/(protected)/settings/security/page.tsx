@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { logoutSession } from "@/lib/api-client";
 
 // ─────────────────────────────────────────────
 // Types
@@ -268,7 +269,7 @@ function DangerZone() {
     try {
       // Replace with: await api.delete('/users/me')
       await new Promise((r) => setTimeout(r, 800));
-      // On success the auth layer should clear the session and redirect.
+      await logoutSession();
       window.location.href = "/login";
     } catch {
       setError("Failed to delete account. Please try again.");
