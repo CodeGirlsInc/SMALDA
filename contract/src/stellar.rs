@@ -778,7 +778,7 @@ mod tests {
             when.method(GET).path(format!("/accounts/{}", TEST_ACCOUNT));
             then.status(200).json_body(serde_json::json!({
                 "sequence": "1",
-                "data": { (data_key): raw_value }
+                "data": { (data_key.clone()): raw_value }
             }));
         });
 
