@@ -7,6 +7,7 @@ export interface EmptyStateProps {
   description?: string;
   action?: React.ReactNode;
   variant?: EmptyStateVariant;
+  icon?: React.ReactNode;
 }
 
 /**
@@ -25,6 +26,7 @@ export function EmptyState({
   description,
   action,
   variant = "empty",
+  icon,
 }: EmptyStateProps) {
   return (
     <div
@@ -34,6 +36,11 @@ export function EmptyState({
       data-testid="empty-state"
       className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-12 text-center"
     >
+      {icon ? (
+        <div data-testid="empty-state-icon" className="text-gray-400">
+          {icon}
+        </div>
+      ) : null}
       <p className="text-base font-medium text-gray-900">{title}</p>
       {description ? (
         <p className="max-w-md text-sm text-gray-600">{description}</p>

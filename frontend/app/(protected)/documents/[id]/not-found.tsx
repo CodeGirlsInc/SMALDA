@@ -10,6 +10,7 @@ export default function DocumentNotFound() {
     <NotFoundContent
       description="No record anchored"
       homeLabel="Back to home"
+      dashboardLabel="Return to dashboard"
       detailDescription="This document hash has no record anchored on the Stellar ledger. A failed verification is different: it means a record exists but did not match what you submitted."
     />
   );
