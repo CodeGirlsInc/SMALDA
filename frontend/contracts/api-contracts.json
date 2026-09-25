@@ -42,7 +42,8 @@
     "mimeTypes": [
       "application/pdf",
       "image/png",
-      "image/jpeg"
+      "image/jpeg",
+      "image/svg+xml"
     ]
   }
 }

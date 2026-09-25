@@ -53,7 +53,9 @@ const fileFilter: multer.Options['fileFilter'] = (_req, file, callback) => {
   }
 
   return callback(
-    new BadRequestException('Only PDF, PNG, or JPEG files are allowed'),
+    new BadRequestException(
+      'Only PDF, PNG, JPEG, or SVG files are allowed',
+    ),
   );
 };
 
