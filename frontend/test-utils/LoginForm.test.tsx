@@ -22,6 +22,7 @@ jest.mock("next/navigation", () => ({
 }));
 
 jest.mock("@/lib/api-client", () => ({
+  API_V1_BASE: "http://localhost:3001/api/v1",
   ApiError: class ApiError extends Error {
     status: number | null;
     messageKey: string;
@@ -32,8 +33,7 @@ jest.mock("@/lib/api-client", () => ({
       this.messageKey = messageKey;
     }
   },
-  request: (...args: unknown[]) => mockApiRequest(...args),
-  getApiUrl: (path: string) => `http://localhost:3001/api/v1/${path}`,
+  apiRequest: (...args: unknown[]) => mockApiRequest(...args),
 }));
 
 jest.mock("@/lib/auth-session", () => ({
@@ -54,8 +54,9 @@ describe("LoginForm", () => {
     mockReplace.mockClear();
     mockApiRequest.mockReset();
     mockStoreSession.mockReset();
-    mockStoreSession.mockReturnValue(true);
+    mockStoreSession.mockReturnValue({ ok: true, value: undefined });
     mockSearchParams.delete("redirect");
+    mockSearchParams.delete("resume");
     mockSearchParams.delete("reset");
   });
 
@@ -102,7 +103,10 @@ describe("LoginForm", () => {
         anonymous: true,
       }),
     );
-    expect(mockStoreSession).toHaveBeenCalledWith({ access_token: "access-token" });
+    expect(mockStoreSession).toHaveBeenCalledWith(
+      { access_token: "access-token" },
+      undefined,
+    );
     expect(mockReplace).toHaveBeenCalledWith("/");
   });
 
@@ -122,6 +126,46 @@ describe("LoginForm", () => {
     expect(await screen.findByRole("button", { name: "Signing in…" })).toBeDisabled();
     resolveRequest({ access_token: "access-token" });
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/"));
+  });
+
+  it("passes a resume token through the session commit", async () => {
+    mockSearchParams.set("resume", "resume-1");
+    mockApiRequest.mockResolvedValue({ access_token: "access-token" });
+    renderForm();
+
+    fireEvent.change(screen.getByLabelText("Email address"), {
+      target: { value: "person@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/dashboard"));
+    expect(mockStoreSession).toHaveBeenCalledWith(
+      { access_token: "access-token" },
+      "resume-1",
+    );
+  });
+
+  it("does not redirect when session-state persistence fails", async () => {
+    mockApiRequest.mockResolvedValue({ access_token: "access-token" });
+    mockStoreSession.mockReturnValue({
+      ok: false,
+      error: { code: "storage" },
+    });
+    renderForm();
+
+    fireEvent.change(screen.getByLabelText("Email address"), {
+      target: { value: "person@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(await screen.findByText("An unexpected error occurred.")).toBeInTheDocument();
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 
   it("renders an inline error when credentials are rejected", async () => {

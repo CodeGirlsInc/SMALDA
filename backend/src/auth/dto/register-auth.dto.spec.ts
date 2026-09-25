@@ -6,7 +6,7 @@ describe('RegisterAuthDto', () => {
   it('should trim and lowercase email', async () => {
     const dto = plainToInstance(RegisterAuthDto, {
       email: '  Test@EXAMPLE.COM  ',
-      password: 'password123',
+      password: 'Password123!',
       fullName: '  John Doe  ',
     });
     const errors = await validate(dto);
@@ -18,7 +18,7 @@ describe('RegisterAuthDto', () => {
   it('should reject invalid email', async () => {
     const dto = plainToInstance(RegisterAuthDto, {
       email: 'not-an-email',
-      password: 'password123',
+      password: 'Password123!',
       fullName: 'John Doe',
     });
     const errors = await validate(dto);

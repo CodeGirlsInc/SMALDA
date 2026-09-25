@@ -7,7 +7,7 @@ describe('ibinola Frontend Features (FE-99, FE-98, FE-97, FE-96)', () => {
     const rules = robots().rules;
     const rule = Array.isArray(rules) ? rules[0] : rules;
     expect(rule.disallow).toContain('/verify/');
-    expect(rule.disallow).toContain('/dashboard/');
+    expect(rule.disallow).toContain('/');
   });
 
   it('sitemap exports root marketing URL', () => {

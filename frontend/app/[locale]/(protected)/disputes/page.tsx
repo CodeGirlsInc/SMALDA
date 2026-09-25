@@ -1,17 +1,26 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { Link } from "@/i18n/navigation";
+import Link from "next/link";
 import { request } from "@/lib/api-client";
-import { FileDisputeModal } from "@/components/disputes/FileDisputeModal";
+import { API_PREFIX } from "@/lib/api-contracts";
 import {
-  disputeStatusLabel,
-  normalizeDisputeList,
-  normalizeDocumentList,
-  type Dispute,
-  type DisputeDocumentSummary,
+  disputeListResponseSchema,
+  disputeStatusValues,
+  type DisputeResponse,
   type DisputeStatus,
-} from "@/lib/disputes";
+} from "@/lib/schemas/dispute";
+import type {
+  DocumentListItem,
+  DocumentListResponse,
+} from "@/lib/schemas/document";
+import { FileDisputeModal } from "@/components/disputes/FileDisputeModal";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type Document = Pick<DocumentListItem, "id" | "title">;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -29,21 +38,23 @@ const STATUS_CLASSES: Record<DisputeStatus, string> = {
 // ---------------------------------------------------------------------------
 
 export default function DisputesPage() {
-  const [disputes, setDisputes] = useState<Dispute[]>([]);
-  const [documents, setDocuments] = useState<DisputeDocumentSummary[]>([]);
+  const [disputes, setDisputes] = useState<DisputeResponse[]>([]);
+  const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<DisputeStatus | "all">(
-    "all",
+  const [statusFilter, setStatusFilter] = useState<DisputeStatus | "ALL">(
+    "ALL",
   );
 
   const fetchDisputes = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await request<unknown>("disputes");
-      setDisputes(normalizeDisputeList(response).data);
+      const disputesData = disputeListResponseSchema.parse(
+        await request<unknown>(`${API_PREFIX}/disputes`),
+      );
+      setDisputes(disputesData.data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load disputes.");
     } finally {
@@ -53,8 +64,12 @@ export default function DisputesPage() {
 
   const fetchDocuments = useCallback(async () => {
     try {
-      const response = await request<unknown>("documents");
-      setDocuments(normalizeDocumentList(response).data);
+      const documentsData = await request<DocumentListResponse>(
+        `${API_PREFIX}/documents`,
+      );
+      setDocuments(
+        documentsData.data.map(({ id, title }) => ({ id, title })),
+      );
     } catch (err) {
       // Documents are optional for the page to render, so we don't set a page-level error
       console.error("Failed to load documents:", err);
@@ -66,12 +81,12 @@ export default function DisputesPage() {
     fetchDocuments();
   }, [fetchDisputes, fetchDocuments]);
 
-  const handleDisputeFiled = (newDispute: Dispute) => {
+  const handleDisputeFiled = (newDispute: DisputeResponse) => {
     setDisputes((prevDisputes) => [newDispute, ...prevDisputes]);
   };
 
   const filteredDisputes =
-    statusFilter === "all"
+    statusFilter === "ALL"
       ? disputes
       : disputes.filter((d) => d.status === statusFilter);
 
@@ -109,15 +124,16 @@ export default function DisputesPage() {
           id="status-filter"
           value={statusFilter}
           onChange={(e) =>
-            setStatusFilter(e.target.value as DisputeStatus | "all")
+            setStatusFilter(e.target.value as DisputeStatus | "ALL")
           }
           className="rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
         >
-          <option value="all">All Statuses</option>
-          <option value="open">Open</option>
-          <option value="in_review">Under Review</option>
-          <option value="resolved">Resolved</option>
-          <option value="dismissed">Dismissed</option>
+          <option value="ALL">All Statuses</option>
+          {disputeStatusValues.map((status) => (
+            <option key={status} value={status}>
+              {status.replace("_", " ")}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -137,7 +153,7 @@ export default function DisputesPage() {
             No disputes filed
           </h3>
           <p className="mt-1 text-sm text-gray-500">
-            {statusFilter === "all"
+            {statusFilter === "ALL"
               ? "When you file a dispute it will appear here."
               : `You have no disputes with the status '${statusFilter}'.`}
           </p>
@@ -185,22 +201,20 @@ export default function DisputesPage() {
                     className="px-4 py-3 text-gray-700 truncate"
                     style={{ maxWidth: "200px" }}
                   >
-                    <span className="block truncate">
-                      {dispute.description}
-                    </span>
                     {dispute.reason && (
-                      <span className="mt-1 block text-xs text-gray-500">
-                        {dispute.reason.name}
+                      <span className="font-medium">
+                        {dispute.reason.name}:{" "}
                       </span>
                     )}
+                    {dispute.description}
                   </td>
                   <td className="px-4 py-3">
                     <span
-                      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
+                      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
                         STATUS_CLASSES[dispute.status]
                       }`}
                     >
-                      {disputeStatusLabel(dispute.status)}
+                      {dispute.status.replace("_", " ")}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-gray-600 whitespace-nowrap">

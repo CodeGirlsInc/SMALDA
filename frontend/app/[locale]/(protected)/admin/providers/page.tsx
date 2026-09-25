@@ -1,12 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ApiError, getApiUrl, request } from "@/lib/api-client";
-import {
-  clearSession,
-  getJwtClaims,
-  getValidAccessToken,
-} from "@/lib/auth-session";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Building2,
@@ -45,6 +40,17 @@ const REFRESH_INTERVAL_SECONDS = 60;
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+
+function getAuthHeaders(): HeadersInit {
+  const token =
+    typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
 
 function parseStatus(raw: unknown): ProviderStatus {
   if (typeof raw === "boolean") return raw ? "online" : "offline";
@@ -246,6 +252,8 @@ function ProviderCardSkeleton() {
 // ---------------------------------------------------------------------------
 
 export default function AdminProvidersPage() {
+  const router = useRouter();
+
   const [statsMap, setStatsMap] = useState<StatsMap>({});
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -256,30 +264,36 @@ export default function AdminProvidersPage() {
   // ── Admin access check ──────────────────────────────────────────────────
 
   useEffect(() => {
-    const token = getValidAccessToken();
+    const token = localStorage.getItem("auth-token");
     if (!token) {
-      clearSession();
-      window.location.assign("/login");
+      router.replace("/login");
       return;
     }
-
-    const claims = getJwtClaims(token);
-    if (!claims) {
-      clearSession();
-      window.location.assign("/login");
-      return;
+    try {
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      if (payload?.role !== "admin") {
+        router.replace("/");
+      }
+    } catch {
+      router.replace("/login");
     }
-    if (claims.role !== "admin") window.location.assign("/");
-  }, []);
+  }, [router]);
 
   // ── Fetch stats ──────────────────────────────────────────────────────────
 
   const fetchStats = useCallback(async () => {
     setError(null);
     try {
-      const json = await request<unknown>(
-        getApiUrl("external-validation/stats"),
-      );
+      const res = await fetch(`${API_BASE}/api/external-validation/stats`, {
+        headers: getAuthHeaders(),
+      });
+      if (res.status === 403) {
+        router.replace("/");
+        return;
+      }
+      if (!res.ok) throw new Error(`Failed to load provider stats: ${res.status}`);
+
+      const json: unknown = await res.json();
       const entries = Array.isArray(json) ? json : [];
 
       setStatsMap((prev) => {
@@ -294,15 +308,11 @@ export default function AdminProvidersPage() {
         return next;
       });
     } catch (err: unknown) {
-      if (err instanceof ApiError && err.status === 403) {
-        window.location.assign("/");
-        return;
-      }
       setError(err instanceof Error ? err.message : "Failed to load provider stats");
     } finally {
       setInitialLoading(false);
     }
-  }, []);
+  }, [router]);
 
   // ── Auto-refresh every 60s, with visible countdown ─────────────────────
 
@@ -332,9 +342,12 @@ export default function AdminProvidersPage() {
     setCheckErrors((prev) => ({ ...prev, [id]: null }));
 
     try {
-      const json = await request<unknown>(
-        getApiUrl("external-validation/health"),
-      );
+      const res = await fetch(`${API_BASE}/api/external-validation/health`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error(`Health check failed: ${res.status}`);
+
+      const json: unknown = await res.json();
       const checkedAt = new Date().toISOString();
 
       setStatsMap((prev) => {

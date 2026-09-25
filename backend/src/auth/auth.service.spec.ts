@@ -106,9 +106,26 @@ describe('AuthService', () => {
     });
   });
 
+  describe('OAuth exchange codes', () => {
+    it('consumes a code exactly once', async () => {
+      const code = await service.createOAuthExchangeCode({
+        access_token: 'access-token',
+        refresh_token: 'refresh-token',
+      });
+
+      await expect(service.exchangeOAuthCode(code)).resolves.toEqual({
+        access_token: 'access-token',
+        refresh_token: 'refresh-token',
+      });
+      await expect(service.exchangeOAuthCode(code)).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+  });
+
   describe('logout()', () => {
-    it('should add token to blacklist', async () => {
-      mockJwtService.decode.mockReturnValue({
+    it('should add a verified token to the blacklist', async () => {
+      mockJwtService.verifyAsync.mockResolvedValueOnce({
         sub: 'user-1',
         exp: Math.floor(Date.now() / 1000) + 3600,
       });
@@ -117,12 +134,44 @@ describe('AuthService', () => {
       expect(service.isTokenBlacklisted('test-token')).toBe(true);
     });
 
-    it('should handle malformed tokens gracefully', async () => {
-      mockJwtService.decode.mockImplementation(() => {
-        throw new Error('invalid');
+    it('revokes both distinct verified access credentials', async () => {
+      mockJwtService.verifyAsync.mockResolvedValue({
+        sub: 'user-1',
+        exp: Math.floor(Date.now() / 1000) + 3600,
       });
 
+      await service.logout(
+        ['access-token-a', 'access-token-b'],
+        'refresh-token',
+      );
+
+      expect(service.isTokenBlacklisted('access-token-a')).toBe(true);
+      expect(service.isTokenBlacklisted('access-token-b')).toBe(true);
+    });
+
+    it('continues revoking after a malformed access credential', async () => {
+      mockJwtService.verifyAsync.mockImplementation(async (token: string) => {
+        if (token === 'bad-access-token') throw new Error('invalid');
+        return {
+          sub: 'user-1',
+          exp: Math.floor(Date.now() / 1000) + 3600,
+        };
+      });
+
+      await service.logout(
+        ['bad-access-token', 'good-access-token'],
+        'refresh-token',
+      );
+
+      expect(service.isTokenBlacklisted('good-access-token')).toBe(true);
+      expect(service.isTokenBlacklisted('bad-access-token')).toBe(false);
+    });
+
+    it('should handle malformed tokens gracefully', async () => {
+      mockJwtService.verifyAsync.mockRejectedValueOnce(new Error('invalid'));
+
       await expect(service.logout('bad-token')).resolves.toBeUndefined();
+      expect(service.isTokenBlacklisted('bad-token')).toBe(false);
     });
   });
 

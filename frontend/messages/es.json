@@ -44,6 +44,69 @@
       "continueWithGithub": "Continuar con GitHub",
       "resetSuccessToast": "Tu contraseña se ha restablecido. Inicia sesión."
     },
+    "sessionRefresh": {
+      "loading": "Actualizando tu sesión…",
+      "errorTitle": "No se pudo actualizar tu sesión",
+      "errorDescription": "Inicia sesión de nuevo para continuar."
+    },
+    "oauthCallback": {
+      "loading": "Completando el inicio de sesión…",
+      "errorTitle": "No se pudo completar el inicio de sesión",
+      "errorDescription": "Vuelve a la página de inicio de sesión e inténtalo de nuevo.",
+      "signIn": "Volver al inicio de sesión"
+    },
+    "register": {
+      "title": "Crea tu cuenta",
+      "subtitle": "Protege tus documentos de tierras con SMALDA",
+      "fullNameLabel": "Nombre completo",
+      "fullNamePlaceholder": "Introduce tu nombre completo",
+      "emailLabel": "Correo electrónico",
+      "emailPlaceholder": "tu@ejemplo.com",
+      "passwordLabel": "Contraseña",
+      "passwordPlaceholder": "Crea una contraseña segura",
+      "confirmPasswordLabel": "Confirmar contraseña",
+      "confirmPasswordPlaceholder": "Vuelve a introducir tu contraseña",
+      "strengthLabel": "Fuerza de la contraseña",
+      "requirementsLabel": "Requisitos de la contraseña",
+      "requirementMet": "Cumple",
+      "requirementNeeded": "Falta",
+      "guidance": "Usa una frase de acceso más larga que puedas recordar; evita nombres, fechas y secuencias repetidas.",
+      "strengthSummary": "Fuerza de la contraseña: {label}",
+      "strength": {
+        "empty": "Vacía",
+        "weak": "Débil",
+        "fair": "Aceptable",
+        "good": "Buena",
+        "strong": "Fuerte"
+      },
+      "requirements": {
+        "length": "Al menos 8 caracteres",
+        "uppercase": "Una letra mayúscula",
+        "lowercase": "Una letra minúscula",
+        "number": "Un número",
+        "special": "Un carácter especial"
+      },
+      "submit": "Crear cuenta",
+      "submitting": "Creando cuenta…",
+      "alreadyHaveAccount": "¿Ya tienes una cuenta?",
+      "signIn": "Iniciar sesión",
+      "apiErrors": {
+        "emailExists": "Ya existe una cuenta con este correo electrónico.",
+        "validation": "Revisa los campos marcados e inténtalo de nuevo.",
+        "generic": "No se pudo crear tu cuenta. Inténtalo de nuevo."
+      },
+      "errors": {
+        "fullNameMin": "El nombre completo debe tener al menos 2 caracteres",
+        "emailInvalid": "Introduce un correo electrónico válido",
+        "passwordMin": "La contraseña debe tener al menos 8 caracteres",
+        "passwordUppercase": "La contraseña debe incluir una letra mayúscula",
+        "passwordLowercase": "La contraseña debe incluir una letra minúscula",
+        "passwordNumber": "La contraseña debe incluir un número",
+        "passwordSpecial": "La contraseña debe incluir un carácter especial",
+        "confirmRequired": "Confirma tu contraseña",
+        "passwordMismatch": "Las contraseñas no coinciden"
+      }
+    },
     "forgotPassword": {
       "title": "Restablece tu contraseña",
       "subtitle": "Introduce el correo electrónico asociado a tu cuenta y te enviaremos un enlace para restablecer tu contraseña.",
@@ -98,6 +161,8 @@
   },
   "documents": {
     "title": "Todos los documentos",
+    "subtitle": "Consulta, busca y gestiona tus documentos verificados.",
+    "upload": "Subir un documento",
     "filters": {
       "legend": "Filtros de documentos",
       "status": "Estado",
@@ -109,6 +174,10 @@
       "riskRange": "Rango de puntuación de riesgo",
       "apply": "Aplicar filtros",
       "reset": "Restablecer"
+    },
+    "search": {
+      "label": "Buscar documentos",
+      "placeholder": "Buscar documentos por título..."
     },
     "status": {
       "pending": "Pendiente",
@@ -126,6 +195,9 @@
       "flags": "Alertas",
       "noFlags": "Ninguna",
       "moreFlags": "+{count} más",
+      "fileSize": "Tamaño del archivo",
+      "action": "Acción",
+      "view": "Ver detalles",
       "download": "Descargar",
       "downloadLabel": "Descargar {title}"
     },
@@ -135,6 +207,7 @@
     "loadError": "Error al cargar los documentos",
     "downloadError": "Error al descargar el documento.",
     "pagination": {
+      "label": "Paginación de documentos",
       "summary": "Mostrando {from}–{to} de {total}"
     }
   },

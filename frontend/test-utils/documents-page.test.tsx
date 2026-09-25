@@ -23,8 +23,6 @@ jest.mock("@/i18n/navigation", () => ({
   getPathname: () => "/admin/documents",
 }));
 
-const API_BASE = "http://localhost:3001";
-
 const originalFetch = globalThis.fetch;
 let mockFetch: jest.Mock;
 
@@ -77,7 +75,7 @@ function renderPage() {
 describe("AdminDocumentsPage", () => {
   it("loads and renders documents from the mocked API", async () => {
     mockFetch.mockImplementation((url: string) => {
-      if (url.includes("/api/admin/documents")) {
+      if (url.includes("/api/v1/admin/documents")) {
         return Promise.resolve(
           mockJsonResponse({
             data: [

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { logoutSession } from "@/lib/api-client";
+import { clearSession } from "@/lib/auth-session";
 
 // ─────────────────────────────────────────────
 // Types
@@ -269,7 +269,10 @@ function DangerZone() {
     try {
       // Replace with: await api.delete('/users/me')
       await new Promise((r) => setTimeout(r, 800));
-      await logoutSession();
+      const cleared = clearSession();
+      if (!cleared.ok) {
+        throw new Error("Unable to clear the session safely.");
+      }
       window.location.href = "/login";
     } catch {
       setError("Failed to delete account. Please try again.");

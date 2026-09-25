@@ -1,6 +1,12 @@
 ﻿import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
+import {
+  Repository,
+  Between,
+  LessThanOrEqual,
+  MoreThanOrEqual,
+  ILike,
+} from 'typeorm';
 import { promises as fs } from 'fs';
 import { Document, DocumentStatus } from './entities/document.entity';
 
@@ -29,17 +35,22 @@ export class DocumentsService {
     page: number,
     limit: number,
     status?: DocumentStatus,
+    search?: string,
   ): Promise<{ data: Document[]; total: number; page: number; limit: number }> {
     const where: any = { ownerId };
     if (status) {
       where.status = status;
+    }
+    const normalizedSearch = search?.trim();
+    if (normalizedSearch) {
+      where.title = ILike(`%${normalizedSearch}%`);
     }
 
     const [data, total] = await this.documentRepository.findAndCount({
       where,
       skip: (page - 1) * limit,
       take: limit,
-      order: { createdAt: 'DESC' },
+      order: { createdAt: 'DESC', id: 'DESC' },
     });
 
     return { data, total, page, limit };

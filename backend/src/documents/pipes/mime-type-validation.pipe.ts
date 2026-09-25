@@ -1,4 +1,5 @@
 import { PipeTransform, Injectable, BadRequestException } from '@nestjs/common';
+import { DOCUMENT_ALLOWED_MIME_TYPES } from '../../common/api-contracts';
 
 /**
  * Restricts document uploads to an explicit MIME-type allowlist so
@@ -6,12 +7,7 @@ import { PipeTransform, Injectable, BadRequestException } from '@nestjs/common';
  */
 @Injectable()
 export class MimeTypeValidationPipe implements PipeTransform {
-  private readonly allowedMimeTypes = [
-    'application/pdf',
-    'image/png',
-    'image/jpeg',
-    'image/svg+xml',
-  ];
+  private readonly allowedMimeTypes = DOCUMENT_ALLOWED_MIME_TYPES;
 
   transform(file: { mimetype: string }) {
     if (!this.allowedMimeTypes.includes(file.mimetype)) {

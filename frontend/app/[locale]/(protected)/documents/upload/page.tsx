@@ -1,17 +1,18 @@
 "use client";
 
 import React, { useState, useRef } from "react";
-import { useRouter } from "@/i18n/navigation";
-import { getApiUrl, request } from "@/lib/api-client";
+import { useRouter } from "next/navigation";
+import { API_PREFIX } from "@/lib/api-contracts";
+import {
+  documentUploadConstraints,
+  documentUploadSchema,
+} from "@/lib/schemas/document";
 import { sanitizeSvg } from "@/lib/document-sanitizer";
 
-const ALLOWED_TYPES = [
-  "application/pdf",
-  "image/png",
-  "image/jpeg",
-  "image/svg+xml",
-];
-const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20MB
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+const MAX_SIZE_MB = Math.round(
+  documentUploadConstraints.fileSize.max / (1024 * 1024),
+);
 
 export default function DocumentUploadPage() {
   const router = useRouter();
@@ -25,41 +26,41 @@ export default function DocumentUploadPage() {
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
 
   function validateFile(file: File): string | null {
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      return (
-        "Invalid file type. Only PDF, PNG, JPEG, and SVG files are allowed."
-      );
-    }
-    if (file.size > MAX_SIZE_BYTES) {
-      return "File is too large. Maximum file size allowed is 20MB.";
-    }
-    return null;
-  }
+    const result = documentUploadSchema.safeParse({
+      fileSize: file.size,
+      mimeType: file.type,
+    });
+    if (result.success) return null;
 
-  async function prepareFile(file: File): Promise<File | string> {
-    const validationError = validateFile(file);
-    if (validationError) return validationError;
-    if (file.type !== "image/svg+xml") return file;
-
-    try {
-      const sanitized = sanitizeSvg(await file.text());
-      const sanitizedFile = new File([sanitized], file.name, {
-        type: "image/svg+xml",
-        lastModified: file.lastModified,
-      });
-      return validateFile(sanitizedFile) ?? sanitizedFile;
-    } catch {
-      return "The SVG file could not be sanitized safely.";
+    const field = result.error.issues[0]?.path[0];
+    if (field === "mimeType") {
+      return "Invalid file type. Only PDF, PNG, JPEG, and SVG files are allowed.";
     }
+    return `File is too large. Maximum file size allowed is ${MAX_SIZE_MB}MB.`;
   }
 
   async function handleFileChange(file: File | null) {
     if (!file) return;
-    const preparedFile = await prepareFile(file);
-    if (typeof preparedFile === "string") {
-      setError(preparedFile);
+    const valError = validateFile(file);
+    if (valError) {
+      setError(valError);
       setSelectedFile(null);
       return;
+    }
+
+    let preparedFile = file;
+    if (file.type === "image/svg+xml") {
+      try {
+        const sanitized = sanitizeSvg(await file.text());
+        preparedFile = new File([sanitized], file.name, {
+          type: "image/svg+xml",
+          lastModified: file.lastModified,
+        });
+      } catch {
+        setError("The SVG file could not be sanitized safely.");
+        setSelectedFile(null);
+        return;
+      }
     }
 
     setError("");
@@ -83,7 +84,7 @@ export default function DocumentUploadPage() {
     e.preventDefault();
     setIsDragOver(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFileChange(e.dataTransfer.files[0]);
+      void handleFileChange(e.dataTransfer.files[0]);
     }
   }
 
@@ -114,24 +115,31 @@ export default function DocumentUploadPage() {
         setProgress((prev) => (prev >= 90 ? prev : prev + 20));
       }, 200);
 
-      try {
-        const data = await request<{ id?: string; documentId?: string }>(
-          getApiUrl("documents/upload"),
-          {
-            method: "POST",
-            body: formData,
-          },
-        );
-        setProgress(100);
+      const token = window.localStorage.getItem("auth-token");
+      const response = await fetch(
+        `${API_BASE}${API_PREFIX}/documents/upload`,
+        {
+          method: "POST",
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          body: formData,
+        },
+      );
+
+      clearInterval(interval);
+      setProgress(100);
+
+      if (response.status === 202 || response.ok) {
+        const data = await response.json().catch(() => ({ id: "new-doc-id" }));
         const docId = data.id || data.documentId || "new-doc-id";
         setTimeout(() => {
           router.push(`/documents/${docId}`);
         }, 500);
-      } finally {
-        clearInterval(interval);
+      } else {
+        const data = await response.json().catch(() => ({}));
+        setError(data.message || "Failed to upload document. Please try again.");
       }
     } catch {
-      setError("Failed to upload document. Please try again.");
+      setError("Network error uploading document.");
     } finally {
       setUploading(false);
     }
@@ -142,8 +150,8 @@ export default function DocumentUploadPage() {
       <div className="rounded-xl border border-gray-800 bg-gray-950 p-8 shadow-2xl">
         <h1 className="text-2xl font-bold">Upload New Document</h1>
         <p className="mt-1 text-xs text-gray-400">
-          Upload PDF, PNG, JPEG, or SVG documents (up to 20MB) for automated
-          AI verification.
+          Upload PDF, PNG, JPEG, or SVG documents (up to {MAX_SIZE_MB}MB) for
+          automated AI verification.
         </p>
 
         <form onSubmit={handleUpload} className="mt-6">
@@ -176,9 +184,9 @@ export default function DocumentUploadPage() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.png,.jpeg,.jpg,.svg,image/svg+xml"
+              accept={documentUploadConstraints.mimeTypes.join(",")}
               className="hidden"
-              onChange={(e) => handleFileChange(e.target.files?.[0] || null)}
+              onChange={(e) => void handleFileChange(e.target.files?.[0] || null)}
             />
 
             {selectedFile ? (
@@ -200,7 +208,7 @@ export default function DocumentUploadPage() {
                   Drag and drop your file here, or <span className="text-blue-400 underline">browse</span>
                 </p>
                 <p className="mt-1 text-xs text-gray-500">
-                  Supports PDF, PNG, JPEG, SVG (Max 20MB)
+                  Supports PDF, PNG, JPEG, SVG (Max {MAX_SIZE_MB}MB)
                 </p>
               </div>
             )}

@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
-import { ApiError, getApiUrl, requestRaw } from "@/lib/api-client";
+import { ApiError, request } from "@/lib/api-client";
 
 export default function ForgotPasswordPage() {
   const t = useTranslations("auth.forgotPassword");
@@ -24,14 +24,14 @@ export default function ForgotPasswordPage() {
 
     setLoading(true);
     try {
-      await requestRaw(getApiUrl("auth/forgot-password"), {
+      await request("/api/v1/auth/forgot-password", {
         method: "POST",
-        body: { email },
         anonymous: true,
+        body: { email },
       });
       setSubmitted(true);
-    } catch (error: unknown) {
-      if (error instanceof ApiError) {
+    } catch (error) {
+      if (error instanceof ApiError && error.kind !== "network") {
         setSubmitted(true);
       } else {
         setError(t("errorGeneric"));

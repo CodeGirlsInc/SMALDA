@@ -1,17 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ApiError,
-  getApiUrl,
-  request,
-  requestRaw,
-} from "@/lib/api-client";
-import {
-  clearSession,
-  getJwtClaims,
-  getValidAccessToken,
-} from "@/lib/auth-session";
+import { useRouter } from "next/navigation";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,9 +31,27 @@ interface PaginatedUsers {
 // Helpers
 // ---------------------------------------------------------------------------
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+
+function getAuthHeaders(): HeadersInit {
+  const token =
+    typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
 function getCurrentUserId(): string | null {
-  const token = getValidAccessToken();
-  return token ? getJwtClaims(token)?.sub ?? null : null;
+  if (typeof window === "undefined") return null;
+  try {
+    const token = localStorage.getItem("auth-token");
+    if (!token) return null;
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    return payload?.sub ?? null;
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -113,6 +121,8 @@ function DeleteModal({ user, onConfirm, onCancel, isLoading, error }: DeleteModa
 const PAGE_SIZE = 20;
 
 export default function AdminUsersPage() {
+  const router = useRouter();
+
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -142,21 +152,15 @@ export default function AdminUsersPage() {
   // ── Check admin access ──────────────────────────────────────────────────
 
   useEffect(() => {
-    const token = getValidAccessToken();
-    if (!token) {
-      clearSession();
-      window.location.assign("/login");
-      return;
+    const token = localStorage.getItem("auth-token");
+    if (!token) { router.replace("/login"); return; }
+    try {
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      if (payload?.role !== "admin") { router.replace("/"); }
+    } catch {
+      router.replace("/login");
     }
-
-    const claims = getJwtClaims(token);
-    if (!claims) {
-      clearSession();
-      window.location.assign("/login");
-      return;
-    }
-    if (claims.role !== "admin") window.location.assign("/");
-  }, []);
+  }, [router]);
 
   // ── Fetch users ─────────────────────────────────────────────────────────
 
@@ -172,22 +176,21 @@ export default function AdminUsersPage() {
     if (appliedSearch) params.set("search", appliedSearch);
 
     try {
-      const json = await request<PaginatedUsers>(
-        getApiUrl(`users?${params}`),
-      );
+      const res = await fetch(`${API_BASE}/api/users?${params}`, {
+        headers: getAuthHeaders(),
+      });
+      if (res.status === 403) { router.replace("/"); return; }
+      if (!res.ok) throw new Error(`Failed to load users: ${res.status}`);
+      const json: PaginatedUsers = await res.json();
       setUsers(json.data);
       setTotal(json.total);
       setSelected(new Set());
     } catch (err: unknown) {
-      if (err instanceof ApiError && err.status === 403) {
-        window.location.assign("/");
-        return;
-      }
       setError(err instanceof Error ? err.message : "Failed to load users");
     } finally {
       setLoading(false);
     }
-  }, [page, roleFilter, statusFilter, appliedSearch]);
+  }, [page, roleFilter, statusFilter, appliedSearch, router]);
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
@@ -199,10 +202,12 @@ export default function AdminUsersPage() {
     }
     setActionLoading((prev) => ({ ...prev, [`role_${user.id}`]: true }));
     try {
-      await requestRaw(getApiUrl(`users/${user.id}`), {
+      const res = await fetch(`${API_BASE}/api/users/${user.id}`, {
         method: "PATCH",
-        body: { role: newRole },
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ role: newRole }),
       });
+      if (!res.ok) throw new Error("Role update failed");
       setUsers((prev) => prev.map((u) => u.id === user.id ? { ...u, role: newRole } : u));
     } catch {
       // show inline error or toast — kept simple here
@@ -217,10 +222,12 @@ export default function AdminUsersPage() {
     const newStatus: UserStatus = user.status === "active" ? "suspended" : "active";
     setActionLoading((prev) => ({ ...prev, [`status_${user.id}`]: true }));
     try {
-      await requestRaw(getApiUrl(`users/${user.id}`), {
+      const res = await fetch(`${API_BASE}/api/users/${user.id}`, {
         method: "PATCH",
-        body: { status: newStatus },
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ status: newStatus }),
       });
+      if (!res.ok) throw new Error("Status update failed");
       setUsers((prev) => prev.map((u) => u.id === user.id ? { ...u, status: newStatus } : u));
     } catch {
       // silent — real app would toast
@@ -236,9 +243,11 @@ export default function AdminUsersPage() {
     setDeleteLoading(true);
     setDeleteError(null);
     try {
-      await requestRaw(getApiUrl(`users/${deleteTarget.id}`), {
+      const res = await fetch(`${API_BASE}/api/users/${deleteTarget.id}`, {
         method: "DELETE",
+        headers: getAuthHeaders(),
       });
+      if (!res.ok) throw new Error("Delete failed");
       setUsers((prev) => prev.filter((u) => u.id !== deleteTarget.id));
       setDeleteTarget(null);
     } catch (err: unknown) {
@@ -256,13 +265,14 @@ export default function AdminUsersPage() {
     try {
       await Promise.all(
         Array.from(selected).map((id) =>
-          requestRaw(getApiUrl(`users/${id}`), { method: "DELETE" }),
-        ),
+          fetch(`${API_BASE}/api/users/${id}`, {
+            method: "DELETE",
+            headers: getAuthHeaders(),
+          })
+        )
       );
       setUsers((prev) => prev.filter((u) => !selected.has(u.id)));
       setSelected(new Set());
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Bulk delete failed");
     } finally {
       setBulkDeleting(false);
     }

@@ -36,14 +36,13 @@ import { AccessLogsService } from '../access-logs/access-logs.service';
 import { FileValidationPipe } from './pipes/file-validation.pipe';
 import { ListDocumentsDto } from './dto/list-documents.dto';
 import { DocumentResponseDto } from './dto/document-response.dto';
+import {
+  DOCUMENT_ALLOWED_MIME_TYPES,
+  DOCUMENT_MAX_FILE_SIZE_BYTES,
+} from '../common/api-contracts';
 
-const ALLOWED_MIME_TYPES = [
-  'application/pdf',
-  'image/png',
-  'image/jpeg',
-  'image/svg+xml',
-];
-const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
+const ALLOWED_MIME_TYPES = DOCUMENT_ALLOWED_MIME_TYPES;
+const MAX_FILE_SIZE_BYTES = DOCUMENT_MAX_FILE_SIZE_BYTES;
 const DEFAULT_USER_QUOTA = 20;
 
 const multerStorage = multer.memoryStorage();
@@ -146,6 +145,7 @@ export class DocumentsController {
       query.page!,
       query.limit!,
       query.status,
+      query.search,
     );
 
     return {
@@ -294,13 +294,22 @@ export class DocumentsController {
   }
 }
 
+function toNullableNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const numberValue = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
 function toDocumentResponse(document: Document): DocumentResponseDto {
   return {
     id: document.id,
     title: document.title,
     status: document.status,
-    riskScore: document.riskScore,
-    riskFlags: document.riskFlags,
+    riskScore: toNullableNumber(document.riskScore),
+    riskFlags: document.riskFlags ?? null,
+    fileSize: document.fileSize,
+    latitude: toNullableNumber(document.latitude),
+    longitude: toNullableNumber(document.longitude),
     createdAt: document.createdAt,
     updatedAt: document.updatedAt,
   };

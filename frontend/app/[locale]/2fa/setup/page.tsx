@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { getApiUrl, request } from "@/lib/api-client";
+import { useRouter } from "@/i18n/navigation";
+import { request } from "@/lib/api-client";
 
 export default function TwoFactorSetupPage() {
+  const router = useRouter();
   const [step, setStep] = useState<"loading" | "scan" | "confirmed">("loading");
   const [otpUri, setOtpUri] = useState<string>("");
   const [secret, setSecret] = useState<string>("");
@@ -18,10 +20,8 @@ export default function TwoFactorSetupPage() {
         const data = await request<{
           otpauthUrl?: string;
           secret?: string;
-        }>(getApiUrl("auth/2fa/setup"), { method: "POST" });
-        setOtpUri(
-          data.otpauthUrl || `otpauth://totp/SMALDA?secret=${data.secret}`,
-        );
+        }>("/api/v1/auth/2fa/setup", { method: "POST" });
+        setOtpUri(data.otpauthUrl || `otpauth://totp/SMALDA?secret=${data.secret}`);
         setSecret(data.secret || "JBSWY3DPEHPK3PXP");
         setStep("scan");
       } catch {
@@ -43,9 +43,10 @@ export default function TwoFactorSetupPage() {
 
     try {
       const data = await request<{ backupCodes?: string[] }>(
-        getApiUrl("auth/2fa/verify"),
+        "/api/v1/auth/2fa/verify",
         {
           method: "POST",
+          anonymous: true,
           body: { code: totpCode, secret },
         },
       );
@@ -79,7 +80,7 @@ export default function TwoFactorSetupPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-900 px-4 py-12 text-white">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-gray-900 px-4 py-12 text-white">
       <div className="w-full max-w-lg rounded-xl border border-gray-800 bg-gray-950 p-8 shadow-2xl">
         <h1 className="mb-6 text-center text-2xl font-bold">Two-Factor Authentication Setup</h1>
 
@@ -168,7 +169,7 @@ export default function TwoFactorSetupPage() {
             </div>
 
             <button
-              onClick={() => window.location.assign("/settings")}
+              onClick={() => router.push("/settings")}
               className="mt-6 w-full rounded-md bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-500"
             >
               Done & Return to Settings
@@ -176,6 +177,6 @@ export default function TwoFactorSetupPage() {
           </div>
         )}
       </div>
-    </div>
+    </main>
   );
 }

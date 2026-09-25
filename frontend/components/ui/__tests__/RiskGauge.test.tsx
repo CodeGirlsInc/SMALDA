@@ -39,4 +39,20 @@ describe("RiskGauge", () => {
     render(<RiskGauge riskScore={15} />);
     expect(screen.getAllByText(/Low risk/).length).toBeGreaterThan(0);
   });
+
+  it("uses theme-aware colors for the gauge and flags", () => {
+    const { container } = render(
+      <RiskGauge riskScore={85} riskFlags={["Ownership conflict"]} />,
+    );
+    const [track, indicator] = container.querySelectorAll("circle");
+    const flag = screen.getByText("Ownership conflict");
+
+    expect(track).toHaveAttribute("stroke", "var(--muted)");
+    expect(indicator).toHaveAttribute("stroke", "var(--risk-high)");
+    expect(screen.getByRole("status")).toHaveStyle("color: var(--risk-high)");
+    expect(screen.getByText("85")).toHaveClass("text-foreground");
+    expect(screen.getByText("/ 100")).toHaveClass("text-muted-foreground");
+    expect(flag).toHaveClass("text-muted-foreground");
+    expect(flag.querySelector("span")).toHaveClass("bg-risk-medium");
+  });
 });

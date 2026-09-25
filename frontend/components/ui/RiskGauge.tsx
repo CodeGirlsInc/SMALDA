@@ -9,9 +9,9 @@ export interface RiskGaugeProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 function scoreColor(score: number): string {
-  if (score >= 70) return "#ef4444"; // red — high risk
-  if (score >= 40) return "#eab308"; // yellow — medium risk
-  return "#22c55e"; // green — low risk
+  if (score >= 70) return "var(--risk-high)";
+  if (score >= 40) return "var(--risk-medium)";
+  return "var(--risk-low)";
 }
 
 function scoreLabel(score: number): string {
@@ -53,7 +53,7 @@ const RiskGauge = React.forwardRef<HTMLDivElement, RiskGaugeProps>(
               cy="60"
               r={radius}
               fill="none"
-              stroke="#e5e7eb"
+              stroke="var(--muted)"
               strokeWidth="12"
             />
             <circle
@@ -68,8 +68,8 @@ const RiskGauge = React.forwardRef<HTMLDivElement, RiskGaugeProps>(
             />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-2xl font-bold text-gray-900">{clamped}</span>
-            <span className="text-xs text-gray-500">/ 100</span>
+            <span className="text-2xl font-bold text-foreground">{clamped}</span>
+            <span className="text-xs text-muted-foreground">/ 100</span>
           </div>
         </div>
 
@@ -86,10 +86,10 @@ const RiskGauge = React.forwardRef<HTMLDivElement, RiskGaugeProps>(
             {riskFlags.map((flag) => (
               <li
                 key={flag}
-                className="flex items-start gap-2 text-xs text-gray-600"
+                className="flex items-start gap-2 text-xs text-muted-foreground"
               >
                 <span
-                  className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-yellow-400"
+                  className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-risk-medium"
                   aria-hidden="true"
                 />
                 {flag}

@@ -2,11 +2,12 @@
 
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Link } from "@/i18n/navigation";
-import { ApiError, getApiUrl, requestRaw } from "@/lib/api-client";
+import { Link, useRouter } from "@/i18n/navigation";
+import { ApiError, request } from "@/lib/api-client";
 
 export default function VerifyEmailPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const token = searchParams.get("token");
 
   const [status, setStatus] = useState<"loading" | "success" | "failure">("loading");
@@ -23,31 +24,26 @@ export default function VerifyEmailPage() {
 
     async function verify() {
       try {
-        await requestRaw(
-          `${getApiUrl("auth/verify-email")}?token=${encodeURIComponent(token)}`,
+        await request(
+          `/api/v1/auth/verify-email?token=${encodeURIComponent(token)}`,
           { method: "GET", anonymous: true },
         );
         setStatus("success");
         setTimeout(() => {
-          window.location.assign("/login");
+          router.push("/login");
         }, 3000);
-      } catch (error: unknown) {
+      } catch (error) {
         setStatus("failure");
-        if (error instanceof ApiError) {
-          setErrorMessage(
-            error.backendMessage ||
-              "Failed to verify email. The token may be expired or invalid.",
-          );
-        } else {
-          setErrorMessage(
-            "Network error verifying email. Please check your connection.",
-          );
-        }
+        setErrorMessage(
+          error instanceof ApiError && error.backendMessage
+            ? error.backendMessage
+            : "Failed to verify email. The token may be expired or invalid.",
+        );
       }
     }
 
     verify();
-  }, [token]);
+  }, [token, router]);
 
   async function handleResend(e: React.FormEvent) {
     e.preventDefault();
@@ -55,10 +51,10 @@ export default function VerifyEmailPage() {
 
     setResendStatus("sending");
     try {
-      await requestRaw(getApiUrl("auth/resend-verification"), {
+      await request("/api/v1/auth/resend-verification", {
         method: "POST",
-        body: { email: resendEmail },
         anonymous: true,
+        body: { email: resendEmail },
       });
       setResendStatus("sent");
     } catch {
@@ -67,7 +63,7 @@ export default function VerifyEmailPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-900 px-4 py-12 text-white">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-gray-900 px-4 py-12 text-white">
       <div className="w-full max-w-md rounded-xl border border-gray-800 bg-gray-950 p-8 shadow-2xl">
         <h1 className="mb-6 text-center text-2xl font-bold">Email Verification</h1>
 
@@ -133,6 +129,6 @@ export default function VerifyEmailPage() {
           </div>
         )}
       </div>
-    </div>
+    </main>
   );
 }

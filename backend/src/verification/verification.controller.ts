@@ -3,6 +3,7 @@ import { Throttle } from '@nestjs/throttler';
 
 import { DocumentsService } from '../documents/documents.service';
 import { VerificationService } from './verification.service';
+import { VerificationCacheService } from './verification-cache.service';
 
 // Stricter rate limiting for public endpoint (10 requests per minute)
 @Throttle({ default: { ttl: 60000, limit: 10 } })
@@ -11,6 +12,7 @@ export class VerificationController {
   constructor(
     private readonly documentsService: DocumentsService,
     private readonly verificationService: VerificationService,
+    private readonly verificationCache: VerificationCacheService,
   ) {}
 
   @Get(':hash')
@@ -22,13 +24,22 @@ export class VerificationController {
       );
     }
 
+    // Check cache first
+    const cached = this.verificationCache.get(hash);
+    if (cached !== undefined) {
+      return cached;
+    }
+
     // Look up document by file hash
     const document = await this.documentsService.findByFileHash(hash);
     if (!document) {
-      return {
+      const response = {
         verified: false,
         message: 'Document not found',
+        documentStatus: null,
       };
+      this.verificationCache.set(hash, response);
+      return response;
     }
 
     // Get the latest verification record
@@ -36,19 +47,24 @@ export class VerificationController {
       document.id,
     );
 
+    let response;
     if (!record) {
-      return {
+      response = {
         verified: false,
         message: 'Document has not been verified on Stellar',
+        documentStatus: document.status,
+      };
+    } else {
+      response = {
+        verified: true,
+        stellarTxHash: record.stellarTxHash,
+        stellarLedger: record.stellarLedger,
+        anchoredAt: record.anchoredAt,
+        documentStatus: document.status,
       };
     }
 
-    // Return only verification status - no document metadata
-    return {
-      verified: true,
-      stellarTxHash: record.stellarTxHash,
-      stellarLedger: record.stellarLedger,
-      anchoredAt: record.anchoredAt,
-    };
+    this.verificationCache.set(hash, response);
+    return response;
   }
 }

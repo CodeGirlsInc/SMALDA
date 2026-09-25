@@ -1,240 +1,107 @@
 /**
- * Browser-side ownership of the backend's snake-case JWT session response.
- * Tokens are stored separately because the backend rotates only the access
- * token during refresh; malformed or expired tokens are never returned for use.
+ * Client-side session plumbing shared by the auth pages.
+ *
+ * FE-43's auth context is not in place yet, so the login page persists the
+ * tokens it gets back from `POST /api/v1/auth/login` through here. When the
+ * context lands it should take ownership of these functions and the pages
+ * should read the session off the context instead of touching storage.
  */
 
+import { invalidateRefresh } from "@/lib/api-client";
+import {
+  clearAllSessionState,
+  consumeSessionResume,
+  type SessionStateResult,
+} from "@/lib/session-state-preserver";
+import { routing, type Locale } from "@/i18n/routing";
+
 const ACCESS_TOKEN_KEY = "auth-token";
-const REFRESH_TOKEN_KEY = "auth-refresh-token";
-const LEGACY_REFRESH_TOKEN_KEY = "refresh-token";
-const LOGOUT_EVENT_KEY = "logout-event";
+const REFRESH_TOKEN_KEY = "refresh-token";
 
-const JWT_ALGORITHM = "HS256";
-
+/** Shape of `POST /api/v1/auth/login` — mirrors backend/src/auth/auth.service.ts. */
 export interface LoginResponse {
   access_token: string;
   refresh_token?: string;
 }
 
-export interface JwtClaims {
-  sub: string;
-  email: string;
-  role: string;
-  exp: number;
+function unavailable<T>(): SessionStateResult<T> {
+  return { ok: false, error: { code: "unavailable" } };
 }
 
-function getLocalStorage(): Storage | null {
-  if (typeof window === "undefined") return null;
+function invalidSession(): SessionStateResult<void> {
+  return { ok: false, error: { code: "unauthenticated" } };
+}
 
+function readLocalStorageItem(key: string): SessionStateResult<string | null> {
+  if (typeof window === "undefined") return unavailable<string | null>();
   try {
-    return window.localStorage;
+    return { ok: true, value: window.localStorage.getItem(key) };
   } catch {
-    return null;
+    return { ok: false, error: { code: "storage", key } };
   }
 }
 
-function readToken(key: string): string | null {
-  const storage = getLocalStorage();
-  if (!storage) return null;
-
+function restoreLocalStorageItem(key: string, value: string | null): void {
   try {
-    return storage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function removeToken(key: string): void {
-  const storage = getLocalStorage();
-  if (!storage) return;
-
-  try {
-    storage.removeItem(key);
+    if (value === null) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, value);
   } catch {
     return;
   }
 }
 
-function decodeJwtPart(part: string): unknown {
-  if (!/^[A-Za-z0-9_-]+$/.test(part)) {
-    throw new Error("Invalid JWT encoding");
-  }
-  if (
-    typeof globalThis.atob !== "function" ||
-    typeof TextDecoder === "undefined"
-  ) {
-    throw new Error("JWT decoding is unavailable");
-  }
+/**
+ * Persist login tokens. When `resumeId` is present (from the login page's
+ * `?resume=` param, set when a 401 bounced the user here mid-flow), the
+ * preserved form state for that resume group is restored transactionally;
+ * otherwise any leftover preserved state is cleared. On any failure the
+ * previous tokens are restored so a half-applied login never sticks.
+ */
+export function storeSession(
+  tokens: LoginResponse,
+  resumeId?: string,
+): SessionStateResult<void> {
+  if (typeof window === "undefined") return unavailable<void>();
+  if (!tokens?.access_token) return invalidSession();
 
-  const padding = "=".repeat((4 - (part.length % 4)) % 4);
-  const base64 = part.replace(/-/g, "+").replace(/_/g, "/");
-  const binary = globalThis.atob(base64 + padding);
-  const bytes = Uint8Array.from(binary, (character) =>
-    character.charCodeAt(0),
-  );
+  invalidateRefresh();
+  const previousAccess = readLocalStorageItem(ACCESS_TOKEN_KEY);
+  const previousRefresh = readLocalStorageItem(REFRESH_TOKEN_KEY);
+  if (!previousAccess.ok) return previousAccess;
+  if (!previousRefresh.ok) return previousRefresh;
 
-  return JSON.parse(
-    new TextDecoder("utf-8", { fatal: true }).decode(bytes),
-  );
-}
-
-function isJwtPayload(value: unknown): value is JwtClaims {
-  if (typeof value !== "object" || value === null) return false;
-
-  const payload = value as Record<string, unknown>;
-  return (
-    typeof payload.sub === "string" &&
-    payload.sub.length > 0 &&
-    typeof payload.email === "string" &&
-    payload.email.length > 0 &&
-    typeof payload.role === "string" &&
-    payload.role.length > 0 &&
-    typeof payload.exp === "number" &&
-    Number.isSafeInteger(payload.exp) &&
-    payload.exp > 0
-  );
-}
-
-export function getJwtClaims(token: string): JwtClaims | null {
   try {
-    const parts = token.split(".");
-    if (
-      parts.length !== 3 ||
-      !/^[A-Za-z0-9_-]+$/.test(parts[2])
-    ) {
-      return null;
+    window.localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access_token);
+    if (tokens.refresh_token) {
+      window.localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token);
+    } else {
+      window.localStorage.removeItem(REFRESH_TOKEN_KEY);
     }
-
-    const header = decodeJwtPart(parts[0]);
-    if (
-      typeof header !== "object" ||
-      header === null ||
-      (header as Record<string, unknown>).alg !== JWT_ALGORITHM
-    ) {
-      return null;
-    }
-
-    const payload = decodeJwtPart(parts[1]);
-    return isJwtPayload(payload) ? payload : null;
   } catch {
-    return null;
-  }
-}
-
-export function getJwtExpiration(token: string): number | null {
-  return getJwtClaims(token)?.exp ?? null;
-}
-
-function isTokenCurrent(token: string, now: number): boolean {
-  const expiration = getJwtExpiration(token);
-  return expiration !== null && expiration * 1000 > now;
-}
-
-export function getValidAccessToken(): string | null {
-  const token = readToken(ACCESS_TOKEN_KEY);
-  return token && isTokenCurrent(token, Date.now()) ? token : null;
-}
-
-export function getValidRefreshToken(): string | null {
-  const canonicalToken = readToken(REFRESH_TOKEN_KEY);
-  if (canonicalToken !== null) {
-    return isTokenCurrent(canonicalToken, Date.now()) ? canonicalToken : null;
+    restoreLocalStorageItem(ACCESS_TOKEN_KEY, previousAccess.value);
+    restoreLocalStorageItem(REFRESH_TOKEN_KEY, previousRefresh.value);
+    return { ok: false, error: { code: "storage" } };
   }
 
-  const legacyToken = readToken(LEGACY_REFRESH_TOKEN_KEY);
-  return legacyToken && isTokenCurrent(legacyToken, Date.now())
-    ? legacyToken
-    : null;
+  const stateResult = resumeId
+    ? consumeSessionResume(resumeId, tokens.access_token)
+    : clearAllSessionState();
+  if (!stateResult.ok) {
+    restoreLocalStorageItem(ACCESS_TOKEN_KEY, previousAccess.value);
+    restoreLocalStorageItem(REFRESH_TOKEN_KEY, previousRefresh.value);
+    return { ok: false, error: stateResult.error };
+  }
+  return { ok: true, value: undefined };
 }
+
+export { clearSession } from "./api-client";
 
 export function hasStoredSession(): boolean {
-  return (
-    readToken(ACCESS_TOKEN_KEY) !== null ||
-    readToken(REFRESH_TOKEN_KEY) !== null ||
-    readToken(LEGACY_REFRESH_TOKEN_KEY) !== null
-  );
-}
-
-export function setAccessToken(token: string): boolean {
-  if (!isTokenCurrent(token, Date.now())) return false;
-
-  const storage = getLocalStorage();
-  if (!storage) return false;
-
+  if (typeof window === "undefined") return false;
   try {
-    storage.setItem(ACCESS_TOKEN_KEY, token);
-    return storage.getItem(ACCESS_TOKEN_KEY) === token;
+    return Boolean(window.localStorage.getItem(ACCESS_TOKEN_KEY)?.trim());
   } catch {
     return false;
-  }
-}
-
-export function storeSession(tokens: LoginResponse): boolean {
-  if (
-    typeof window === "undefined" ||
-    !tokens.access_token ||
-    !isTokenCurrent(tokens.access_token, Date.now()) ||
-    (tokens.refresh_token !== undefined &&
-      !isTokenCurrent(tokens.refresh_token, Date.now()))
-  ) {
-    return false;
-  }
-
-  const storage = getLocalStorage();
-  if (!storage) return false;
-
-  try {
-    storage.setItem(ACCESS_TOKEN_KEY, tokens.access_token);
-    if (tokens.refresh_token) {
-      storage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token);
-    } else {
-      storage.removeItem(REFRESH_TOKEN_KEY);
-    }
-    storage.removeItem(LEGACY_REFRESH_TOKEN_KEY);
-
-    const storedRefreshToken = tokens.refresh_token
-      ? storage.getItem(REFRESH_TOKEN_KEY)
-      : null;
-    return (
-      storage.getItem(ACCESS_TOKEN_KEY) === tokens.access_token &&
-      storedRefreshToken === (tokens.refresh_token ?? null) &&
-      storage.getItem(LEGACY_REFRESH_TOKEN_KEY) === null
-    );
-  } catch {
-    try {
-      storage.removeItem(ACCESS_TOKEN_KEY);
-      storage.removeItem(REFRESH_TOKEN_KEY);
-      storage.removeItem(LEGACY_REFRESH_TOKEN_KEY);
-    } catch {
-      return false;
-    }
-    return false;
-  }
-}
-
-function clearSessionCookie(): void {
-  if (typeof window === "undefined") return;
-
-  try {
-    window.document.cookie =
-      "token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-  } catch {
-    return;
-  }
-}
-
-export function clearSession(): void {
-  removeToken(ACCESS_TOKEN_KEY);
-  removeToken(REFRESH_TOKEN_KEY);
-  removeToken(LEGACY_REFRESH_TOKEN_KEY);
-  clearSessionCookie();
-
-  if (typeof window === "undefined") return;
-
-  try {
-    window.localStorage.setItem(LOGOUT_EVENT_KEY, Date.now().toString());
-  } catch {
-    return;
   }
 }
 
@@ -252,40 +119,38 @@ function hasControlCharacter(value: string): boolean {
   return false;
 }
 
+function removeLocalePrefix(pathname: string): string {
+  const segments = pathname.split("/").filter(Boolean);
+  const first = segments[0] as Locale | undefined;
+  if (!first || !routing.locales.includes(first)) return pathname;
+  return segments.length > 1 ? `/${segments.slice(1).join("/")}` : "/";
+}
+
 /**
- * Resolve the `?redirect=` param that FE-44's middleware appends when it
- * bounces an unauthenticated request, into a path that is safe to navigate to.
+ * Resolve the `?redirect=` param that the protected-route middleware appends
+ * when it bounces an unauthenticated request, into a path that is safe to
+ * navigate to.
  *
- * Anything that could leave the origin falls back to the root landing page, so a
- * crafted `/login?redirect=…` link cannot be used as an open redirect:
- * absolute URLs carry a scheme and therefore never start with `/`, while
- * `//evil.com` and its `/\evil.com` backslash variant are treated as
+ * Anything that could leave the origin falls back to the default post-login
+ * path, so a crafted `/login?redirect=…` link cannot be used as an open
+ * redirect: absolute URLs carry a scheme and therefore never start with `/`,
+ * while `//evil.com` and its `/\evil.com` backslash variant are treated as
  * protocol-relative by browsers and so are rejected explicitly.
  */
-export function resolvePostLoginPath(
-  raw: string | null | undefined,
-  activeLocale?: string,
-): string {
+export function resolvePostLoginPath(raw: string | null | undefined): string {
   if (!raw || !raw.startsWith("/")) return DEFAULT_POST_LOGIN_PATH;
   if (raw.startsWith("//") || raw.startsWith("/\\")) {
     return DEFAULT_POST_LOGIN_PATH;
   }
   if (hasControlCharacter(raw)) return DEFAULT_POST_LOGIN_PATH;
 
-  if (activeLocale) {
-    const localePrefix = `/${activeLocale}`;
-    const pathOnly = raw.split(/[?#]/, 1)[0];
-    if (pathOnly === localePrefix) {
-      const suffix = raw.slice(localePrefix.length);
-      if (suffix.startsWith("?") || suffix.startsWith("#")) {
-        return `/${suffix}`;
-      }
+  try {
+    const parsed = new URL(raw, "https://local.invalid");
+    if (parsed.origin !== "https://local.invalid") {
       return DEFAULT_POST_LOGIN_PATH;
     }
-    if (pathOnly.startsWith(`${localePrefix}/`)) {
-      return resolvePostLoginPath(raw.slice(localePrefix.length));
-    }
+    return `${removeLocalePrefix(parsed.pathname)}${parsed.search}${parsed.hash}`;
+  } catch {
+    return DEFAULT_POST_LOGIN_PATH;
   }
-
-  return raw;
 }

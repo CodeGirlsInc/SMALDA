@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import messages from "@/messages/en.json";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
@@ -11,20 +11,6 @@ jest.mock("@/i18n/navigation", () => ({
   usePathname: () => "/settings/security",
   useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
 }));
-
-function createJwt(): string {
-  const encode = (value: object) =>
-    btoa(JSON.stringify(value))
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_")
-      .replace(/=+$/, "");
-  return `${encode({ alg: "HS256", typ: "JWT" })}.${encode({
-    sub: "user-1",
-    email: "user@example.com",
-    role: "user",
-    exp: Math.floor(Date.now() / 1000) + 3600,
-  })}.signature`;
-}
 
 function renderSwitcher(locale = "en") {
   return render(
@@ -43,6 +29,7 @@ describe("LanguageSwitcher", () => {
     jest.restoreAllMocks();
     mockReplace.mockClear();
     localStorage.clear();
+    document.cookie = "NEXT_LOCALE=; Max-Age=0; Path=/";
   });
 
   it("renders all supported languages", () => {
@@ -59,36 +46,18 @@ describe("LanguageSwitcher", () => {
     expect(mockReplace).toHaveBeenCalledWith("/settings/security", {
       locale: "fr",
     });
+    expect(document.cookie).toContain("NEXT_LOCALE=fr");
   });
 
-  it("saves the preferred language to the backend when authenticated", async () => {
-    localStorage.setItem("auth-token", createJwt());
+  it("does not call a backend endpoint when the locale changes", () => {
+    localStorage.setItem("auth-token", "test-token");
     const fetchMock = jest.fn().mockResolvedValue({ ok: true } as Response);
     global.fetch = fetchMock as unknown as typeof fetch;
 
     renderSwitcher("en");
     fireEvent.change(getSelect(), { target: { value: "es" } });
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    const [url, options] = fetchMock.mock.calls[0];
-    expect(String(url)).toContain("/api/v1/users/me");
-    expect(options).toMatchObject({ method: "PATCH" });
-    expect(
-      JSON.parse((options as RequestInit).body as string)
-    ).toEqual({ preferredLanguage: "es" });
-  });
-
-  it("does not call the backend when the user is not authenticated", () => {
-    const fetchMock = jest.fn().mockResolvedValue({ ok: true } as Response);
-    global.fetch = fetchMock as unknown as typeof fetch;
-
-    renderSwitcher("en");
-    fireEvent.change(getSelect(), { target: { value: "fr" } });
-
     expect(fetchMock).not.toHaveBeenCalled();
-    // The UI language still switches locally.
-    expect(mockReplace).toHaveBeenCalledWith("/settings/security", {
-      locale: "fr",
-    });
+    expect(document.cookie).toContain("NEXT_LOCALE=es");
   });
 });

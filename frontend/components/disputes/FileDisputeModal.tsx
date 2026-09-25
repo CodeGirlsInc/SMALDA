@@ -2,16 +2,30 @@
 
 import React, { useState } from "react";
 import { request } from "@/lib/api-client";
+import { API_PREFIX } from "@/lib/api-contracts";
 import {
-  normalizeDispute,
-  type Dispute,
-  type DisputeDocumentSummary,
-} from "@/lib/disputes";
+  createDisputeSchema,
+  disputeResponseSchema,
+  DISPUTE_DESCRIPTION_UX_MIN_LENGTH,
+  type DisputeResponse,
+} from "@/lib/schemas/dispute";
+import type { DocumentListItem } from "@/lib/schemas/document";
 import { useToast } from "@/components/ui/use-toast";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+type Document = Pick<DocumentListItem, "id" | "title">;
 
 interface FileDisputeModalProps {
-  documents: DisputeDocumentSummary[];
-  onDisputeFiled: (newDispute: Dispute) => void;
+  documents: Document[];
+  onDisputeFiled: (newDispute: DisputeResponse) => void;
   onClose: () => void;
 }
 
@@ -33,19 +47,31 @@ export function FileDisputeModal({
       setError("Please select a document.");
       return;
     }
-    if (description.length < 20) {
-      setError("Description must be at least 20 characters long.");
+    if (description.length < DISPUTE_DESCRIPTION_UX_MIN_LENGTH) {
+      setError(
+        `Description must be at least ${DISPUTE_DESCRIPTION_UX_MIN_LENGTH} characters long.`,
+      );
+      return;
+    }
+    const validation = createDisputeSchema.safeParse({
+      documentId,
+      description,
+    });
+    if (!validation.success) {
+      setError("Please select a valid document.");
       return;
     }
     setError(null);
     setSubmitting(true);
 
     try {
-      const response = await request<unknown>("disputes", {
-        method: "POST",
-        body: { documentId, description },
-      });
-      onDisputeFiled(normalizeDispute(response));
+      const newDispute = disputeResponseSchema.parse(
+        await request<unknown>(`${API_PREFIX}/disputes`, {
+          method: "POST",
+          body: validation.data,
+        }),
+      );
+      onDisputeFiled(newDispute);
       toast({
         title: "Dispute Filed",
         description: "Your dispute has been successfully filed.",
@@ -59,11 +85,19 @@ export function FileDisputeModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
-        <h2 className="text-lg font-semibold text-gray-900">
-          File a New Dispute
-        </h2>
+    <Dialog
+      open
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
+      }}
+    >
+      <DialogContent size="sm">
+        <DialogHeader>
+          <DialogTitle>File a New Dispute</DialogTitle>
+          <DialogDescription>
+            Submit a dispute against one of your documents.
+          </DialogDescription>
+        </DialogHeader>
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           <div>
             <label
@@ -99,18 +133,19 @@ export function FileDisputeModal({
               onChange={(e) => setDescription(e.target.value)}
               rows={4}
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-              placeholder="Please provide a detailed reason for your dispute (min. 20 characters)."
+              placeholder={`Please provide a detailed reason for your dispute (min. ${DISPUTE_DESCRIPTION_UX_MIN_LENGTH} characters).`}
             />
           </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <div className="flex justify-end space-x-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
+          {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
+          <DialogFooter>
+            <DialogClose asChild>
+              <button
+                type="button"
+                className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+            </DialogClose>
             <button
               type="submit"
               disabled={submitting}
@@ -118,9 +153,9 @@ export function FileDisputeModal({
             >
               {submitting ? "Submitting..." : "Submit Dispute"}
             </button>
-          </div>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

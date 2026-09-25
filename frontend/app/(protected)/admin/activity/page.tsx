@@ -2,6 +2,8 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { CircleUser } from "lucide-react";
+import { apiUrl } from "@/lib/api-config";
+import { getAccessToken } from "@/lib/session";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -27,11 +29,8 @@ interface PaginatedActivity {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
-
 function getAuthHeaders(): HeadersInit {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
+  const token = getAccessToken();
   return {
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -107,10 +106,10 @@ export default function AdminActivityPage() {
     if (appliedActionType) params.set("actionType", appliedActionType);
 
     try {
-      const res = await fetch(
-        `${API_BASE}/api/admin/activity?${params.toString()}`,
-        { headers: getAuthHeaders() },
-      );
+      const res = await fetch(apiUrl("/admin/activity", params), {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
       if (res.status === 403) {
         setAccessDenied(true);
         return;

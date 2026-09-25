@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { useRouter } from "@/i18n/navigation";
 import {
-  getApiUrl,
-  logoutSession,
+  clearSession,
   request,
   requestBlob,
 } from "@/lib/api-client";
@@ -11,6 +11,10 @@ import {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function logout(): boolean {
+  return clearSession().ok;
+}
 
 const COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
 const STORAGE_KEY = "last_data_export_ts";
@@ -154,6 +158,8 @@ function DeleteConfirmationModal({
 // ---------------------------------------------------------------------------
 
 export default function SettingsDataPage() {
+  const router = useRouter();
+
   // ── Export state ───────────────────────────────────────────────────────────
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -174,7 +180,7 @@ export default function SettingsDataPage() {
     setIsExporting(true);
     setExportError(null);
     try {
-      const blob = await requestBlob(getApiUrl("users/me/export"));
+      const blob = await requestBlob("/api/v1/users/me/export");
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -201,13 +207,15 @@ export default function SettingsDataPage() {
     setIsDeleting(true);
     setDeleteError(null);
     try {
-      await request(getApiUrl("users/me/data"), {
+      await request("/api/v1/users/me/data", {
         method: "DELETE",
         body: { password },
       });
 
-      await logoutSession();
-      window.location.assign("/?deleted=true");
+      if (!logout()) {
+        throw new Error("Sign out failed. Please try again.");
+      }
+      router.push("/?deleted=true");
     } catch (err: unknown) {
       setDeleteError(
         err instanceof Error ? err.message : "Deletion failed. Please try again."

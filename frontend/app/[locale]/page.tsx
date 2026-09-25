@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
+import { FileText } from "lucide-react";
 import { Link } from "@/i18n/navigation";
+import { apiRequest } from "@/lib/api-client";
 import { EmptyState } from "@/components/EmptyState";
 import Skeleton from "@/components/Skeleton";
 
@@ -54,7 +56,6 @@ const STATUS_BAR_COLOR: Record<DocumentStatus, string> = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const RECENT_LIMIT = 10;
 // Max page size the API allows; used as a single-request approximation for
 // the aggregate stats and risk distribution (no dedicated stats endpoint yet).
@@ -136,26 +137,9 @@ export default function DashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      const token =
-        typeof window !== "undefined"
-          ? localStorage.getItem("auth-token")
-          : null;
-
-      const res = await fetch(
-        `${API_BASE}/api/documents?page=1&limit=${STATS_SAMPLE_LIMIT}`,
-        {
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-        }
+      const json = await apiRequest<PaginatedDocuments>(
+        `/api/v1/documents?page=1&limit=${STATS_SAMPLE_LIMIT}`,
       );
-
-      if (!res.ok) {
-        throw new Error(`Request failed: ${res.status}`);
-      }
-
-      const json: PaginatedDocuments = await res.json();
       setStats(computeStats(json));
     } catch {
       setError(t("loadError"));
@@ -233,6 +217,7 @@ export default function DashboardPage() {
         <EmptyState
           title={t("emptyTitle")}
           description={t("emptyDescription")}
+          icon={<FileText className="h-10 w-10" aria-hidden="true" />}
           action={
             <Link
               href="/documents"

@@ -4,7 +4,8 @@ import React, { Suspense, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { Link, useRouter } from "@/i18n/navigation";
-import { ApiError, getApiUrl, requestRaw } from "@/lib/api-client";
+import { ApiError, request } from "@/lib/api-client";
+
 const MIN_PASSWORD_LENGTH = 6;
 
 function InvalidTokenNotice({
@@ -79,13 +80,13 @@ function ResetPasswordForm() {
 
     setLoading(true);
     try {
-      await requestRaw(getApiUrl("auth/reset-password"), {
+      await request("/api/v1/auth/reset-password", {
         method: "POST",
-        body: { token, password },
         anonymous: true,
+        body: { token, password },
       });
       router.push("/login?reset=success");
-    } catch (error: unknown) {
+    } catch (error) {
       if (
         error instanceof ApiError &&
         (error.status === 400 || error.status === 401 || error.status === 410)

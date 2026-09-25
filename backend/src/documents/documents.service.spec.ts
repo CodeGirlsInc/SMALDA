@@ -190,6 +190,24 @@ describe('DocumentsService', () => {
       expect(result.page).toBe(2);
     });
 
+    it('should apply a title search when provided', async () => {
+      mockRepository.findAndCount.mockResolvedValueOnce([[], 0]);
+
+      await service.findByOwnerPaginated(
+        'user-456',
+        1,
+        20,
+        undefined,
+        'land title',
+      );
+
+      expect(mockRepository.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ title: expect.anything() }),
+        }),
+      );
+    });
+
     it('should compute correct skip for page 3 with limit 5', async () => {
       mockRepository.findAndCount.mockResolvedValueOnce([[], 0]);
 

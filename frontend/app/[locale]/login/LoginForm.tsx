@@ -3,17 +3,18 @@
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { Link, useRouter } from "@/i18n/navigation";
 import { loginSchema, type LoginInput } from "@/lib/schemas/auth";
-import { ApiError, getApiUrl, request } from "@/lib/api-client";
+import { API_V1_BASE, ApiError, apiRequest } from "@/lib/api-client";
 import {
   resolvePostLoginPath,
   storeSession,
   type LoginResponse,
 } from "@/lib/auth-session";
 import { ErrorBanner } from "@/components/ErrorBanner";
+import { persistOAuthRedirect } from "@/lib/oauth-redirect";
 import {
   Button,
   Card,
@@ -58,7 +59,6 @@ type SubmitError =
 
 export function LoginForm() {
   const t = useTranslations("auth.login");
-  const locale = useLocale();
   // Field-level messages arrive from the zod schema as full key paths
   // (`errors.email.invalid`), so they resolve against the message root.
   const tKey = useTranslations();
@@ -88,28 +88,26 @@ export function LoginForm() {
     defaultValues: { email: "", password: "" },
   });
 
-  const target = resolvePostLoginPath(searchParams.get("redirect"), locale);
+  const target = resolvePostLoginPath(searchParams.get("redirect"));
+  const resumeId = searchParams.get("resume");
 
-  // OAuth is a full-page handoff to the backend, which redirects back with a
-  // token — so these are plain anchors, not locale-aware client-side links.
   const oauthHref = (provider: "google" | "github") =>
-    getApiUrl(`auth/${provider}`);
+    `${API_V1_BASE}/auth/${provider}`;
 
   async function onSubmit(values: LoginInput) {
     setSubmitError(null);
     try {
-      const data = await request<LoginResponse>(
-        getApiUrl("auth/login"),
+      const data = await apiRequest<LoginResponse>(
+        `${API_V1_BASE}/auth/login`,
         {
           method: "POST",
           body: values,
-          anonymous: true,
-          // Lets the backend set a session cookie too, for when the token
-          // stops living in localStorage.
           credentials: "include",
+          anonymous: true,
         },
       );
-      if (!storeSession(data)) {
+      const stored = storeSession(data, resumeId ?? undefined);
+      if (!stored.ok) {
         setSubmitError({ kind: "api", messageKey: "errors.status.unknown" });
         return;
       }
@@ -229,10 +227,20 @@ export function LoginForm() {
 
         <div className="flex flex-col gap-2">
           <Button asChild variant="outline" className="w-full">
-            <a href={oauthHref("google")}>{t("continueWithGoogle")}</a>
+            <a
+              href={oauthHref("google")}
+              onClick={() => persistOAuthRedirect(target)}
+            >
+              {t("continueWithGoogle")}
+            </a>
           </Button>
           <Button asChild variant="outline" className="w-full">
-            <a href={oauthHref("github")}>{t("continueWithGithub")}</a>
+            <a
+              href={oauthHref("github")}
+              onClick={() => persistOAuthRedirect(target)}
+            >
+              {t("continueWithGithub")}
+            </a>
           </Button>
         </div>
 

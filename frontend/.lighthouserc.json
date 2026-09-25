@@ -2,7 +2,11 @@
   "ci": {
     "collect": {
       "numberOfRuns": 1,
-      "url": ["http://localhost:3000/", "http://localhost:3000/verify"]
+      "url": [
+        "http://localhost:3000/",
+        "http://localhost:3000/verify",
+        "http://localhost:3000/map"
+      ]
     },
     "assert": {
       "assertions": {
