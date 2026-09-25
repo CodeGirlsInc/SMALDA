@@ -80,7 +80,7 @@ export default function TwoFactorSetupPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-900 px-4 py-12 text-white">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-gray-900 px-4 py-12 text-white">
       <div className="w-full max-w-lg rounded-xl border border-gray-800 bg-gray-950 p-8 shadow-2xl">
         <h1 className="mb-6 text-center text-2xl font-bold">Two-Factor Authentication Setup</h1>
 
@@ -177,6 +177,6 @@ export default function TwoFactorSetupPage() {
           </div>
         )}
       </div>
-    </div>
+    </main>
   );
 }
