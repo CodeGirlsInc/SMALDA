@@ -20,7 +20,7 @@ fn test_state() -> AppState {
         cache: Arc::new(CacheBackend::InMemory(InMemoryCache::new())),
         metrics: Arc::new(MetricsRegistry::new()),
         stellar_secret_key: SECRET.to_string(),
-        rate_limiter: build_rate_limiter(1000, 1000),
+        rate_limiter: Arc::new(build_rate_limiter(1000, 1000)),
         webhook_urls: Vec::new(),
         webhook_secret: None,
     }

@@ -74,7 +74,7 @@ pub struct AppState {
     pub stellar_secret_key: String,
     /// Governor-based rate limiter built from `RATE_LIMIT_PER_SECOND` /
     /// `RATE_LIMIT_BURST` and enforced as a router middleware (CT-37).
-    pub rate_limiter: rate_limit::DefaultRateLimiter,
+    pub rate_limiter: Arc<rate_limit::DefaultRateLimiter>,
     /// Comma-separated webhook URLs parsed from `WEBHOOK_URLS` (CT-38).
     pub webhook_urls: Vec<String>,
     /// Shared secret used to sign webhook payloads (CT-38).
