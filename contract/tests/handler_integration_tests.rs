@@ -7,7 +7,7 @@ use stellar_doc_verifier::app;
 use stellar_doc_verifier::cache::{CacheBackend, InMemoryCache};
 use stellar_doc_verifier::metrics::MetricsRegistry;
 use stellar_doc_verifier::rate_limit::build_rate_limiter;
-use stellar_doc_verifier::stellar::StellarClient;
+use stellar_doc_verifier::stellar::{StellarClient, TransactionRecord};
 use stellar_doc_verifier::AppState;
 use tower::util::ServiceExt;
 
@@ -23,7 +23,7 @@ fn test_app_state() -> AppState {
         cache: Arc::new(cache),
         metrics,
         stellar_secret_key: SECRET.to_string(),
-        rate_limiter: build_rate_limiter(1000, 1000),
+        rate_limiter: Arc::new(build_rate_limiter(1000, 1000)),
         webhook_urls: Vec::new(),
         webhook_secret: None,
     }
@@ -399,4 +399,96 @@ async fn test_transfer_with_invalid_date_returns_400() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+
+// ---------------------------------------------------------------- pagination
+
+/// Seed a history chain of `count` records into the in-memory cache and return
+/// the app state that serves it.
+async fn state_with_history(count: usize) -> AppState {
+    let cache = CacheBackend::InMemory(InMemoryCache::new());
+    let mut records = Vec::new();
+    for i in 0..count {
+        records.push(TransactionRecord {
+            transaction_id: format!("tx_{i}"),
+            timestamp: 1_690_000_000 + i as i64,
+            verified: true,
+        });
+    }
+    cache
+        .set(&format!("history:{}", HASH), &records, 60)
+        .await
+        .unwrap();
+
+    AppState {
+        stellar: Arc::new(StellarClient::new("https://horizon-testnet.stellar.org")),
+        cache: Arc::new(cache),
+        metrics: Arc::new(MetricsRegistry::new()),
+        stellar_secret_key: SECRET.to_string(),
+        rate_limiter: Arc::new(build_rate_limiter(1000, 1000)),
+        webhook_urls: Vec::new(),
+        webhook_secret: None,
+    }
+}
+
+const HASH: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+async fn get_history(state: AppState, query: &str) -> serde_json::Value {
+    let router = app(state);
+    let response = router
+        .oneshot(
+            Request::builder()
+                .uri(&format!("/verify/{HASH}/history{query}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    serde_json::from_slice(&body).unwrap()
+}
+
+#[tokio::test]
+async fn test_history_endpoint_serves_bounded_pages() {
+    let first = get_history(state_with_history(5).await, "?page_size=2").await;
+    assert_eq!(first["count"], 2, "a page carries only its own records");
+    assert_eq!(first["total"], 5, "the whole chain is still reported");
+    assert_eq!(first["next_cursor"], 2);
+    assert_eq!(first["transactions"].as_array().unwrap().len(), 2);
+
+    let second = get_history(state_with_history(5).await, "?page_size=2&cursor=2").await;
+    assert_eq!(second["count"], 2);
+    assert_eq!(second["next_cursor"], 4);
+    assert_eq!(second["transactions"][0]["transaction_id"], "tx_2");
+
+    let last = get_history(state_with_history(5).await, "?page_size=2&cursor=4").await;
+    assert_eq!(last["count"], 1);
+    assert!(
+        last["next_cursor"].is_null(),
+        "the final page must not advertise a cursor past the end"
+    );
+}
+
+#[tokio::test]
+async fn test_history_endpoint_clamps_a_greedy_page_size() {
+    let page = get_history(state_with_history(300).await, "?page_size=10000").await;
+    assert_eq!(
+        page["count"], 200,
+        "a page size above the cap is clamped server-side"
+    );
+    assert_eq!(page["total"], 300);
+    assert_eq!(page["next_cursor"], 200);
+}
+
+#[tokio::test]
+async fn test_history_endpoint_without_query_returns_the_first_page() {
+    let page = get_history(state_with_history(60).await, "").await;
+
+    assert_eq!(page["count"], 50);
+    assert_eq!(page["total"], 60);
+    assert_eq!(page["next_cursor"], 50);
 }

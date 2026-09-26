@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
@@ -8,11 +8,14 @@ use futures::future::join_all;
 use tracing::{info, warn};
 
 use crate::hash_validator::{HashValidator, ValidationError as HashValidationError};
+use crate::module::ownership_chain::pagination::{self, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE};
 use crate::stellar::derive_account_id;
 use crate::types::{
     map_validation_error, AppState, BatchVerifyItem, BatchVerifyRequest, BatchVerifyResponse,
-    HistoryResponse, ValidationErrorResponse, VerifyRequest, VerifyResponse,
+    HistoryQuery, HistoryResponse, ValidationErrorResponse, VerifyRequest, VerifyResponse,
 };
+
+
 
 // Verify document by POST
 pub async fn verify_document(
@@ -88,6 +91,7 @@ pub async fn verify_document_by_hash(
 pub async fn verify_document_history(
     State(state): State<AppState>,
     Path(hash): Path<String>,
+    Query(query): Query<HistoryQuery>,
 ) -> Response {
     let normalized_hash = HashValidator::normalize(&hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
@@ -106,13 +110,21 @@ pub async fn verify_document_history(
             }
         };
 
-    let count = transactions.len();
+    let total = transactions.len();
     let cached = !transactions.is_empty();
+
+    let page_size = query
+        .page_size
+        .unwrap_or(DEFAULT_PAGE_SIZE)
+        .clamp(1, MAX_PAGE_SIZE);
+    let page = pagination::paginate(&transactions, query.cursor.unwrap_or(0), page_size);
 
     Json(HistoryResponse {
         document_hash: normalized_hash,
-        transactions,
-        count,
+        count: page.items.len(),
+        total,
+        next_cursor: page.next_cursor,
+        transactions: page.items,
         cached,
     })
     .into_response()

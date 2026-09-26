@@ -72,12 +72,28 @@ pub struct HealthResponse {
     pub redis_connected: bool,
 }
 
+/// Query parameters for the paginated history endpoint.
+#[derive(Debug, Deserialize)]
+pub struct HistoryQuery {
+    /// Index to start from; absent means the first page.
+    pub cursor: Option<usize>,
+    /// Page size; absent means the default, and anything above the cap is
+    /// clamped so a client cannot ask for the whole chain in one request.
+    pub page_size: Option<usize>,
+}
+
 /// Response type for document verification history
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct HistoryResponse {
     pub document_hash: String,
+    /// The transactions in this page, not the whole history.
     pub transactions: Vec<TransactionRecord>,
+    /// How many transactions this page carries.
     pub count: usize,
+    /// How many the chain holds in total.
+    pub total: usize,
+    /// Cursor to pass back as `?cursor=` for the next page, or null at the end.
+    pub next_cursor: Option<usize>,
     pub cached: bool,
 }
 
@@ -692,6 +708,8 @@ mod tests {
                 .to_string(),
             transactions: vec![],
             count: 0,
+            total: 0,
+            next_cursor: None,
             cached: false,
         };
         assert_serde_round_trip(&resp_empty);
@@ -712,6 +730,8 @@ mod tests {
                 },
             ],
             count: 2,
+            total: 2,
+            next_cursor: None,
             cached: true,
         };
         assert_serde_round_trip(&resp_with_records);
@@ -882,6 +902,8 @@ mod tests {
             document_hash: "hash123".to_string(),
             transactions: vec![],
             count: 0,
+            total: 0,
+            next_cursor: None,
             cached: false,
         });
         assert_serde_round_trip(&ValidationErrorResponse {

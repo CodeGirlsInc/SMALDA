@@ -14,6 +14,7 @@ pub mod types;
 pub mod webhook;
 
 use axum::{
+    extract::Query,
     body::Body,
     extract::{Path, State},
     http::{HeaderName, Request, StatusCode},
@@ -24,6 +25,8 @@ use axum::{
 };
 use chrono::{NaiveDate, Utc};
 use futures::future::join_all;
+use crate::module::ownership_chain::pagination;
+use crate::types::HistoryQuery;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -144,8 +147,14 @@ pub struct HealthResponse {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct HistoryResponse {
     pub document_hash: String,
+    /// The transactions in this page, not the whole history.
     pub transactions: Vec<TransactionRecord>,
+    /// How many transactions this page carries.
     pub count: usize,
+    /// How many the chain holds in total.
+    pub total: usize,
+    /// Cursor to pass back as `?cursor=` for the next page, or null at the end.
+    pub next_cursor: Option<usize>,
     pub cached: bool,
 }
 
@@ -636,6 +645,7 @@ pub async fn verify_document_by_hash(
 pub async fn verify_document_history(
     State(state): State<AppState>,
     Path(hash): Path<String>,
+    Query(query): Query<HistoryQuery>,
 ) -> Response {
     let normalized_hash = HashValidator::normalize(&hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
@@ -653,13 +663,23 @@ pub async fn verify_document_history(
         }
     };
 
-    let count = transactions.len();
+    let total = transactions.len();
     let cached = !transactions.is_empty();
+
+    // Dead copy of the handler in handlers/verify.rs, which is the one the
+    // router wires; kept in step with it so the two cannot drift apart.
+    let page_size = query
+        .page_size
+        .unwrap_or(pagination::DEFAULT_PAGE_SIZE)
+        .clamp(1, pagination::MAX_PAGE_SIZE);
+    let page = pagination::paginate(&transactions, query.cursor.unwrap_or(0), page_size);
 
     Json(HistoryResponse {
         document_hash: normalized_hash,
-        transactions,
-        count,
+        count: page.items.len(),
+        total,
+        next_cursor: page.next_cursor,
+        transactions: page.items,
         cached,
     })
     .into_response()
