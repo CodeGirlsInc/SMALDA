@@ -21,7 +21,7 @@ fn test_state(burst: u32) -> AppState {
         cache: Arc::new(CacheBackend::InMemory(InMemoryCache::new())),
         metrics: Arc::new(MetricsRegistry::new()),
         stellar_secret_key: "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string(),
-        rate_limiter: build_rate_limiter(10, burst),
+        rate_limiter: Arc::new(build_rate_limiter(10, burst)),
         webhook_urls: Vec::new(),
         webhook_secret: None,
     }
