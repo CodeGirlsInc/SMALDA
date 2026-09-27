@@ -21,6 +21,7 @@ fn test_state() -> AppState {
         metrics: Arc::new(MetricsRegistry::new()),
         stellar_secret_key: SECRET.to_string(),
         rate_limiter: build_rate_limiter(1000, 1000),
+        submit_rate_limiter: build_rate_limiter(1000, 1000),
         webhook_urls: Vec::new(),
         webhook_secret: None,
     }

@@ -1,3 +1,10 @@
+//! Legacy site-level metrics registry, retained for historical context.
+//!
+//! This module is not declared or used by the service. Its intended role was
+//! aggregating service-wide Prometheus metrics, distinct from `routes.rs`,
+//! which maps HTTP paths to handlers. The active metrics registry is
+//! `metrics.rs`.
+
 use prometheus::{opts, Counter, Encoder, Gauge, IntCounterVec, Registry, TextEncoder};
 
 #[derive(Clone)]

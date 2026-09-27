@@ -1,10 +1,9 @@
 //! A `governor`-based rate limiter builder.
 //!
-//! **Not currently wired into the service.** [`build_rate_limiter`] is
-//! defined but never called from `main.rs` or the Axum router - see the
-//! "Known issues" section of `contract/README.md`. `RATE_LIMIT_PER_SECOND`
-//! / `RATE_LIMIT_BURST` are parsed by [`crate::config::AppConfig`] but not
-//! currently enforced anywhere.
+//! Builds the independent process-wide quotas used by the Axum router.
+//! Verification and other routes use `RATE_LIMIT_*`; `/submit` uses the
+//! lower `SUBMIT_RATE_LIMIT_*` quota. These are global per service instance,
+//! not per-client limits; the API currently has no authenticated client ID.
 
 use governor::{Quota, RateLimiter};
 use std::num::NonZeroU32;
@@ -15,8 +14,8 @@ pub type DefaultRateLimiter = RateLimiter<
     governor::clock::DefaultClock,
 >;
 
-/// Build an in-memory, non-keyed rate limiter allowing `per_second`
-/// sustained requests with a burst capacity of `burst`.
+/// Build an in-memory rate limiter allowing `per_second` sustained requests
+/// with a burst capacity of `burst`.
 ///
 /// Panics if either argument is zero (`NonZeroU32::new(...).unwrap()`).
 pub fn build_rate_limiter(per_second: u32, burst: u32) -> DefaultRateLimiter {

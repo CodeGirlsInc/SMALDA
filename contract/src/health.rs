@@ -180,6 +180,7 @@ mod tests {
             metrics: Arc::new(MetricsRegistry::new()),
             stellar_secret_key: String::new(),
             rate_limiter: build_rate_limiter(1000, 1000),
+            submit_rate_limiter: build_rate_limiter(1000, 1000),
             webhook_urls: Vec::new(),
             webhook_secret: None,
         }
