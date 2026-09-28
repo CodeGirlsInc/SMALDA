@@ -62,8 +62,10 @@ smart contract.
 
 All request/response bodies are JSON. There is currently **no
 authentication or authorization middleware** on any route: every endpoint
-below is open to any caller who can reach the service. There is also no
-rate-limiting middleware currently active (see [Known issues](#known-issues)).
+below is open to any caller who can reach the service. Rate limits are active
+but process-wide rather than per-client; see [Known issues](#known-issues).
+The versioned API is mounted at `/v1`. The unprefixed paths shown below remain
+available as compatibility aliases; new clients should use the `/v1` prefix.
 
 ### `GET /health`
 
@@ -269,18 +271,26 @@ Redis (keyed as `transfer:<document_hash>`, retained ~10 years).
 | `500` | Failed to derive the anchor account, read/write transfer history in cache |
 | `502` | Horizon rejected or failed to submit the transfer transaction (surfaced as `500`, not `502`, in the current handler: see [Known issues](#known-issues)) |
 
+### `GET /transfer/:document_hash`
+
+Returns the cached transfer records for a document as a JSON array. Returns
+an empty array when there is no recorded transfer history. The versioned path
+is `/v1/transfer/:document_hash`.
+
 ## Module layout
 
 | Module | Responsibility |
 |---|---|
 | `main.rs` | Binary entry point: loads config, initializes tracing, constructs `AppState`, starts the Axum server. |
-| `lib.rs` | `AppState`, all HTTP request/response types, the `app()` router, and every route handler. |
+| `lib.rs` | `AppState`, HTTP request/response types, middleware, and route handlers. |
+| `routes.rs` | Maps versioned and compatibility URL paths to handlers and composes request-ID, tracing, and rate-limit middleware. |
 | `config.rs` | `AppConfig::from_env()`: reads and validates all environment variables into a single typed config, collecting *all* validation errors before failing rather than stopping at the first one. |
 | `stellar.rs` | `StellarClient`: all Horizon HTTP interaction: fetching account state, building/signing/submitting `ManageData` transactions for anchoring, revoking, and transferring, and reading operation history. Also owns the `ManageData` key-naming scheme (`doc_`, `trf_`, `revoked_` prefixes). |
 | `cache.rs` | `CacheBackend`: a small abstraction over Redis (`RedisCache`) or an in-process `HashMap` (`InMemoryCache`), used for verification results and transfer/verification history. |
 | `hash_validator.rs` | `HashValidator`: normalizes and validates hex-encoded SHA-256/SHA-512 hashes, with structured validation errors. |
 | `metrics.rs` | `MetricsRegistry`: Prometheus counters (requests, cache hits/misses, errors) and text-format rendering for `/metrics`. |
-| `rate_limit.rs` | A `governor`-based rate limiter builder. **Not currently wired into `app()`**: see [Known issues](#known-issues). |
+| `rate_limit.rs` | Builds the in-memory request quotas used by `routes.rs`. |
+| `site.rs` | Unused legacy metrics registry; the active metrics implementation is `metrics.rs`. |
 
 ## Known issues
 
@@ -288,20 +298,20 @@ Documenting these here rather than silently working around them, since a
 new contributor hitting them would otherwise reasonably assume they're
 missing something:
 
-- **`rate_limit.rs` is dead code.** `build_rate_limiter()` is never called
-  from `main.rs` or `app()`. `AppConfig` still parses
-  `RATE_LIMIT_PER_SECOND` / `RATE_LIMIT_BURST`, but neither value is
-  currently enforced anywhere.
+- **Rate limits are not per-client.** Verification/other routes share a
+  process-wide quota and submissions have a separate, lower process-wide
+  quota. The service has no authenticated caller identity, so it cannot
+  enforce a robust per-account limit; caller-supplied fields and forwarded-IP
+  headers are not trustworthy substitutes. Add authentication before relying
+  on per-client quotas, and configure upstream abuse protection as needed.
 - **`event.rs` is not part of the compiled crate.** `lib.rs` does not
   declare `pub mod event;`, and the file references `crate::error::Result`
   / `crate::error::AuditError`, which don't exist in this crate. It appears
   to be leftover/orphaned code from a different module structure.
 - **`transfer_document` and `get_transfer_history` in `lib.rs` are unused.**
-  The live `app()` router wires `/transfer` to `record_transfer`, not to
-  `transfer_document` (which always returns "not yet implemented"). There
-  is no live route for reading transfer history back out: only
-  `record_transfer`'s write path and `verify_document_history`'s (separate)
-  read path are actually routed.
+  The router wires `/transfer` to `record_transfer`; the `transfer_document`
+  handler remains unimplemented. Transfer-history reads use the separate
+  implementation in `handlers/transfer.rs`.
 - **No authentication.** No route requires any credential today, despite
   `submit`/`revoke`/`transfer` all being state-changing, chain-writing
   operations.
@@ -369,8 +379,10 @@ docker run -p 6379:6379 redis:7
 | `STELLAR_HORIZON_URL` | no | `https://horizon-testnet.stellar.org` | Must be a valid URL. |
 | `STELLAR_SECRET_KEY` | **yes** | none | 56-character Stellar secret seed, starts with `S`. The single account all `ManageData` anchors are written to. |
 | `REDIS_URL` | no | `redis://127.0.0.1:6379` | |
-| `RATE_LIMIT_PER_SECOND` | no | `10` | Parsed and validated but not currently enforced: see [Known issues](#known-issues). |
-| `RATE_LIMIT_BURST` | no | same as `RATE_LIMIT_PER_SECOND` | Same caveat. |
+| `RATE_LIMIT_PER_SECOND` | no | `10` | Verification and other non-submit routes; process-wide per instance. |
+| `RATE_LIMIT_BURST` | no | same as `RATE_LIMIT_PER_SECOND` | Non-zero burst capacity for verification and other routes. |
+| `SUBMIT_RATE_LIMIT_PER_SECOND` | no | `1` | Separate, lower process-wide quota for document submissions. |
+| `SUBMIT_RATE_LIMIT_BURST` | no | `2` | Non-zero burst capacity for document submissions. |
 | `STELLAR_MAX_RETRIES` | no | `3` | |
 | `LOG_LEVEL` | no | `info` | Used as the default `tracing` filter if `RUST_LOG` isn't set. |
 | `WEBHOOK_URLS` | no | (empty) | Comma-separated. Parsed but currently unused. |

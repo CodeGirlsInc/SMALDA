@@ -37,8 +37,10 @@ The verifier runs as a single binary that:
 | `HORIZON_CB_COOLDOWN_SECS`         | `30`                             | How long the breaker stays `Open` before allowing a `HalfOpen` probe.                       |
 | `REDIS_URL`                    | `redis://127.0.0.1:6379`             | Redis connection string for caching.                                                        |
 | `CACHE_VERIFICATION_TTL`       | `3600`                               | Seconds to cache `VerifyResponse` results.                                                   |
-| `RATE_LIMIT_PER_SECOND`        | `10`                                 | `governor` token-bucket refill rate.                                                         |
-| `RATE_LIMIT_BURST`             | `RATE_LIMIT_PER_SECOND`              | `governor` token-bucket capacity.                                                            |
+| `RATE_LIMIT_PER_SECOND`        | `10`                                 | Process-wide refill rate for verify and other non-submit routes.                             |
+| `RATE_LIMIT_BURST`             | `RATE_LIMIT_PER_SECOND`              | Process-wide burst capacity for verify and other non-submit routes.                          |
+| `SUBMIT_RATE_LIMIT_PER_SECOND` | `1`                                  | Separate, lower process-wide refill rate for `/submit`.                                     |
+| `SUBMIT_RATE_LIMIT_BURST`      | `2`                                  | Burst capacity for `/submit`.                                                               |
 | `LOG_LEVEL`                    | `info`                               | Passed straight through to `tracing-subscriber`.                                            |
 | `WEBHOOK_URLS`                 | *(empty)*                            | Comma-separated list of URLs to fan out webhook events to.                                  |
 | `WEBHOOK_SECRET`               | *(empty)*                            | HMAC secret for outbound webhook payloads.                                                  |

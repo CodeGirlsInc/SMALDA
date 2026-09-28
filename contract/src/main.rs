@@ -51,12 +51,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Startup configuration summary (redacting secrets)
     info!(
-        "Configuration: port={}, stellar_horizon_url={}, redis_url={}, rate_limit_per_second={}, rate_limit_burst={}, stellar_max_retries={}, log_level={}, webhook_urls={:?}, stellar_secret_key=[REDACTED], webhook_secret=[REDACTED], cache_verification_ttl={}, shutdown_timeout_secs={}",
+        "Configuration: port={}, stellar_horizon_url={}, redis_url={}, rate_limit_per_second={}, rate_limit_burst={}, submit_rate_limit_per_second={}, submit_rate_limit_burst={}, stellar_max_retries={}, log_level={}, webhook_urls={:?}, stellar_secret_key=[REDACTED], webhook_secret=[REDACTED], cache_verification_ttl={}, shutdown_timeout_secs={}",
         config.port,
         config.stellar_horizon_url,
         config.redis_url,
         config.rate_limit_per_second,
         config.rate_limit_burst,
+        config.submit_rate_limit_per_second,
+        config.submit_rate_limit_burst,
         config.stellar_max_retries,
         config.log_level,
         config.webhook_urls,
@@ -79,6 +81,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         rate_limiter: build_rate_limiter(
             config.rate_limit_per_second,
             config.rate_limit_burst,
+        ),
+        submit_rate_limiter: build_rate_limiter(
+            config.submit_rate_limit_per_second,
+            config.submit_rate_limit_burst,
         ),
         webhook_urls: config.webhook_urls.clone(),
         webhook_secret: config.webhook_secret.clone(),

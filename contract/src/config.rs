@@ -30,6 +30,8 @@ pub struct AppConfig {
     pub redis_url: String,
     pub rate_limit_per_second: u32,
     pub rate_limit_burst: u32,
+    pub submit_rate_limit_per_second: u32,
+    pub submit_rate_limit_burst: u32,
     pub stellar_max_retries: u32,
     pub log_level: String,
     pub environment: Environment,
@@ -171,6 +173,20 @@ impl AppConfig {
             &mut errors,
             &placeholders,
         );
+        let submit_rate_limit_per_second_raw = get_env_or_default(
+            "SUBMIT_RATE_LIMIT_PER_SECOND",
+            "1",
+            is_production,
+            &mut errors,
+            &placeholders,
+        );
+        let submit_rate_limit_burst_raw = get_env_or_default(
+            "SUBMIT_RATE_LIMIT_BURST",
+            "2",
+            is_production,
+            &mut errors,
+            &placeholders,
+        );
         let stellar_max_retries_raw = get_env_or_default(
             "STELLAR_MAX_RETRIES",
             "3",
@@ -235,13 +251,47 @@ impl AppConfig {
         };
 
         let rate_limit_burst: u32 = match rate_limit_burst_raw.parse() {
-            Ok(v) => v,
+            Ok(v) if v > 0 => v,
+            Ok(_) => {
+                errors.push("RATE_LIMIT_BURST must be greater than 0".to_string());
+                rate_limit_per_second
+            }
             Err(_) => {
                 errors.push(format!(
                     "RATE_LIMIT_BURST must be a valid u32, got '{}'",
                     rate_limit_burst_raw
                 ));
                 rate_limit_per_second
+            }
+        };
+
+        let submit_rate_limit_per_second: u32 = match submit_rate_limit_per_second_raw.parse() {
+            Ok(v) if v > 0 => v,
+            Ok(_) => {
+                errors.push("SUBMIT_RATE_LIMIT_PER_SECOND must be greater than 0".to_string());
+                1
+            }
+            Err(_) => {
+                errors.push(format!(
+                    "SUBMIT_RATE_LIMIT_PER_SECOND must be a valid u32, got '{}'",
+                    submit_rate_limit_per_second_raw
+                ));
+                1
+            }
+        };
+
+        let submit_rate_limit_burst: u32 = match submit_rate_limit_burst_raw.parse() {
+            Ok(v) if v > 0 => v,
+            Ok(_) => {
+                errors.push("SUBMIT_RATE_LIMIT_BURST must be greater than 0".to_string());
+                2
+            }
+            Err(_) => {
+                errors.push(format!(
+                    "SUBMIT_RATE_LIMIT_BURST must be a valid u32, got '{}'",
+                    submit_rate_limit_burst_raw
+                ));
+                2
             }
         };
 
@@ -301,6 +351,8 @@ impl AppConfig {
             redis_url,
             rate_limit_per_second,
             rate_limit_burst,
+            submit_rate_limit_per_second,
+            submit_rate_limit_burst,
             stellar_max_retries,
             log_level,
             environment,
@@ -328,6 +380,8 @@ mod tests {
             "REDIS_URL",
             "RATE_LIMIT_PER_SECOND",
             "RATE_LIMIT_BURST",
+            "SUBMIT_RATE_LIMIT_PER_SECOND",
+            "SUBMIT_RATE_LIMIT_BURST",
             "STELLAR_MAX_RETRIES",
             "LOG_LEVEL",
             "APP_ENV",
@@ -358,6 +412,8 @@ mod tests {
         );
         assert_eq!(cfg.redis_url, "redis://127.0.0.1:6379");
         assert_eq!(cfg.rate_limit_per_second, 10);
+        assert_eq!(cfg.submit_rate_limit_per_second, 1);
+        assert_eq!(cfg.submit_rate_limit_burst, 2);
         assert_eq!(cfg.cache_verification_ttl, 3600);
         assert_eq!(cfg.shutdown_timeout_secs, 30);
     }
@@ -369,6 +425,7 @@ mod tests {
         env::set_var("PORT", "0");
         env::set_var("STELLAR_HORIZON_URL", "not-a-url");
         env::set_var("RATE_LIMIT_PER_SECOND", "0");
+        env::set_var("SUBMIT_RATE_LIMIT_BURST", "0");
 
         let err = AppConfig::from_env().expect_err("config should fail");
         let msg = err.to_string();
@@ -376,6 +433,7 @@ mod tests {
         assert!(msg.contains("PORT must be between 1 and 65535"));
         assert!(msg.contains("STELLAR_HORIZON_URL must be a valid URL"));
         assert!(msg.contains("RATE_LIMIT_PER_SECOND must be greater than 0"));
+        assert!(msg.contains("SUBMIT_RATE_LIMIT_BURST must be greater than 0"));
     }
 
     #[test]

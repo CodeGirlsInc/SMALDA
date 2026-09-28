@@ -51,6 +51,7 @@ fn make_state(horizon_url: &str) -> AppState {
         // Generous enough that the rate limiter never interferes with these
         // functional/integration tests (some exercise batch/concurrent calls).
         rate_limiter: build_rate_limiter(10_000, 10_000),
+        submit_rate_limiter: build_rate_limiter(10_000, 10_000),
         webhook_urls: Vec::new(),
         webhook_secret: None,
     }

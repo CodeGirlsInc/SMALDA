@@ -1,10 +1,7 @@
 //! Integration tests for the wired rate limiter (CT-37).
 //!
-//! `build_rate_limiter` is constructed from `RATE_LIMIT_PER_SECOND` /
-//! `RATE_LIMIT_BURST` in `main.rs`, stored on `AppState`, and enforced as a
-//! router middleware. These tests drive the real `app()` router and assert
-//! that a `429 Too Many Requests` is returned once the burst quota is
-//! exceeded.
+//! Configured quotas are attached to the real `app()` router. The tests cover
+//! both the verification quota and the independent submit quota.
 
 use axum_test::TestServer;
 use std::sync::Arc;
@@ -22,6 +19,7 @@ fn test_state(burst: u32) -> AppState {
         metrics: Arc::new(MetricsRegistry::new()),
         stellar_secret_key: "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string(),
         rate_limiter: build_rate_limiter(10, burst),
+        submit_rate_limiter: build_rate_limiter(1, 1),
         webhook_urls: Vec::new(),
         webhook_secret: None,
     }
@@ -38,6 +36,13 @@ async fn requests_within_burst_are_allowed() {
 }
 
 #[tokio::test]
+async fn versioned_routes_are_available() {
+    let server = TestServer::new(app(test_state(5))).unwrap();
+
+    assert_eq!(server.get("/v1/metrics").await.status_code(), 200);
+}
+
+#[tokio::test]
 async fn exceeding_the_burst_returns_429() {
     let server = TestServer::new(app(test_state(1))).unwrap();
 
@@ -50,13 +55,25 @@ async fn exceeding_the_burst_returns_429() {
 }
 
 #[tokio::test]
-async fn rejected_requests_hit_every_route() {
-    // The limiter applies to the whole router, not a single route.
+async fn non_submit_routes_share_the_verification_quota() {
     let server = TestServer::new(app(test_state(1))).unwrap();
 
     // Consume the single burst token.
     assert_eq!(server.get("/metrics").await.status_code(), 200);
 
-    // Now every route is rejected until the limiter refills.
     assert_eq!(server.get("/health").await.status_code(), 429);
+}
+
+#[tokio::test]
+async fn submit_quota_is_independent_from_verification_quota() {
+    let server = TestServer::new(app(test_state(1))).unwrap();
+    let invalid_body = serde_json::json!({});
+
+    let first_submit = server.post("/v1/submit").json(&invalid_body).await;
+    assert_ne!(first_submit.status_code(), 429);
+    assert_eq!(
+        server.post("/submit").json(&invalid_body).await.status_code(),
+        429
+    );
+    assert_eq!(server.get("/v1/metrics").await.status_code(), 200);
 }

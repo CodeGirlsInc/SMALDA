@@ -16,10 +16,9 @@ pub mod webhook;
 use axum::{
     body::Body,
     extract::{Path, State},
-    http::{HeaderName, Request, StatusCode},
+    http::{Request, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
-    routing::{get, post},
     Json, Router,
 };
 use chrono::{NaiveDate, Utc};
@@ -28,9 +27,6 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tower::ServiceBuilder;
-use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
-use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
 use cache::CacheBackend;
@@ -53,7 +49,13 @@ async fn enforce_rate_limit(
     req: Request<Body>,
     next: Next,
 ) -> Response {
-    if state.rate_limiter.check().is_err() {
+    let path = req.uri().path();
+    let limiter = if path == "/submit" || path == "/v1/submit" {
+        &state.submit_rate_limiter
+    } else {
+        &state.rate_limiter
+    };
+    if limiter.check().is_err() {
         return (
             StatusCode::TOO_MANY_REQUESTS,
             Json(ValidationErrorResponse {
@@ -72,9 +74,10 @@ pub struct AppState {
     pub cache: Arc<CacheBackend>,
     pub metrics: Arc<MetricsRegistry>,
     pub stellar_secret_key: String,
-    /// Governor-based rate limiter built from `RATE_LIMIT_PER_SECOND` /
-    /// `RATE_LIMIT_BURST` and enforced as a router middleware (CT-37).
+    /// Process-wide limiter for verification and other non-submit routes.
     pub rate_limiter: rate_limit::DefaultRateLimiter,
+    /// Lower independent process-wide quota for document submissions.
+    pub submit_rate_limiter: rate_limit::DefaultRateLimiter,
     /// Comma-separated webhook URLs parsed from `WEBHOOK_URLS` (CT-38).
     pub webhook_urls: Vec<String>,
     /// Shared secret used to sign webhook payloads (CT-38).
@@ -270,54 +273,7 @@ pub async fn audit_log_handler(State(state): State<AppState>) -> Response {
 }
 
 pub fn app(state: AppState) -> Router {
-    let request_id_header = HeaderName::from_static(REQUEST_ID_HEADER);
-    let span_header = request_id_header.clone();
-
-    Router::new()
-        .route("/health", get(health_check))
-        .route("/metrics", get(metrics_handler))
-        .route("/audit", get(audit_log_handler))
-        .route("/verify", post(verify_document))
-        .route("/verify/batch", post(batch_verify_documents))
-        .route("/verify/:hash", get(verify_document_by_hash))
-        .route("/verify/:hash/history", get(verify_document_history))
-        .route("/submit", post(submit_document))
-        .route("/revoke", post(revoke_document))
-        .route("/transfer", post(record_transfer))
-        .layer(
-            ServiceBuilder::new()
-                // Honour an inbound X-Request-Id (propagated from the NestJS
-                // backend, per BE-136); generate one only if it's absent.
-                .layer(SetRequestIdLayer::new(
-                    request_id_header.clone(),
-                    MakeRequestUuid,
-                ))
-                .layer(
-                    TraceLayer::new_for_http().make_span_with(move |request: &Request<_>| {
-                        let request_id = request
-                            .headers()
-                            .get(&span_header)
-                            .and_then(|v| v.to_str().ok())
-                            .unwrap_or("unknown");
-
-                        tracing::info_span!(
-                            "http_request",
-                            method = %request.method(),
-                            path = %request.uri().path(),
-                            request_id = %request_id,
-                        )
-                    }),
-                )
-                // Echo the request id back on the response so callers (and
-                // the backend) can confirm which id was used for this op.
-                .layer(PropagateRequestIdLayer::new(request_id_header)),
-        )
-        // Apply the configured rate limiter to the whole router (CT-37).
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            enforce_rate_limit,
-        ))
-        .with_state(state)
+    routes::app(state)
 }
 
 // Health check endpoint
