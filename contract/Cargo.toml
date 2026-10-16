@@ -66,3 +66,7 @@ harness = false
 [[bench]]
 name = "verify_bench"
 harness = false
+
+[[bench]]
+name = "ownership_chain_bench"
+harness = false
