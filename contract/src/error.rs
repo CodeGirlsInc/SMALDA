@@ -51,6 +51,8 @@ pub enum AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
+        // Log the underlying error before it becomes a response (issue #1392).
+        tracing::error!(error = ?self, "returning error response");
         match self {
             AppError::Validation(msg) => (
                 StatusCode::BAD_REQUEST,
