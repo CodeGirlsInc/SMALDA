@@ -50,6 +50,10 @@ async fn enforce_rate_limit(
     next: Next,
 ) -> Response {
     let path = req.uri().path();
+    // Probes and scrapes must never be throttled (issue #1441).
+    if matches!(path, "/health" | "/v1/health" | "/metrics" | "/v1/metrics") {
+        return next.run(req).await;
+    }
     let limiter = if path == "/submit" || path == "/v1/submit" {
         &state.submit_rate_limiter
     } else {
@@ -287,13 +291,23 @@ pub async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
         "degraded"
     };
 
-    Json(HealthResponse {
-        status: status.to_string(),
-        stellar_connected: stellar_ok,
-        redis_connected: redis_ok,
-        circuit_state: state.stellar.circuit_state_label().to_string(),
-        circuit_failures: state.stellar.circuit_failures(),
-    })
+    // Report 503 when a dependency is down so probes see it (issue #1442).
+    let code = if stellar_ok && redis_ok {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+
+    (
+        code,
+        Json(HealthResponse {
+            status: status.to_string(),
+            stellar_connected: stellar_ok,
+            redis_connected: redis_ok,
+            circuit_state: state.stellar.circuit_state_label().to_string(),
+            circuit_failures: state.stellar.circuit_failures(),
+        }),
+    )
 }
 
 // Metrics endpoint
@@ -652,9 +666,12 @@ pub async fn batch_verify_documents(
     state.metrics.increment_route_count("verify_batch");
 
     // Process all hashes concurrently
+    // De-duplicate so a repeated hash triggers one lookup (issue #1443).
+    let mut seen = std::collections::HashSet::new();
     let verification_futures: Vec<_> = req
         .hashes
         .iter()
+        .filter(|h| seen.insert(HashValidator::normalize(h.as_str())))
         .map(|hash| {
             let state = state.clone();
             let hash = hash.clone();
@@ -735,7 +752,7 @@ async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
                 verified: false,
                 transaction_id: None,
                 timestamp: None,
-                error: Some(format!("failed to derive anchor account id: {}", e)),
+                error: Some("internal_error".to_string()),
             };
         }
     };
@@ -756,7 +773,7 @@ async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
                 verified: false,
                 transaction_id: None,
                 timestamp: None,
-                error: Some(format!("stellar query failed: {}", e)),
+                error: Some("upstream_unavailable".to_string()),
             };
         }
     };
