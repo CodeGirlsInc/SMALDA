@@ -50,7 +50,10 @@ pub enum ConfigError {
 impl AppConfig {
     pub fn from_env() -> Result<Self, ConfigError> {
         let mut errors = Vec::new();
-        let node_env = env::var("NODE_ENV").unwrap_or_else(|_| "development".to_string());
+        // APP_ENV (set by the container) decides; NODE_ENV is only a fallback (issue #1445).
+        let node_env = env::var("APP_ENV")
+            .or_else(|_| env::var("NODE_ENV"))
+            .unwrap_or_else(|_| "development".to_string());
         let is_production = node_env == "production";
 
         // List of placeholder values that are not allowed in production

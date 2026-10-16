@@ -298,6 +298,10 @@ pub async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
 
 // Metrics endpoint
 pub async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
+    // Reflect the live breaker state in the gauge on every scrape (issue #1447).
+    state
+        .metrics
+        .set_circuit_state(state.stellar.circuit_state().as_u8());
     (
         [(
             axum::http::header::CONTENT_TYPE,
