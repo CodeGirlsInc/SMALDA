@@ -427,11 +427,7 @@ impl StellarClient {
         let keypair = KeyPair::from_secret_seed(secret_key)
             .map_err(|e| anyhow!("Invalid secret key: {:?}", e))?;
 
-        let network = if self.horizon_url.contains("testnet") {
-            Network::new_test()
-        } else {
-            Network::new_public()
-        };
+        let network = signing_network(&self.horizon_url);
 
         let mut tx = Transaction::builder(keypair.public_key().clone(), sequence, MIN_BASE_FEE)
             .add_operation(op)
@@ -540,11 +536,7 @@ impl StellarClient {
         let keypair = KeyPair::from_secret_seed(secret_key)
             .map_err(|e| anyhow!("Invalid secret key: {:?}", e))?;
 
-        let network = if self.horizon_url.contains("testnet") {
-            Network::new_test()
-        } else {
-            Network::new_public()
-        };
+        let network = signing_network(&self.horizon_url);
 
         let mut tx = Transaction::builder(keypair.public_key().clone(), sequence, MIN_BASE_FEE)
             .add_operation(op)
@@ -652,11 +644,7 @@ impl StellarClient {
         let keypair = KeyPair::from_secret_seed(secret_key)
             .map_err(|e| anyhow!("Invalid secret key: {:?}", e))?;
 
-        let network = if self.horizon_url.contains("testnet") {
-            Network::new_test()
-        } else {
-            Network::new_public()
-        };
+        let network = signing_network(&self.horizon_url);
 
         let mut tx = Transaction::builder(keypair.public_key().clone(), sequence, MIN_BASE_FEE)
             .add_operation(op)
@@ -708,6 +696,16 @@ impl StellarClient {
 /// Build the ManageData key: `"doc_" + &hash[..58]` (max 62 bytes ≤ 64-byte limit).
 fn hash_prefix(hash: &str) -> &str {
     &hash[..hash.len().min(16)]
+}
+
+/// Signing network: `STELLAR_NETWORK` wins over guessing from the URL (issue #1439).
+fn signing_network(horizon_url: &str) -> Network {
+    match std::env::var("STELLAR_NETWORK").map(|s| s.to_lowercase()).as_deref() {
+        Ok("mainnet") => Network::new_public(),
+        Ok("testnet") => Network::new_test(),
+        _ if horizon_url.contains("testnet") => Network::new_test(),
+        _ => Network::new_public(),
+    }
 }
 
 pub fn build_data_key(hash: &str) -> String {

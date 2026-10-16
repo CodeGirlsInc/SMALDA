@@ -325,6 +325,14 @@ fn is_valid_iso8601_date(date: &str) -> bool {
     NaiveDate::parse_from_str(date, "%Y-%m-%d").is_ok()
 }
 
+/// Audit-metadata fields must be short, non-empty and path-safe (issue #1438).
+fn is_valid_actor(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 128
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-_@:".contains(c))
+}
+
 /// Build a Stellar memo string for a transfer hash, respecting the 28-byte
 /// text memo limit and using the required TRANSFER: prefix.
 fn build_transfer_memo(transfer_hash: &str) -> String {
@@ -515,7 +523,7 @@ pub async fn verify_document(
     if let Ok(Some(cached)) = state.cache.get::<VerifyResponse>(&normalized_hash).await {
         info!("Cache hit for hash: {}", normalized_hash);
         state.metrics.increment_cache_hits();
-        return Json(cached).into_response();
+        return Json(VerifyResponse { cached: true, ..cached }).into_response();
     }
 
     state.metrics.increment_cache_misses();
@@ -553,14 +561,27 @@ pub async fn verify_document(
     )
     .await;
 
+    // A caller-supplied transaction_id must match the anchored one (issue #1436).
+    let tx_matches = match (&req.transaction_id, &result.transaction_id) {
+        (Some(want), Some(got)) => want == got,
+        _ => true,
+    };
+
     let response = VerifyResponse {
-        verified: result.anchored,
+        verified: result.anchored && tx_matches,
         transaction_id: result.transaction_id,
         timestamp: result.timestamp,
         cached: false,
         revoked: None,
         revoked_at: None,
     };
+
+    // Cache positive results so repeat verifications skip Horizon (issue #1437).
+    if response.verified {
+        if let Err(e) = state.cache.set(&normalized_hash, &response, 3600).await {
+            warn!("Failed to cache result for hash {}: {}", normalized_hash, e);
+        }
+    }
 
     // Fire webhooks so integrators can react to a successful verification.
     webhook::dispatch(
@@ -804,6 +825,16 @@ pub async fn submit_document(
         return (status, Json(body)).into_response();
     }
 
+    if !is_valid_actor(&req.submitter) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ValidationErrorResponse {
+                error: "submitter must be 1-128 characters of [A-Za-z0-9-_@:]".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
     let cache_key = format!("stellar:verify:{}", normalized_hash);
 
     // Idempotency check — return cached anchor result if it exists.
@@ -914,6 +945,16 @@ pub async fn revoke_document(
         return (status, Json(body)).into_response();
     }
 
+    if !is_valid_actor(&req.revoked_by) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ValidationErrorResponse {
+                error: "revoked_by must be 1-128 characters of [A-Za-z0-9-_@:]".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
     let anchor_key = format!("stellar:verify:{}", normalized_hash);
 
     if let Ok(Some(verification)) = state.cache.get::<VerifyResponse>(&anchor_key).await {
@@ -992,6 +1033,9 @@ pub async fn revoke_document(
             {
                 warn!("Failed to update cache after revocation: {}", e);
             }
+
+            // Drop the plain-hash verify entry so it cannot serve a stale "verified".
+            let _ = state.cache.delete(&normalized_hash).await;
 
             info!(
                 "Document {} revoked in ledger {} (tx: {})",
