@@ -1,3 +1,48 @@
+//! # Public API surface
+//!
+//! Every module below is `pub`. That was historical, not deliberate: the crate
+//! grew by adding modules and the visibility was never reconsidered, so a
+//! consumer had no way to tell which parts were a supported contract and which
+//! were internals they happened to be able to reach.
+//!
+//! The list below is the intended surface. `tests/public_api_surface.rs` parses
+//! this file and fails if the set of `pub mod` declarations drifts, so adding a
+//! module is a deliberate decision with a reason attached rather than an
+//! accident.
+//!
+//! ## Reachable by external consumers on purpose
+//!
+//! | Module | Why it is public |
+//! |---|---|
+//! | `app` | The Axum `Router` constructor. This is the entry point for embedding the service. |
+//! | `cache` | `CacheBackend` / `InMemoryCache` / `RedisCache` are named in `AppState`, which integration tests construct. |
+//! | `config` | `AppConfig::from_env` and `ConfigError` are how a deployment is configured. |
+//! | `hash_validator` | `HashValidator` and `ValidationError` are the contract for callers accepting document hashes. |
+//! | `metrics` | `MetricsRegistry` is named in `AppState` and manipulated by integration tests. |
+//! | `rate_limit` | `build_rate_limiter` is called from `main.rs` and from test harnesses. |
+//! | `stellar` | `StellarClient` is the Stellar integration seam; tests inject mock Horizon URLs. |
+//! | `types` | Request/response types (`SubmitResponse`, `VerifyResponse`, `TransferRequest`, …) are the wire contract. |
+//!
+//! ## Public but not intended for external consumption
+//!
+//! `health`, `site`, `error`, `event`, `handlers`, `module`, `retry`, `routes`
+//! and `webhook` are not meant to be consumed directly. They are `pub` today
+//! because narrowing them is not a free refactor:
+//!
+//! - A public item somewhere names a type from one of them, so narrowing the
+//!   module would be a breaking change to the public API rather than an internal
+//!   cleanup.
+//! - `site` is an unused legacy registry (see `src/site.rs`) and `health`'s
+//!   liveness router is not wired into `routes.rs`. Both are already dead code,
+//!   but they do not warn *because* they are `pub`. Narrowing them to
+//!   `pub(crate)` would surface that as `dead_code`, and CI runs
+//!   `cargo clippy --all-targets --all-features -- -D warnings`, so the build
+//!   would fail. Deleting them is the real fix and is tracked separately.
+//!
+//! Until then the rule is: **do not add new `pub` items to these modules**, and
+//! prefer `pub(crate)` for anything new that does not have to be reachable.
+
+pub mod app;
 pub mod cache;
 pub mod config;
 pub mod error;
