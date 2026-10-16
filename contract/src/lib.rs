@@ -815,6 +815,19 @@ pub async fn submit_document(
         return Json(cached).into_response();
     }
 
+    // A revoked hash must never be re-anchored (issue #1427).
+    if let Ok(Some(existing)) = state.cache.get::<VerifyResponse>(&cache_key).await {
+        if existing.revoked == Some(true) {
+            return (
+                StatusCode::CONFLICT,
+                Json(ValidationErrorResponse {
+                    error: "document hash has been revoked; cannot submit".to_string(),
+                }),
+            )
+                .into_response();
+        }
+    }
+
     info!(
         "Anchoring document hash {} submitted by {}",
         normalized_hash, req.submitter

@@ -103,9 +103,20 @@ impl RedisCache {
     }
 
     async fn get_raw(&self, key: &str) -> Result<Option<String>> {
-        let mut conn = self.connection.clone();
-        let value: Option<String> = conn.get(key).await?;
-        Ok(value)
+        // Retry the read with a short back-off before giving up (issue #1393).
+        let mut attempt = 0u64;
+        loop {
+            let mut conn = self.connection.clone();
+            match conn.get::<_, Option<String>>(key).await {
+                Ok(value) => return Ok(value),
+                Err(e) if attempt < 2 => {
+                    attempt += 1;
+                    warn!("Redis read failed (attempt {}): {}", attempt, e);
+                    tokio::time::sleep(std::time::Duration::from_millis(100 * attempt)).await;
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
     }
 
     async fn set_raw(&self, key: &str, value: &str, ttl: u64) -> Result<()> {
