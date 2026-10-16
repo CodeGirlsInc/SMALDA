@@ -43,7 +43,8 @@ pub const REQUEST_ID_HEADER: &str = "x-request-id";
 /// Reject requests once the configured rate-limit quota is exhausted (CT-37).
 ///
 /// Returns `429 Too Many Requests` with a short JSON body so callers know
-/// to back off, matching the `Retry-After` convention used elsewhere.
+/// to back off, plus a `Retry-After` header carrying the number of seconds the
+/// bucket needs before the next token appears (RFC 9110 §10.2.3).
 async fn enforce_rate_limit(
     State(state): State<AppState>,
     req: Request<Body>,
@@ -55,11 +56,17 @@ async fn enforce_rate_limit(
     } else {
         &state.rate_limiter
     };
-    if limiter.check().is_err() {
+    if let Err(retry_after_secs) = limiter.check() {
+        // Without this header a client has to guess: fixed sleeps either waste
+        // the quota or retry straight into another rejection.
         return (
             StatusCode::TOO_MANY_REQUESTS,
+            [(axum::http::header::RETRY_AFTER, retry_after_secs.to_string())],
             Json(ValidationErrorResponse {
-                error: "rate limit exceeded, please retry later".to_string(),
+                error: format!(
+                    "rate limit exceeded, retry after {} second(s)",
+                    retry_after_secs
+                ),
             }),
         )
             .into_response();
@@ -75,9 +82,9 @@ pub struct AppState {
     pub metrics: Arc<MetricsRegistry>,
     pub stellar_secret_key: String,
     /// Process-wide limiter for verification and other non-submit routes.
-    pub rate_limiter: rate_limit::DefaultRateLimiter,
+    pub rate_limiter: rate_limit::RateLimitPolicy,
     /// Lower independent process-wide quota for document submissions.
-    pub submit_rate_limiter: rate_limit::DefaultRateLimiter,
+    pub submit_rate_limiter: rate_limit::RateLimitPolicy,
     /// Comma-separated webhook URLs parsed from `WEBHOOK_URLS` (CT-38).
     pub webhook_urls: Vec<String>,
     /// Shared secret used to sign webhook payloads (CT-38).

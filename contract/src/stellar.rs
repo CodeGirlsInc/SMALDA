@@ -24,6 +24,22 @@ pub struct StellarClient {
     circuit_breaker: Arc<CircuitBreaker>,
     /// Active retry policy (max_attempts, backoff, jitter).
     retry_policy: RetryPolicy,
+    /// Per-operation fee in stroops attached to every transaction this client
+    /// submits.
+    ///
+    /// Defaults to [`MIN_BASE_FEE`] but is configurable, because the network
+    /// base fee is not a constant: during a fee spike a transaction pinned at
+    /// the historical minimum is rejected with `insufficient fee` and the
+    /// anchoring fails outright. Raising this lets an operator boost submissions
+    /// without a redeploy.
+    ///
+    /// This is *not* a Stellar fee-bump transaction — a fee bump wraps an
+    /// already-signed envelope and is the protocol's answer to a raised fee.
+    /// Building one needs an SDK that exposes `FeeBumpTransaction`, which the
+    /// pinned `stellar-base 0.5` does not; see #1368 for the dependency mess
+    /// that pin sits in. Until that is sorted, the configurable base fee is the
+    /// available lever, and it covers the same fee-spike failure.
+    base_fee: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -140,7 +156,24 @@ impl StellarClient {
             http_client,
             circuit_breaker: CircuitBreaker::with_defaults(),
             retry_policy: RetryPolicy::default(),
+            base_fee: MIN_BASE_FEE,
         }
+    }
+
+    /// Build a client that submits transactions at `base_fee` stroops.
+    ///
+    /// Zero falls back to [`MIN_BASE_FEE`] rather than being honoured: every
+    /// Stellar network rejects a zero fee, so accepting it would turn a
+    /// configuration mistake into a submission failure at runtime instead of at
+    /// startup.
+    pub fn with_base_fee(mut self, base_fee: u32) -> Self {
+        self.base_fee = if base_fee == 0 { MIN_BASE_FEE } else { base_fee };
+        self
+    }
+
+    /// The per-operation fee in stroops this client attaches to submissions.
+    pub fn base_fee(&self) -> u32 {
+        self.base_fee
     }
 
     #[tracing::instrument(name = "stellar.check_connection", skip(self))]
@@ -174,6 +207,7 @@ impl StellarClient {
             http_client,
             circuit_breaker,
             retry_policy,
+            base_fee: MIN_BASE_FEE,
         }
     }
 
@@ -433,7 +467,7 @@ impl StellarClient {
             Network::new_public()
         };
 
-        let mut tx = Transaction::builder(keypair.public_key().clone(), sequence, MIN_BASE_FEE)
+        let mut tx = Transaction::builder(keypair.public_key().clone(), sequence, self.base_fee)
             .add_operation(op)
             .into_transaction()
             .map_err(|e| anyhow!("Failed to build transaction: {:?}", e))?;
@@ -546,7 +580,7 @@ impl StellarClient {
             Network::new_public()
         };
 
-        let mut tx = Transaction::builder(keypair.public_key().clone(), sequence, MIN_BASE_FEE)
+        let mut tx = Transaction::builder(keypair.public_key().clone(), sequence, self.base_fee)
             .add_operation(op)
             .into_transaction()
             .map_err(|e| anyhow!("Failed to build transaction: {:?}", e))?;
@@ -658,7 +692,7 @@ impl StellarClient {
             Network::new_public()
         };
 
-        let mut tx = Transaction::builder(keypair.public_key().clone(), sequence, MIN_BASE_FEE)
+        let mut tx = Transaction::builder(keypair.public_key().clone(), sequence, self.base_fee)
             .add_operation(op)
             .into_transaction()
             .map_err(|e| anyhow!("Failed to build transaction: {:?}", e))?;

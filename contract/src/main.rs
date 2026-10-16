@@ -51,7 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Startup configuration summary (redacting secrets)
     info!(
-        "Configuration: port={}, stellar_horizon_url={}, redis_url={}, rate_limit_per_second={}, rate_limit_burst={}, submit_rate_limit_per_second={}, submit_rate_limit_burst={}, stellar_max_retries={}, log_level={}, webhook_urls={:?}, stellar_secret_key=[REDACTED], webhook_secret=[REDACTED], cache_verification_ttl={}, shutdown_timeout_secs={}",
+        "Configuration: port={}, stellar_horizon_url={}, redis_url={}, rate_limit_per_second={}, rate_limit_burst={}, submit_rate_limit_per_second={}, submit_rate_limit_burst={}, stellar_max_retries={}, stellar_base_fee={}, log_level={}, webhook_urls={:?}, stellar_secret_key=[REDACTED], webhook_secret=[REDACTED], cache_verification_ttl={}, shutdown_timeout_secs={}",
         config.port,
         config.stellar_horizon_url,
         config.redis_url,
@@ -60,6 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.submit_rate_limit_per_second,
         config.submit_rate_limit_burst,
         config.stellar_max_retries,
+        config.stellar_base_fee,
         config.log_level,
         config.webhook_urls,
         config.cache_verification_ttl,
@@ -69,7 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize components
     let stellar_url = config.stellar_horizon_url.clone();
     let redis_url = config.redis_url.clone();
-    let stellar = Arc::new(StellarClient::new(&stellar_url));
+    let stellar = Arc::new(StellarClient::new(&stellar_url).with_base_fee(config.stellar_base_fee));
     let cache = Arc::new(CacheBackend::Redis(RedisCache::new(&redis_url).await?));
     let metrics = Arc::new(MetricsRegistry::new());
 
