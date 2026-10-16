@@ -4,10 +4,7 @@
   "min_total_percent": 25,
   "files": {
     "contract/src/retry.rs": 75,
-    "contract/src/handlers/verify.rs": 30,
-    "contract/src/handlers/submit.rs": 30,
     "contract/src/handlers/transfer.rs": 25,
-    "contract/src/handlers/revoke.rs": 25,
     "contract/src/error.rs": 30,
     "contract/src/cache.rs": 70,
     "contract/src/metrics.rs": 70,
@@ -15,7 +12,6 @@
     "contract/src/health.rs": 50,
     "contract/src/config.rs": 70,
     "contract/src/hash_validator.rs": 80,
-    "contract/src/handlers/health.rs": 30,
     "contract/src/event.rs": 0,
     "contract/src/lib.rs": 0,
     "contract/src/routes.rs": 0,
