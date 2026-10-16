@@ -284,6 +284,9 @@ impl StellarClient {
         let account: HorizonAccount = resp.json().await?;
         let data_key = build_data_key(hash);
 
+        // The chain is the source of truth for revocation (issue #1429).
+        let revoked_on_chain = account.data.contains_key(&build_revocation_key(hash));
+
         if let Some(b64_val) = account.data.get(&data_key) {
             let decoded_bytes = base64::engine::general_purpose::STANDARD
                 .decode(b64_val)
@@ -292,7 +295,7 @@ impl StellarClient {
 
             Ok(VerificationRecord {
                 hash: hash.to_string(),
-                anchored: true,
+                anchored: !revoked_on_chain,
                 data_key,
                 transaction_id: None,
                 timestamp: None,
