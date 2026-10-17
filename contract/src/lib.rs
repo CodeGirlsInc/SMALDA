@@ -375,15 +375,17 @@ pub async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse
 
 /// Compute deterministic transfer hash from core fields.
 ///
-/// SHA-256(document_hash + from_owner + to_owner + transfer_date)
+/// `v1` scheme (issues #1430, #1431): SHA-256 over `v1` followed by
+/// `|len:value` for the normalised document hash, from_owner, to_owner and
+/// transfer_date, so boundary-shifted field values cannot collide.
 pub fn compute_transfer_hash(req: &TransferRequest) -> String {
+    let doc = HashValidator::normalize(&req.document_hash);
     let mut hasher = Sha256::new();
-    hasher.update(req.document_hash.as_bytes());
-    hasher.update(req.from_owner.as_bytes());
-    hasher.update(req.to_owner.as_bytes());
-    hasher.update(req.transfer_date.as_bytes());
-    let digest = hasher.finalize();
-    hex::encode(digest)
+    hasher.update(b"v1");
+    for field in [&doc, &req.from_owner, &req.to_owner, &req.transfer_date] {
+        hasher.update(format!("|{}:{}", field.len(), field).as_bytes());
+    }
+    hex::encode(hasher.finalize())
 }
 
 /// Validate that the provided date is a valid ISO 8601 calendar date (YYYY-MM-DD).
@@ -430,7 +432,7 @@ pub async fn record_transfer(
         ));
     }
 
-    let verify_key = format!("stellar:verify:{}", req.document_hash);
+    let verify_key = format!("stellar:verify:{}", normalized_hash);
     if let Ok(Some(verification)) = state.cache.get::<VerifyResponse>(&verify_key).await {
         if verification.revoked == Some(true) {
             return Err((
@@ -476,7 +478,7 @@ pub async fn record_transfer(
     }
 
     let record = TransferRecord {
-        document_hash: req.document_hash.clone(),
+        document_hash: normalized_hash.clone(),
         from_owner: req.from_owner.clone(),
         to_owner: req.to_owner.clone(),
         transfer_date: req.transfer_date.clone(),
@@ -534,7 +536,7 @@ pub async fn record_transfer(
         state.webhook_secret.as_deref(),
         "transfer",
         serde_json::json!({
-            "document_hash": req.document_hash,
+            "document_hash": normalized_hash,
             "transfer_hash": transfer_hash.clone(),
         }),
     );
@@ -954,7 +956,7 @@ pub async fn submit_document(
                     success: false,
                     transaction_id: None,
                     anchored_at: None,
-                    error: Some(e.to_string()),
+                    error: Some("failed to anchor document".to_string()),
                 }),
             )
                 .into_response()
@@ -1101,7 +1103,7 @@ pub async fn revoke_document(
             (
                 StatusCode::BAD_GATEWAY,
                 Json(ValidationErrorResponse {
-                    error: format!("Stellar revocation failed: {}", e),
+                    error: "failed to record revocation".to_string(),
                 }),
             )
                 .into_response()
