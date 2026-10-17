@@ -103,7 +103,7 @@ export class DocumentsController {
     }
 
     const fileHash = createHash('sha256').update(file.buffer).digest('hex');
-    const existing = await this.documentsService.findByFileHash(fileHash);
+    const existing = await this.documentsService.findByFileHash(fileHash, req.user.id);
     if (existing) {
       return res.status(200).send(existing);
     }
