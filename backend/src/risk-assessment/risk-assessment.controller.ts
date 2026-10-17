@@ -1,24 +1,57 @@
-﻿import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+﻿import {
+  Controller,
+  ForbiddenException,
+  Get,
+  NotFoundException,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Request } from 'express';
 
 import { RiskAssessmentService } from './risk-assessment.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ListRiskAssessmentsDto } from './dto/list-risk-assessments.dto';
 import { DocumentsService } from '../documents/documents.service';
+import { Document } from '../documents/entities/document.entity';
+import { User, UserRole } from '../users/entities/user.entity';
 
 @ApiTags('documents')
-@Controller('documents')
+@Controller()
 export class RiskAssessmentController {
   constructor(
     private readonly riskService: RiskAssessmentService,
     private readonly documentsService: DocumentsService,
   ) {}
 
-  @Get(':id/risk')
+  @Get('documents/:id/risk')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Assess the risk score of a document' })
-  async getRisk(@Param('id') id: string, @Query('lang') lang?: string) {
+  @ApiOperation({ summary: 'Get the stored risk assessment of a document' })
+  async getRisk(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request & { user?: User },
+    @Query('lang') lang?: string,
+  ) {
+    await this.getAccessibleDocument(id, req.user);
+    // Reads must not mutate data; scoring happens in the queue job.
+    return this.riskService.getStoredAssessment(id, lang);
+  }
+
+  @Post('documents/:id/risk/reassess')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Explicitly recompute the risk score of a document' })
+  async reassessRisk(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request & { user?: User },
+    @Query('lang') lang?: string,
+  ) {
+    await this.getAccessibleDocument(id, req.user);
     return this.riskService.assessDocument(id, lang);
   }
 
@@ -26,10 +59,27 @@ export class RiskAssessmentController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'List documents by risk filters (paginated)' })
-  async listRiskAssessments(@Query() query: ListRiskAssessmentsDto) {
-    const { page = 1, limit = 20, minScore, maxScore, startDate, endDate, sortOrder = 'DESC' } = query;
+  async listRiskAssessments(
+    @Query() query: ListRiskAssessmentsDto,
+    @Req() req: Request & { user?: User },
+  ) {
+    const {
+      page = 1,
+      limit = 20,
+      minScore,
+      maxScore,
+      startDate,
+      endDate,
+      sortOrder = 'DESC',
+      all = false,
+    } = query;
+
+    const user = req.user!;
+    // Only admins may explicitly ask for every user's documents.
+    const ownerId = user.role === UserRole.ADMIN && all ? undefined : user.id;
 
     const result = await this.documentsService.findByRiskFilters({
+      ownerId,
       page,
       limit,
       minScore,
@@ -53,5 +103,21 @@ export class RiskAssessmentController {
       limit,
       totalPages: Math.ceil(result.total / limit),
     };
+  }
+
+  private async getAccessibleDocument(
+    id: string,
+    user?: User,
+  ): Promise<Document> {
+    const document = await this.documentsService.findById(id);
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+
+    if (!user || (document.ownerId !== user.id && user.role !== UserRole.ADMIN)) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    return document;
   }
 }

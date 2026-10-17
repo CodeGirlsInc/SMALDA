@@ -1,6 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { DisputeReasonClassifierService } from './dispute-reason-classifier.service';
 import { DisputeReason } from './entities/dispute-reason.entity';
 

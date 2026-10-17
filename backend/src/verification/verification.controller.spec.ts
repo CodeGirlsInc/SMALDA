@@ -5,7 +5,6 @@ import { VerificationController } from './verification.controller';
 import { DocumentsService } from '../documents/documents.service';
 import { VerificationService } from './verification.service';
 import {
-  VerificationRecord,
   VerificationStatus,
 } from './entities/verification-record.entity';
 

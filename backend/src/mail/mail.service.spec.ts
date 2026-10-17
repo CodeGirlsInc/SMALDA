@@ -1,7 +1,6 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import * as nodemailer from 'nodemailer';
 import { ConfigService } from '@nestjs/config';
 import { MailService } from './mail.service';
-import { UsersService } from '../users/users.service';
 
 // ---------------------------------------------------------------------------
 // Mocks — define inside the factory so hoisting is not an issue
@@ -23,7 +22,6 @@ jest.mock('nodemailer', () => {
 });
 
 // Retrieve the mock reference after the module mock is registered
-const nodemailer = require('nodemailer');
 const mockCreateTransport = nodemailer.createTransport as jest.Mock;
 
 const mockUsersService = {

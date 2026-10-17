@@ -121,6 +121,31 @@ export class RiskAssessmentService {
     };
   }
 
+  async getStoredAssessment(
+    documentId: string,
+    lang?: string,
+  ): Promise<RiskResult> {
+    const document = await this.documentsService.findById(documentId);
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+
+    const locale = lang || 'en';
+    const flags = (document.riskFlags ?? []) as unknown as RiskFlag[];
+
+    return {
+      score: document.riskScore ?? 0,
+      flags: flags.map((flag) => ({
+        flag,
+        description:
+          RISK_FLAG_DESCRIPTIONS[flag]?.[locale] ||
+          RISK_FLAG_DESCRIPTIONS[flag]?.['en'] ||
+          flag,
+      })),
+      contentAnalysisPossible: document.mimeType === 'application/pdf',
+    };
+  }
+
   private async detectFlags(document: Document): Promise<RiskFlag[]> {
     const flags: RiskFlag[] = [];
 
