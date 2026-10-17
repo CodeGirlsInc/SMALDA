@@ -244,4 +244,31 @@ export class AuthService {
   private getAccessExpiration() {
     return this.configService.get<string>('JWT_EXPIRATION') ?? '15m';
   }
+  async verifyEmail(token: string) {
+    const user = await this.usersService.findByEmail(Buffer.from(token, 'base64').toString('utf-8'));
+    if (!user) throw new NotFoundException('Invalid token');
+    user.isVerified = true;
+    await this.usersService.update(user.id, user);
+  }
+
+  async resendVerification(email: string) {
+    const user = await this.usersService.findByEmail(email);
+    if (!user) return;
+    // Send verification email
+  }
+
+  async forgotPassword(email: string) {
+    const user = await this.usersService.findByEmail(email);
+    if (!user) return;
+    const token = Buffer.from(email).toString('base64');
+    // Send reset email with token
+  }
+
+  async resetPassword(token: string, password: string) {
+    const email = Buffer.from(token, 'base64').toString('utf-8');
+    const user = await this.usersService.findByEmail(email);
+    if (!user) throw new NotFoundException('Invalid token');
+    const hashed = await bcrypt.hash(password, 10);
+    await this.usersService.update(user.id, { password: hashed });
+  }
 }
