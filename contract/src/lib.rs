@@ -1,3 +1,48 @@
+//! # Public API surface
+//!
+//! Every module below is `pub`. That was historical, not deliberate: the crate
+//! grew by adding modules and the visibility was never reconsidered, so a
+//! consumer had no way to tell which parts were a supported contract and which
+//! were internals they happened to be able to reach.
+//!
+//! The list below is the intended surface. `tests/public_api_surface.rs` parses
+//! this file and fails if the set of `pub mod` declarations drifts, so adding a
+//! module is a deliberate decision with a reason attached rather than an
+//! accident.
+//!
+//! ## Reachable by external consumers on purpose
+//!
+//! | Module | Why it is public |
+//! |---|---|
+//! | `app` | The Axum `Router` constructor. This is the entry point for embedding the service. |
+//! | `cache` | `CacheBackend` / `InMemoryCache` / `RedisCache` are named in `AppState`, which integration tests construct. |
+//! | `config` | `AppConfig::from_env` and `ConfigError` are how a deployment is configured. |
+//! | `hash_validator` | `HashValidator` and `ValidationError` are the contract for callers accepting document hashes. |
+//! | `metrics` | `MetricsRegistry` is named in `AppState` and manipulated by integration tests. |
+//! | `rate_limit` | `build_rate_limiter` is called from `main.rs` and from test harnesses. |
+//! | `stellar` | `StellarClient` is the Stellar integration seam; tests inject mock Horizon URLs. |
+//! | `types` | Request/response types (`SubmitResponse`, `VerifyResponse`, `TransferRequest`, …) are the wire contract. |
+//!
+//! ## Public but not intended for external consumption
+//!
+//! `health`, `site`, `error`, `event`, `handlers`, `module`, `retry`, `routes`
+//! and `webhook` are not meant to be consumed directly. They are `pub` today
+//! because narrowing them is not a free refactor:
+//!
+//! - A public item somewhere names a type from one of them, so narrowing the
+//!   module would be a breaking change to the public API rather than an internal
+//!   cleanup.
+//! - `site` is an unused legacy registry (see `src/site.rs`) and `health`'s
+//!   liveness router is not wired into `routes.rs`. Both are already dead code,
+//!   but they do not warn *because* they are `pub`. Narrowing them to
+//!   `pub(crate)` would surface that as `dead_code`, and CI runs
+//!   `cargo clippy --all-targets --all-features -- -D warnings`, so the build
+//!   would fail. Deleting them is the real fix and is tracked separately.
+//!
+//! Until then the rule is: **do not add new `pub` items to these modules**, and
+//! prefer `pub(crate)` for anything new that does not have to be reachable.
+
+pub mod app;
 pub mod cache;
 pub mod config;
 pub mod error;
@@ -43,23 +88,34 @@ pub const REQUEST_ID_HEADER: &str = "x-request-id";
 /// Reject requests once the configured rate-limit quota is exhausted (CT-37).
 ///
 /// Returns `429 Too Many Requests` with a short JSON body so callers know
-/// to back off, matching the `Retry-After` convention used elsewhere.
+/// to back off, plus a `Retry-After` header carrying the number of seconds the
+/// bucket needs before the next token appears (RFC 9110 §10.2.3).
 async fn enforce_rate_limit(
     State(state): State<AppState>,
     req: Request<Body>,
     next: Next,
 ) -> Response {
     let path = req.uri().path();
+    // Probes and scrapes must never be throttled (issue #1441).
+    if matches!(path, "/health" | "/v1/health" | "/metrics" | "/v1/metrics") {
+        return next.run(req).await;
+    }
     let limiter = if path == "/submit" || path == "/v1/submit" {
         &state.submit_rate_limiter
     } else {
         &state.rate_limiter
     };
-    if limiter.check().is_err() {
+    if let Err(retry_after_secs) = limiter.check() {
+        // Without this header a client has to guess: fixed sleeps either waste
+        // the quota or retry straight into another rejection.
         return (
             StatusCode::TOO_MANY_REQUESTS,
+            [(axum::http::header::RETRY_AFTER, retry_after_secs.to_string())],
             Json(ValidationErrorResponse {
-                error: "rate limit exceeded, please retry later".to_string(),
+                error: format!(
+                    "rate limit exceeded, retry after {} second(s)",
+                    retry_after_secs
+                ),
             }),
         )
             .into_response();
@@ -75,9 +131,9 @@ pub struct AppState {
     pub metrics: Arc<MetricsRegistry>,
     pub stellar_secret_key: String,
     /// Process-wide limiter for verification and other non-submit routes.
-    pub rate_limiter: rate_limit::DefaultRateLimiter,
+    pub rate_limiter: rate_limit::RateLimitPolicy,
     /// Lower independent process-wide quota for document submissions.
-    pub submit_rate_limiter: rate_limit::DefaultRateLimiter,
+    pub submit_rate_limiter: rate_limit::RateLimitPolicy,
     /// Comma-separated webhook URLs parsed from `WEBHOOK_URLS` (CT-38).
     pub webhook_urls: Vec<String>,
     /// Shared secret used to sign webhook payloads (CT-38).
@@ -263,12 +319,23 @@ async fn record_audit_event(
 }
 
 /// GET /audit — read back emitted audit events, most recent first (CT-39).
-pub async fn audit_log_handler(State(state): State<AppState>) -> Response {
+pub async fn audit_log_handler(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    // When AUDIT_API_TOKEN is set, require it in `x-audit-token` (issue #1434).
+    if let Ok(expected) = std::env::var("AUDIT_API_TOKEN") {
+        let supplied = headers.get("x-audit-token").and_then(|v| v.to_str().ok());
+        if !expected.is_empty() && supplied != Some(expected.as_str()) {
+            return StatusCode::UNAUTHORIZED.into_response();
+        }
+    }
     let mut events: Vec<Event> = match state.cache.get("audit:events").await {
         Ok(Some(events)) => events,
         _ => Vec::new(),
     };
     events.reverse();
+    events.truncate(100); // cap the response size (issue #1434)
     Json(events).into_response()
 }
 
@@ -287,17 +354,31 @@ pub async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
         "degraded"
     };
 
-    Json(HealthResponse {
-        status: status.to_string(),
-        stellar_connected: stellar_ok,
-        redis_connected: redis_ok,
-        circuit_state: state.stellar.circuit_state_label().to_string(),
-        circuit_failures: state.stellar.circuit_failures(),
-    })
+    // Report 503 when a dependency is down so probes see it (issue #1442).
+    let code = if stellar_ok && redis_ok {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+
+    (
+        code,
+        Json(HealthResponse {
+            status: status.to_string(),
+            stellar_connected: stellar_ok,
+            redis_connected: redis_ok,
+            circuit_state: state.stellar.circuit_state_label().to_string(),
+            circuit_failures: state.stellar.circuit_failures(),
+        }),
+    )
 }
 
 // Metrics endpoint
 pub async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
+    // Reflect the live breaker state in the gauge on every scrape (issue #1447).
+    state
+        .metrics
+        .set_circuit_state(state.stellar.circuit_state().as_u8());
     (
         [(
             axum::http::header::CONTENT_TYPE,
@@ -309,15 +390,17 @@ pub async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse
 
 /// Compute deterministic transfer hash from core fields.
 ///
-/// SHA-256(document_hash + from_owner + to_owner + transfer_date)
+/// `v1` scheme (issues #1430, #1431): SHA-256 over `v1` followed by
+/// `|len:value` for the normalised document hash, from_owner, to_owner and
+/// transfer_date, so boundary-shifted field values cannot collide.
 pub fn compute_transfer_hash(req: &TransferRequest) -> String {
+    let doc = HashValidator::normalize(&req.document_hash);
     let mut hasher = Sha256::new();
-    hasher.update(req.document_hash.as_bytes());
-    hasher.update(req.from_owner.as_bytes());
-    hasher.update(req.to_owner.as_bytes());
-    hasher.update(req.transfer_date.as_bytes());
-    let digest = hasher.finalize();
-    hex::encode(digest)
+    hasher.update(b"v1");
+    for field in [&doc, &req.from_owner, &req.to_owner, &req.transfer_date] {
+        hasher.update(format!("|{}:{}", field.len(), field).as_bytes());
+    }
+    hex::encode(hasher.finalize())
 }
 
 /// Validate that the provided date is a valid ISO 8601 calendar date (YYYY-MM-DD).
@@ -357,6 +440,21 @@ pub async fn record_transfer(
     state.metrics.increment_request_count();
     state.metrics.increment_route_count("transfer");
 
+    // Reject empty/oversized owners and self-transfers (issue #1451).
+    let owner_ok = |s: &str| !s.trim().is_empty() && s.len() <= 256;
+    if !owner_ok(&req.from_owner)
+        || !owner_ok(&req.to_owner)
+        || req.from_owner == req.to_owner
+        || req.transfer_reference.len() > 256
+    {
+        return Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(ValidationErrorResponse {
+                error: "owners must be non-empty, differ, and be at most 256 bytes".to_string(),
+            }),
+        ));
+    }
+
     let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);
@@ -372,7 +470,7 @@ pub async fn record_transfer(
         ));
     }
 
-    let verify_key = format!("stellar:verify:{}", req.document_hash);
+    let verify_key = format!("stellar:verify:{}", normalized_hash);
     if let Ok(Some(verification)) = state.cache.get::<VerifyResponse>(&verify_key).await {
         if verification.revoked == Some(true) {
             return Err((
@@ -418,7 +516,7 @@ pub async fn record_transfer(
     }
 
     let record = TransferRecord {
-        document_hash: req.document_hash.clone(),
+        document_hash: normalized_hash.clone(),
         from_owner: req.from_owner.clone(),
         to_owner: req.to_owner.clone(),
         transfer_date: req.transfer_date.clone(),
@@ -476,7 +574,7 @@ pub async fn record_transfer(
         state.webhook_secret.as_deref(),
         "transfer",
         serde_json::json!({
-            "document_hash": req.document_hash,
+            "document_hash": normalized_hash,
             "transfer_hash": transfer_hash.clone(),
         }),
     );
@@ -621,7 +719,7 @@ pub async fn verify_document_history(
     }
 
     let cache_key = format!("history:{}", normalized_hash);
-    let transactions: Vec<TransactionRecord> = match state.cache.get(&cache_key).await {
+    let mut transactions: Vec<TransactionRecord> = match state.cache.get(&cache_key).await {
         Ok(Some(records)) => records,
         Ok(None) => Vec::new(),
         Err(e) => {
@@ -630,8 +728,30 @@ pub async fn verify_document_history(
         }
     };
 
-    let count = transactions.len();
     let cached = !transactions.is_empty();
+
+    if !cached {
+        // Cache miss: read the history from Horizon and cache it (issue #1435).
+        let account_id = match derive_account_id(&state.stellar_secret_key) {
+            Ok(id) => id,
+            Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        };
+        match state.stellar.get_hash_history(&normalized_hash, &account_id).await {
+            Ok(entries) => {
+                transactions = entries
+                    .into_iter()
+                    .filter_map(|e| {
+                        let v = serde_json::json!({"op_type": "manage_data", "name": e.data_name, "value": e.data_value_base64});
+                        serde_json::from_value::<TransactionRecord>(v).ok()
+                    })
+                    .collect();
+                let _ = state.cache.set(&cache_key, &transactions, 300).await;
+            }
+            Err(_) => return StatusCode::BAD_GATEWAY.into_response(),
+        }
+    }
+
+    let count = transactions.len();
 
     Json(HistoryResponse {
         document_hash: normalized_hash,
@@ -673,9 +793,12 @@ pub async fn batch_verify_documents(
     state.metrics.increment_route_count("verify_batch");
 
     // Process all hashes concurrently
+    // De-duplicate so a repeated hash triggers one lookup (issue #1443).
+    let mut seen = std::collections::HashSet::new();
     let verification_futures: Vec<_> = req
         .hashes
         .iter()
+        .filter(|h| seen.insert(HashValidator::normalize(h.as_str())))
         .map(|hash| {
             let state = state.clone();
             let hash = hash.clone();
@@ -756,7 +879,7 @@ async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
                 verified: false,
                 transaction_id: None,
                 timestamp: None,
-                error: Some(format!("failed to derive anchor account id: {}", e)),
+                error: Some("internal_error".to_string()),
             };
         }
     };
@@ -777,7 +900,7 @@ async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
                 verified: false,
                 transaction_id: None,
                 timestamp: None,
-                error: Some(format!("stellar query failed: {}", e)),
+                error: Some("upstream_unavailable".to_string()),
             };
         }
     };
@@ -916,7 +1039,7 @@ pub async fn submit_document(
                     success: false,
                     transaction_id: None,
                     anchored_at: None,
-                    error: Some(e.to_string()),
+                    error: Some("failed to anchor document".to_string()),
                 }),
             )
                 .into_response()
@@ -1076,7 +1199,7 @@ pub async fn revoke_document(
             (
                 StatusCode::BAD_GATEWAY,
                 Json(ValidationErrorResponse {
-                    error: format!("Stellar revocation failed: {}", e),
+                    error: "failed to record revocation".to_string(),
                 }),
             )
                 .into_response()

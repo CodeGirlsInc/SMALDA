@@ -12,5 +12,13 @@ if [ -n "$forbidden_env_files" ]; then
     exit 1
 fi
 
+# Keep the contract crate rustfmt-clean (issue #1454).
+if git diff --cached --name-only | grep -q '^contract/.*\.rs$'; then
+    (cd contract && cargo fmt --all -- --check) || {
+        echo "ERROR: run 'cd contract && cargo fmt --all' and re-stage."
+        exit 1
+    }
+fi
+
 echo "✅ No forbidden environment files detected, proceeding with commit."
 exit 0

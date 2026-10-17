@@ -14,9 +14,16 @@ use crate::types::{AppState, TransferRecord, TransferRequest, TransferResponse};
 /// Compute deterministic transfer hash from core fields.
 ///
 /// SHA-256(document_hash + from_owner + to_owner + transfer_date)
+///
+/// `document_hash` is normalized first. Without that, the same logical transfer
+/// produces a different `transfer_hash` — and therefore a different Stellar memo
+/// and a different on-chain transaction id — purely because one client sent
+/// uppercase hex and another sent lowercase. `pub`, so the normalization has to
+/// happen here rather than relying on every caller to remember.
 pub fn compute_transfer_hash(req: &TransferRequest) -> String {
+    let normalized_hash = HashValidator::normalize(&req.document_hash);
     let mut hasher = Sha256::new();
-    hasher.update(req.document_hash.as_bytes());
+    hasher.update(normalized_hash.as_bytes());
     hasher.update(req.from_owner.as_bytes());
     hasher.update(req.to_owner.as_bytes());
     hasher.update(req.transfer_date.as_bytes());
@@ -83,7 +90,11 @@ pub async fn record_transfer(
     }
 
     let record = TransferRecord {
-        document_hash: req.document_hash.clone(),
+        // The normalized form, not `req.document_hash`. Storing the raw value
+        // meant a document submitted in uppercase hex was written under one key
+        // and then unfindable from `GET /transfer/:document_hash` with the
+        // lowercase spelling, splitting one document's history in two.
+        document_hash: normalized_hash.clone(),
         from_owner: req.from_owner.clone(),
         to_owner: req.to_owner.clone(),
         transfer_date: req.transfer_date.clone(),
@@ -93,7 +104,7 @@ pub async fn record_transfer(
         anchored_at: Utc::now().to_rfc3339(),
     };
 
-    let key = format!("transfer:{}", record.document_hash);
+    let key = format!("transfer:{}", normalized_hash);
 
     let mut history: Vec<TransferRecord> = match state.cache.get(&key).await {
         Ok(Some(existing)) => existing,
@@ -126,7 +137,11 @@ pub async fn get_transfer_history(
     State(state): State<AppState>,
     Path(document_hash): Path<String>,
 ) -> Result<Json<Vec<TransferRecord>>, StatusCode> {
-    let key = format!("transfer:{}", document_hash);
+    // Normalize before building the key. Records are written under the
+    // normalized hash, so an uppercase-hex URL would otherwise miss every entry
+    // and report an empty history for a document that has transfers on record.
+    let normalized_hash = HashValidator::normalize(&document_hash);
+    let key = format!("transfer:{}", normalized_hash);
     match state.cache.get::<Vec<TransferRecord>>(&key).await {
         Ok(Some(history)) => Ok(Json(history)),
         Ok(None) => Ok(Json(Vec::new())),

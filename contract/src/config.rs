@@ -3,6 +3,8 @@ use std::env;
 use thiserror::Error;
 use url::Url;
 
+use stellar_base::transaction::MIN_BASE_FEE;
+
 use crate::module::network::{network_from_env, validate_horizon_url};
 
 /// Deployment environment. Controls log output format: JSON in production,
@@ -33,6 +35,12 @@ pub struct AppConfig {
     pub submit_rate_limit_per_second: u32,
     pub submit_rate_limit_burst: u32,
     pub stellar_max_retries: u32,
+    /// Per-operation fee in stroops attached to submitted transactions.
+    ///
+    /// The network base fee is not a constant, so a transaction pinned at the
+    /// historical minimum is rejected with insufficient fee during a spike and
+    /// anchoring fails outright. Raise this to boost submissions without a redeploy.
+    pub stellar_base_fee: u32,
     pub log_level: String,
     pub environment: Environment,
     pub webhook_urls: Vec<String>,
@@ -50,7 +58,10 @@ pub enum ConfigError {
 impl AppConfig {
     pub fn from_env() -> Result<Self, ConfigError> {
         let mut errors = Vec::new();
-        let node_env = env::var("NODE_ENV").unwrap_or_else(|_| "development".to_string());
+        // APP_ENV (set by the container) decides; NODE_ENV is only a fallback (issue #1445).
+        let node_env = env::var("APP_ENV")
+            .or_else(|_| env::var("NODE_ENV"))
+            .unwrap_or_else(|_| "development".to_string());
         let is_production = node_env == "production";
 
         // List of placeholder values that are not allowed in production
@@ -194,6 +205,13 @@ impl AppConfig {
             &mut errors,
             &placeholders,
         );
+        let stellar_base_fee_raw = get_env_or_default(
+            "STELLAR_BASE_FEE",
+            &MIN_BASE_FEE.to_string(),
+            is_production,
+            &mut errors,
+            &placeholders,
+        );
         let cache_verification_ttl_raw = get_env_or_default(
             "CACHE_VERIFICATION_TTL",
             "3600",
@@ -306,6 +324,24 @@ impl AppConfig {
             }
         };
 
+        let stellar_base_fee: u32 = match stellar_base_fee_raw.parse() {
+            // Zero is rejected at config time rather than being clamped later:
+            // every Stellar network refuses a zero fee, so a typo here should
+            // fail at startup, not on the first submission during an incident.
+            Ok(0) => {
+                errors.push("STELLAR_BASE_FEE must be greater than 0".to_string());
+                MIN_BASE_FEE
+            }
+            Ok(v) => v,
+            Err(_) => {
+                errors.push(format!(
+                    "STELLAR_BASE_FEE must be a valid u32, got '{}'",
+                    stellar_base_fee_raw
+                ));
+                MIN_BASE_FEE
+            }
+        };
+
         let cache_verification_ttl: u64 = match cache_verification_ttl_raw.parse() {
             Ok(v) => v,
             Err(_) => {
@@ -354,6 +390,7 @@ impl AppConfig {
             submit_rate_limit_per_second,
             submit_rate_limit_burst,
             stellar_max_retries,
+            stellar_base_fee,
             log_level,
             environment,
             webhook_urls,
@@ -383,6 +420,7 @@ mod tests {
             "SUBMIT_RATE_LIMIT_PER_SECOND",
             "SUBMIT_RATE_LIMIT_BURST",
             "STELLAR_MAX_RETRIES",
+            "STELLAR_BASE_FEE",
             "LOG_LEVEL",
             "APP_ENV",
             "WEBHOOK_URLS",
