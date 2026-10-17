@@ -157,20 +157,32 @@ jobs:
       - name: Bench (compile only)
         run: cargo bench --no-run
 
+      # The coverage script is the only enforcement of the per-module floors,
+      # and it is a plain Python file that nothing exercised. A regression
+      # there (min_total_percent being declared and never read, for instance)
+      # would silently disable the aggregate gate.
+      - name: Coverage threshold script tests
+        run: python3 scripts/test_check_coverage.py
+        working-directory: contract
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny
+
+      # Runs on every PR and push, not just the schedule. Advisory databases
+      # are only as fresh as the last fetch, so a deny check that only runs on a
+      # cron lets a newly disclosed vulnerability sit unreported for up to a
+      # week. cargo-deny fetches the db on first use and caches it, so this is
+      # cheap after the first run.
+      - name: Dependency policy check (cargo-deny)
+        run: cargo deny check
+
+      # cargo-audit is the slower, deeper scan and stays on the schedule.
       - name: Install cargo-audit
         run: cargo install cargo-audit
         if: github.event_name == 'schedule'
 
       - name: Security audit (cargo-audit)
         run: cargo audit
-        if: github.event_name == 'schedule'
-
-      - name: Install cargo-deny
-        run: cargo install cargo-deny
-        if: github.event_name == 'schedule'
-
-      - name: Dependency policy check (cargo-deny)
-        run: cargo deny check
         if: github.event_name == 'schedule'
         # ─────────────────────────────────────────────
   # BACKEND E2E — NestJS + Postgres + Redis

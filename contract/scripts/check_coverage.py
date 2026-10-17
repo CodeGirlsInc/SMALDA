@@ -59,6 +59,22 @@ def coverage_percent(entry: dict[str, Any]) -> float | None:
     return None
 
 
+def overall_percent(cov: dict[str, Any]) -> float | None:
+    """Total line coverage across every file in the report.
+
+    `min_total_percent` was declared in the thresholds file but never read, so
+    the aggregate number was decoration: a crate could satisfy it with a few
+    heavily-tested modules while the rest went uncovered.
+    """
+    totals = (cov or {}).get("totals") or {}
+    lines = totals.get("lines") or {}
+    count = lines.get("count")
+    covered = lines.get("covered")
+    if count:
+        return 100.0 * covered / count
+    return None
+
+
 def main(argv: list[str]) -> int:
     if len(argv) != 3:
         sys.stderr.write(
@@ -73,6 +89,7 @@ def main(argv: list[str]) -> int:
     thr = load_json(thr_path)
     default_floor = int(thr.get("default", 0))
     file_floors = thr.get("files") or {}
+    min_total_percent = thr.get("min_total_percent")
 
     entries = (cov or {}).get("data") or []
     rows: list[tuple[str, int, float | None]] = []
@@ -108,6 +125,24 @@ def main(argv: list[str]) -> int:
                 f"  {path}  floor={floor}%  actual={pct:.2f}%\n"
             )
         return 1
+
+    if min_total_percent is not None:
+        total = overall_percent(cov)
+        if total is None:
+            sys.stderr.write(
+                "\ncoverage report carried no totals; cannot evaluate "
+                f"min_total_percent={min_total_percent}%.\n"
+            )
+            return 1
+        if total < min_total_percent:
+            sys.stderr.write(
+                f"\noverall coverage {total:.2f}% is below the required "
+                f"{min_total_percent}%.\n"
+            )
+            return 1
+        sys.stdout.write(
+            f"\nOverall coverage {total:.2f}% (required {min_total_percent}%).\n"
+        )
 
     sys.stdout.write("\nAll modules meet or exceed their floor.\n")
     return 0
