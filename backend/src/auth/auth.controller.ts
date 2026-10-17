@@ -34,6 +34,7 @@ import {
   setAuthCookies,
 } from './auth-cookie';
 import { User } from '../users/entities/user.entity';
+import { LoginRateLimitGuard } from './login-rate-limit.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -55,6 +56,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @UseGuards(LoginRateLimitGuard)
   async login(
     @Body() dto: LoginAuthDto,
     @Res({ passthrough: true }) response?: Response,
