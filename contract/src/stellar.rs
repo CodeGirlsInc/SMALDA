@@ -24,6 +24,22 @@ pub struct StellarClient {
     circuit_breaker: Arc<CircuitBreaker>,
     /// Active retry policy (max_attempts, backoff, jitter).
     retry_policy: RetryPolicy,
+    /// Per-operation fee in stroops attached to every transaction this client
+    /// submits.
+    ///
+    /// Defaults to [`MIN_BASE_FEE`] but is configurable, because the network
+    /// base fee is not a constant: during a fee spike a transaction pinned at
+    /// the historical minimum is rejected with `insufficient fee` and the
+    /// anchoring fails outright. Raising this lets an operator boost submissions
+    /// without a redeploy.
+    ///
+    /// This is *not* a Stellar fee-bump transaction — a fee bump wraps an
+    /// already-signed envelope and is the protocol's answer to a raised fee.
+    /// Building one needs an SDK that exposes `FeeBumpTransaction`, which the
+    /// pinned `stellar-base 0.5` does not; see #1368 for the dependency mess
+    /// that pin sits in. Until that is sorted, the configurable base fee is the
+    /// available lever, and it covers the same fee-spike failure.
+    base_fee: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -122,6 +138,85 @@ struct OperationRecord {
     value: Option<String>,
 }
 
+/// Holds the most recent retryable Horizon response.
+///
+/// The retry helper consumes responses as it classifies them, so without a slot
+/// to stash the last one in, a retry-exhausted 429 would arrive at the caller as
+/// an opaque error string and Horizon's actual explanation would be lost. The
+/// guard is only ever taken inside a single statement and never held across an
+/// `await`, so the futures stay `Send`.
+#[derive(Clone, Default)]
+struct LastResponse(Arc<std::sync::Mutex<Option<reqwest::Response>>>);
+
+impl LastResponse {
+    fn store(&self, resp: reqwest::Response) {
+        if let Ok(mut slot) = self.0.lock() {
+            *slot = Some(resp);
+        }
+    }
+
+    fn take(&self) -> Option<reqwest::Response> {
+        self.0.lock().ok().and_then(|mut slot| slot.take())
+    }
+}
+
+/// Whether a Horizon response is worth retrying.
+///
+/// `429` is the case the retry module has always advertised but nothing ever
+/// exercised: a rate-limited request is transient by definition, and Horizon
+/// expects the caller to back off and try again. 5xx is included for the same
+/// reason.
+///
+/// Every other status is returned to the caller untouched, including 4xx. Those
+/// are terminal by nature — a bad hash or an unknown account will not fix
+/// itself — and the callers already format Horizon's error body into a useful
+/// message, so turning them into retry errors would only add latency and change
+/// diagnostics.
+fn classify_response(
+    resp: reqwest::Response,
+    url: &str,
+    last_response: &LastResponse,
+) -> Result<reqwest::Response, RetryableError> {
+    let status = resp.status();
+
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
+        // Surface whatever Horizon asked for, so the retry reason says why we
+        // are waiting rather than just that we are.
+        let retry_after = resp
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .map(|v| format!(" (Retry-After: {v})"))
+            .unwrap_or_default();
+
+        last_response.store(resp);
+
+        return Err(RetryableError::Retryable(format!(
+            "Horizon {status} from {url}{retry_after}, retrying with backoff"
+        )));
+    }
+
+    Ok(resp)
+}
+
+/// Turn a retry outcome into a response or an error.
+///
+/// Prefers the stashed response over the generic error: Horizon's own error
+/// body is more useful to a caller than "retry budget exhausted".
+fn finish(
+    outcome: Result<reqwest::Response, RetryableError>,
+    last_response: LastResponse,
+    url: &str,
+) -> anyhow::Result<reqwest::Response> {
+    match outcome {
+        Ok(resp) => Ok(resp),
+        Err(err) => match last_response.take() {
+            Some(resp) => Ok(resp),
+            None => Err(anyhow::anyhow!("horizon request to {url}: {}", err.into_string())),
+        },
+    }
+}
+
 impl StellarClient {
     /// Create a new client with sensible timeout and connection-pool defaults.
     pub fn new(horizon_url: &str) -> Self {
@@ -140,7 +235,24 @@ impl StellarClient {
             http_client,
             circuit_breaker: CircuitBreaker::with_defaults(),
             retry_policy: RetryPolicy::default(),
+            base_fee: MIN_BASE_FEE,
         }
+    }
+
+    /// Build a client that submits transactions at `base_fee` stroops.
+    ///
+    /// Zero falls back to [`MIN_BASE_FEE`] rather than being honoured: every
+    /// Stellar network rejects a zero fee, so accepting it would turn a
+    /// configuration mistake into a submission failure at runtime instead of at
+    /// startup.
+    pub fn with_base_fee(mut self, base_fee: u32) -> Self {
+        self.base_fee = if base_fee == 0 { MIN_BASE_FEE } else { base_fee };
+        self
+    }
+
+    /// The per-operation fee in stroops this client attaches to submissions.
+    pub fn base_fee(&self) -> u32 {
+        self.base_fee
     }
 
     #[tracing::instrument(name = "stellar.check_connection", skip(self))]
@@ -154,6 +266,40 @@ impl StellarClient {
     /// Return the base Horizon URL this client targets.
     pub fn horizon_url(&self) -> &str {
         &self.horizon_url
+    }
+
+    /// Whether the configured Horizon URL is the testnet one.
+    ///
+    /// Split out from [`Self::horizon_network`] so the decision is testable
+    /// without depending on the `Network` type's accessor methods, which differ
+    /// between `stellar-base` releases.
+    fn horizon_is_testnet(&self) -> bool {
+        self.horizon_url.contains("testnet")
+    }
+
+    /// The Stellar network passphrase implied by the configured Horizon URL.
+    ///
+    /// The endpoint *is* configuration — `STELLAR_HORIZON_URL` is read in
+    /// `config.rs` and validated against `STELLAR_NETWORK` at startup — so
+    /// pointing at a different Horizon instance needs no code change. This
+    /// method just makes the coupling in one place instead of repeating the
+    /// same four-line `contains("testnet")` block at each of the three
+    /// transaction builders, where a future edit could easily catch only some of
+    /// them.
+    ///
+    /// Known limitation, deliberately left for #1439: deriving the network from
+    /// the URL means a self-hosted Horizon (`http://localhost:8000`, or any
+    /// host that is neither testnet nor public) silently falls through to the
+    /// public passphrase and every transaction it signs is rejected. The correct
+    /// fix is to thread the already-validated `STELLAR_NETWORK` through
+    /// `StellarClient` instead of re-deriving it here, which is a signature
+    /// change and not something to smuggle in alongside a backoff fix.
+    fn horizon_network(&self) -> Network {
+        if self.horizon_is_testnet() {
+            Network::new_test()
+        } else {
+            Network::new_public()
+        }
     }
 
     /// Build a client with a custom retry policy and circuit breaker.
@@ -174,6 +320,7 @@ impl StellarClient {
             http_client,
             circuit_breaker,
             retry_policy,
+            base_fee: MIN_BASE_FEE,
         }
     }
 
@@ -194,29 +341,41 @@ impl StellarClient {
 
     /// Execute a GET request wrapped in the retry policy and circuit breaker.
     ///
-    /// Returns `Ok(resp)` for any Horizon response (including 4xx/5xx -- the
-    /// caller decides how to map non-2xx). Returns `Err(anyhow::Error)`
-    /// only when the breaker is open up-front, or the retry budget is
-    /// exhausted on purely transport-level failures.
+    /// Transient responses (429, 5xx) are retried with the policy's exponential
+    /// backoff and jitter. When the budget is exhausted the **last response is
+    /// returned rather than an error**, because Horizon's own error body is a far
+    /// better diagnostic than a generic "retry budget exhausted" string and every
+    /// caller already knows how to format one.
+    ///
+    /// Returns `Err(anyhow::Error)` only when the breaker is open up-front, or
+    /// the retry budget is exhausted on purely transport-level failures where
+    /// there is no response to hand back.
     async fn get_with_backoff(&self, url: &str) -> anyhow::Result<reqwest::Response> {
         let breaker = self.circuit_breaker.clone();
         let policy = self.retry_policy.clone();
         let client = self.http_client.clone();
         let url_owned = url.to_string();
-        with_retry_and_cb(&breaker, &policy, move || {
-            let client = client.clone();
-            let url_owned = url_owned.clone();
-            async move {
-                match client.get(&url_owned).send().await {
-                    Ok(resp) => Ok(resp),
-                    Err(e) => Err(RetryableError::Retryable(format!(
-                        "HTTP GET {url_owned} failed: {e}"
-                    ))),
+        let last_response = LastResponse::default();
+
+        let outcome = with_retry_and_cb(&breaker, &policy, {
+            let last_response = last_response.clone();
+            move || {
+                let client = client.clone();
+                let url_owned = url_owned.clone();
+                let last_response = last_response.clone();
+                async move {
+                    match client.get(&url_owned).send().await {
+                        Ok(resp) => classify_response(resp, &url_owned, &last_response),
+                        Err(e) => Err(RetryableError::Retryable(format!(
+                            "HTTP GET {url_owned} failed: {e}"
+                        ))),
+                    }
                 }
             }
         })
-        .await
-        .map_err(|e| anyhow::anyhow!("horizon GET {url}: {}", e.into_string()))
+        .await;
+
+        finish(outcome, last_response, url)
     }
 
     /// POST a form-urlencoded envelope to Horizon, wrapped in the retry
@@ -226,32 +385,41 @@ impl StellarClient {
     /// the same bytes are re-sent on every retry, but re-signing and
     /// re-fetching the source sequence must happen once at the caller to
     /// keep POSTs idempotent under retry.
+    ///
+    /// Retries 429 and 5xx exactly as [`Self::get_with_backoff`] does.
     async fn horizon_post(&self, url: &str, body: String) -> anyhow::Result<reqwest::Response> {
         let breaker = self.circuit_breaker.clone();
         let policy = self.retry_policy.clone();
         let client = self.http_client.clone();
         let url_owned = url.to_string();
-        with_retry_and_cb(&breaker, &policy, move || {
-            let client = client.clone();
-            let url_owned = url_owned.clone();
-            let body = body.clone();
-            async move {
-                match client
-                    .post(&url_owned)
-                    .header("Content-Type", "application/x-www-form-urlencoded")
-                    .body(body)
-                    .send()
-                    .await
-                {
-                    Ok(resp) => Ok(resp),
-                    Err(e) => Err(RetryableError::Retryable(format!(
-                        "HTTP POST {url_owned} failed: {e}"
-                    ))),
+        let last_response = LastResponse::default();
+
+        let outcome = with_retry_and_cb(&breaker, &policy, {
+            let last_response = last_response.clone();
+            move || {
+                let client = client.clone();
+                let url_owned = url_owned.clone();
+                let body = body.clone();
+                let last_response = last_response.clone();
+                async move {
+                    match client
+                        .post(&url_owned)
+                        .header("Content-Type", "application/x-www-form-urlencoded")
+                        .body(body)
+                        .send()
+                        .await
+                    {
+                        Ok(resp) => classify_response(resp, &url_owned, &last_response),
+                        Err(e) => Err(RetryableError::Retryable(format!(
+                            "HTTP POST {url_owned} failed: {e}"
+                        ))),
+                    }
                 }
             }
         })
-        .await
-        .map_err(|e| anyhow::anyhow!("horizon POST {url}: {}", e.into_string()))
+        .await;
+
+        finish(outcome, last_response, url)
     }
 
     /// Verifies a document hash against Horizon using the `ManageData` approach.
@@ -284,6 +452,9 @@ impl StellarClient {
         let account: HorizonAccount = resp.json().await?;
         let data_key = build_data_key(hash);
 
+        // The chain is the source of truth for revocation (issue #1429).
+        let revoked_on_chain = account.data.contains_key(&build_revocation_key(hash));
+
         if let Some(b64_val) = account.data.get(&data_key) {
             let decoded_bytes = base64::engine::general_purpose::STANDARD
                 .decode(b64_val)
@@ -292,7 +463,7 @@ impl StellarClient {
 
             Ok(VerificationRecord {
                 hash: hash.to_string(),
-                anchored: true,
+                anchored: !revoked_on_chain,
                 data_key,
                 transaction_id: None,
                 timestamp: None,
@@ -427,13 +598,9 @@ impl StellarClient {
         let keypair = KeyPair::from_secret_seed(secret_key)
             .map_err(|e| anyhow!("Invalid secret key: {:?}", e))?;
 
-        let network = if self.horizon_url.contains("testnet") {
-            Network::new_test()
-        } else {
-            Network::new_public()
-        };
+        let network = self.horizon_network();
 
-        let mut tx = Transaction::builder(keypair.public_key().clone(), sequence, MIN_BASE_FEE)
+        let mut tx = Transaction::builder(keypair.public_key().clone(), sequence, self.base_fee)
             .add_operation(op)
             .into_transaction()
             .map_err(|e| anyhow!("Failed to build transaction: {:?}", e))?;
@@ -540,13 +707,9 @@ impl StellarClient {
         let keypair = KeyPair::from_secret_seed(secret_key)
             .map_err(|e| anyhow!("Invalid secret key: {:?}", e))?;
 
-        let network = if self.horizon_url.contains("testnet") {
-            Network::new_test()
-        } else {
-            Network::new_public()
-        };
+        let network = self.horizon_network();
 
-        let mut tx = Transaction::builder(keypair.public_key().clone(), sequence, MIN_BASE_FEE)
+        let mut tx = Transaction::builder(keypair.public_key().clone(), sequence, self.base_fee)
             .add_operation(op)
             .into_transaction()
             .map_err(|e| anyhow!("Failed to build transaction: {:?}", e))?;
@@ -652,13 +815,9 @@ impl StellarClient {
         let keypair = KeyPair::from_secret_seed(secret_key)
             .map_err(|e| anyhow!("Invalid secret key: {:?}", e))?;
 
-        let network = if self.horizon_url.contains("testnet") {
-            Network::new_test()
-        } else {
-            Network::new_public()
-        };
+        let network = self.horizon_network();
 
-        let mut tx = Transaction::builder(keypair.public_key().clone(), sequence, MIN_BASE_FEE)
+        let mut tx = Transaction::builder(keypair.public_key().clone(), sequence, self.base_fee)
             .add_operation(op)
             .into_transaction()
             .map_err(|e| anyhow!("Failed to build transaction: {:?}", e))?;
@@ -966,5 +1125,194 @@ mod tests {
     async fn test_client_constructor_works() {
         let client = StellarClient::new("https://horizon.stellar.org");
         assert_eq!(client.horizon_url, "https://horizon.stellar.org");
+    }
+
+    // ── Status classification for retry (#1361) ──────────────────
+
+    fn status_of(code: u16) -> reqwest::StatusCode {
+        reqwest::StatusCode::from_u16(code).unwrap()
+    }
+
+    #[test]
+    fn a_429_is_classified_as_retryable() {
+        // The case retry.rs has always documented and nothing ever exercised:
+        // Horizon expects a rate-limited caller to back off and retry, but the
+        // response was previously handed straight to the caller as a failure.
+        let last = LastResponse::default();
+        let resp = reqwest::Response::builder()
+            .status(status_of(429))
+            .body(Vec::new())
+            .unwrap();
+
+        let err = classify_response(resp, "https://horizon.test/accounts/x", &last)
+            .expect_err("429 must be retryable");
+        let reason = err.into_string();
+
+        assert!(reason.contains("429"), "reason should name the status: {reason}");
+    }
+
+    #[test]
+    fn a_429_retry_reason_includes_the_retry_after_header_when_present() {
+        let last = LastResponse::default();
+        let resp = reqwest::Response::builder()
+            .status(status_of(429))
+            .header("Retry-After", "7")
+            .body(Vec::new())
+            .unwrap();
+
+        let err = classify_response(resp, "https://horizon.test/x", &last).unwrap_err();
+        assert!(err.into_string().contains("Retry-After: 7"));
+    }
+
+    #[test]
+    fn a_429_without_a_retry_after_header_is_still_retryable() {
+        let last = LastResponse::default();
+        let resp = reqwest::Response::builder()
+            .status(status_of(429))
+            .body(Vec::new())
+            .unwrap();
+
+        assert!(classify_response(resp, "https://horizon.test/x", &last).is_err());
+    }
+
+    #[test]
+    fn server_errors_are_classified_as_retryable() {
+        for code in [500u16, 502, 503, 504] {
+            let last = LastResponse::default();
+            let resp = reqwest::Response::builder()
+                .status(status_of(code))
+                .body(Vec::new())
+                .unwrap();
+
+            if classify_response(resp, "https://horizon.test/x", &last).is_err() {
+                continue;
+            }
+            panic!("{code} should be retried, not returned to the caller");
+        }
+    }
+
+    #[test]
+    fn client_errors_are_left_to_the_caller() {
+        // 4xx is terminal: a bad hash or unknown account will not fix itself,
+        // and callers already format Horizon's body into a good message.
+        for code in [400u16, 401, 403, 404, 422] {
+            let last = LastResponse::default();
+            let resp = reqwest::Response::builder()
+                .status(status_of(code))
+                .body(Vec::new())
+                .unwrap();
+
+            let returned = classify_response(resp, "https://horizon.test/x", &last)
+                .unwrap_or_else(|_| panic!("{code} must not be retried"));
+            assert_eq!(returned.status(), status_of(code));
+        }
+    }
+
+    #[test]
+    fn successes_are_returned_untouched() {
+        for code in [200u16, 201, 204] {
+            let last = LastResponse::default();
+            let resp = reqwest::Response::builder()
+                .status(status_of(code))
+                .body(Vec::new())
+                .unwrap();
+
+            let returned = classify_response(resp, "https://horizon.test/x", &last).unwrap();
+            assert_eq!(returned.status(), status_of(code));
+        }
+    }
+
+    #[test]
+    fn a_retryable_response_is_stashed_for_handover() {
+        // Without this, a retry-exhausted 429 reaches the caller as an opaque
+        // string and Horizon's actual error body is lost.
+        let last = LastResponse::default();
+        let resp = reqwest::Response::builder()
+            .status(status_of(429))
+            .body(Vec::new())
+            .unwrap();
+
+        classify_response(resp, "https://horizon.test/x", &last).unwrap_err();
+
+        let stashed = last.take().expect("a retryable response must be stashed");
+        assert_eq!(stashed.status(), status_of(429));
+    }
+
+    #[test]
+    fn taking_the_stashed_response_consumes_it() {
+        let last = LastResponse::default();
+        assert!(
+            last.take().is_none(),
+            "an empty slot must not hand back a response"
+        );
+
+        let resp = reqwest::Response::builder()
+            .status(status_of(503))
+            .body(Vec::new())
+            .unwrap();
+        last.store(resp);
+
+        assert!(last.take().is_some());
+        assert!(
+            last.take().is_none(),
+            "the slot should be empty again after a take"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_retry_exhausted_429_is_handed_back_as_a_response_not_an_error() {
+        // The behaviour that keeps callers working: Horizon's own error body is
+        // more useful to a caller than "retry budget exhausted".
+        let last = LastResponse::default();
+        let resp = reqwest::Response::builder()
+            .status(status_of(429))
+            .body("rate limited".to_string())
+            .unwrap();
+        last.store(resp);
+
+        let outcome: Result<reqwest::Response, RetryableError> =
+            Err(RetryableError::Retryable("budget exhausted".into()));
+        let returned = finish(outcome, last.clone(), "https://horizon.test/x").unwrap();
+
+        assert_eq!(returned.status(), status_of(429));
+        assert!(
+            last.take().is_none(),
+            "the slot should be consumed exactly once"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_transport_failure_with_no_response_is_still_an_error() {
+        // Nothing to hand back, so this must not pretend to be a response.
+        let last = LastResponse::default();
+        let outcome: Result<reqwest::Response, RetryableError> =
+            Err(RetryableError::Retryable("connection refused".into()));
+
+        let err = finish(outcome, last, "https://horizon.test/x")
+            .expect_err("with no stashed response this must be an error");
+        assert!(format!("{err}").contains("horizon.test"));
+    }
+
+    // ── Horizon URL / network (#1362) ───────────────────────────
+
+    #[test]
+    fn a_custom_horizon_url_is_honoured() {
+        // The endpoint is configuration: STELLAR_HORIZON_URL is read in
+        // config.rs and validated against STELLAR_NETWORK at startup, so
+        // pointing at another instance needs no code change.
+        let client = StellarClient::new("http://localhost:8000");
+        assert_eq!(client.horizon_url, "http://localhost:8000");
+    }
+
+    #[test]
+    fn the_network_passphrase_follows_the_configured_url() {
+        // Consolidated from three duplicated inline blocks.
+        assert!(StellarClient::new("https://horizon-testnet.stellar.org").horizon_is_testnet());
+        assert!(!StellarClient::new("https://horizon.stellar.org").horizon_is_testnet());
+
+        // Known limitation, tracked by #1439: anything that is not testnet is
+        // treated as public, including a self-hosted Horizon. Pinned so the
+        // behaviour cannot change unnoticed before that fix lands.
+        assert!(!StellarClient::new("http://localhost:8000").horizon_is_testnet());
     }
 }

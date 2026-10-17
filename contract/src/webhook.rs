@@ -7,8 +7,39 @@
 //! background task so the HTTP response is never blocked by webhook
 //! delivery.
 
+use once_cell::sync::Lazy;
 use sha2::{Digest, Sha256};
+use std::time::Duration;
 use tracing::warn;
+
+/// Hard deadline for a single outbound webhook delivery.
+///
+/// Without this, a receiver that accepts the connection and then goes silent
+/// holds the request open until the OS TCP timeout, which in a default tokio
+/// runtime is minutes. `dispatch` runs deliveries concurrently, so a handful of
+/// such receivers can saturate the whole worker pool while the service looks
+/// healthy from the inside.
+///
+/// Deliberately generous: a webhook receiver is another network hop and a cold
+/// database behind it, so this should be well above a normal slow delivery.
+/// The point is to fail a dead receiver rather than wait on it indefinitely.
+pub const WEBHOOK_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Shared HTTP client for all webhook deliveries.
+///
+/// Built once rather than per call: `reqwest::Client` owns a connection pool
+/// and spawning one per delivery discards that pool and opens a fresh TLS
+/// handshake to every receiver every time.
+static WEBHOOK_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+    reqwest::Client::builder()
+        .timeout(WEBHOOK_TIMEOUT)
+        .pool_max_idle_per_host(4)
+        .build()
+        // Only fails on an invalid TLS backend or a bad proxy setting, neither
+        // of which is configurable here, so a panic at first use is the honest
+        // outcome rather than a silently client-less dispatcher.
+        .expect("failed to build webhook HTTP client")
+});
 
 /// Compute an HMAC-SHA256 signature for the raw body.
 ///
@@ -23,6 +54,9 @@ pub fn sign_body(body: &str, secret: Option<&str>) -> String {
 }
 
 /// POST a single signed webhook payload and surface transport/HTTP errors.
+///
+/// Bounded by [`WEBHOOK_TIMEOUT`]; a receiver that never responds fails here
+/// rather than holding the task open.
 pub async fn post_webhook(
     url: &str,
     secret: Option<&str>,
@@ -32,7 +66,7 @@ pub async fn post_webhook(
     let body = serde_json::json!({ "event": event, "payload": payload }).to_string();
     let signature = sign_body(&body, secret);
 
-    let resp = reqwest::Client::new()
+    let resp = WEBHOOK_CLIENT
         .post(url)
         .header("Content-Type", "application/json")
         .header("X-Signature", signature)
@@ -124,6 +158,55 @@ mod tests {
         let a = sign_body("payload", Some("secret"));
         let b = sign_body("payload", Some("secret"));
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn the_outbound_client_has_a_deadline() {
+        // The regression guard for #1364. A client with no timeout leaves a
+        // silent receiver holding the task until the OS gives up, which in a
+        // default runtime is minutes rather than the 10s above.
+        assert!(
+            WEBHOOK_TIMEOUT > Duration::ZERO,
+            "an unbounded client is the bug this test exists to catch"
+        );
+        assert_eq!(
+            WEBHOOK_CLIENT.get_timeout(),
+            Some(WEBHOOK_TIMEOUT),
+            "the shared client must actually carry the deadline, not just declare it"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_post_webhook_times_out_on_a_silent_receiver() {
+        // httpmock can delay a response; a delay longer than the timeout must
+        // surface as an error instead of hanging.
+        let mock_server = MockServer::start_async().await;
+        let _mock = mock_server
+            .mock_async(|when, then| {
+                when.method(POST).path("/hook");
+                then.status(200).delay(std::time::Duration::from_secs(30));
+            })
+            .await;
+
+        let result = tokio::time::timeout(
+            WEBHOOK_TIMEOUT + Duration::from_secs(2),
+            post_webhook(
+                &format!("{}/hook", mock_server.url("/")),
+                None,
+                "verify",
+                &serde_json::json!({}),
+            ),
+        )
+        .await
+        .expect("post_webhook must give up rather than hang past its deadline")
+        .expect_err("a slow receiver should produce an error, not a success");
+
+        // reqwest surfaces the deadline as a timeout / request error.
+        assert!(
+            format!("{result}").to_lowercase().contains("timeout")
+                || format!("{result}").to_lowercase().contains("timed out"),
+            "expected a timeout error, got: {result}"
+        );
     }
 
     #[tokio::test]

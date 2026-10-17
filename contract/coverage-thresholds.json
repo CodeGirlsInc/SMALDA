@@ -15,7 +15,7 @@
     "contract/src/event.rs": 0,
     "contract/src/lib.rs": 0,
     "contract/src/routes.rs": 0,
-    "contract/src/handlers/*.rs": 0,
+    "contract/src/handlers/*.rs": 25,
     "contract/src/handlers/mod.rs": 0,
     "contract/src/stellar.rs": 25,
     "contract/src/rate_limit.rs": 0,

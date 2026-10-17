@@ -3,6 +3,19 @@ name = "stellar-doc-verifier"
 version = "0.1.0"
 edition = "2021"
 
+# Exactly one Stellar SDK is a dependency: `stellar-base`.
+#
+# `stellar-sdk 0.1` used to be listed alongside it and pulled in a second,
+# largely redundant copy of the same primitives. Nothing in `src/`, `tests/` or
+# `benches/` ever referenced it - every `Transaction`, `Network`, `Operation` and
+# `KeyPair` import comes from `stellar_base` (see `src/stellar.rs`). It was pure
+# dependency weight, and dependency weight is attack surface: cargo-deny, audit
+# and advisory response all have one more tree to reason about for no benefit.
+# Removed; see #1368.
+#
+# If a future feature genuinely needs `stellar-sdk`'s higher-level helpers, add it
+# back with a comment explaining what `stellar-base` could not do.
+
 [dependencies]
 # Web framework
 axum = "0.7"
@@ -12,12 +25,33 @@ tower-http = { version = "0.5", features = ["trace", "cors", "request-id"] }
 url = "2"
 futures = "0.3"
 
-# Stellar SDK
-stellar_sdk = "0.1"
+# Stellar SDK.
+#
+# `stellar-base` only: this is the single source of the transaction, network,
+# operation and keypair types used by `src/stellar.rs`.
 stellar-base = "0.5"
-# Crypto — sodiumoxide is pinned to 0.2.6 because newer versions
-# changed the libsodium bindings ABI which breaks stellar-sdk at runtime.
-# See: https://github.com/nickel-org/rust-sodium/issues/234
+# Crypto.
+#
+# Pinned to exactly 0.2.6, NOT merely "an old version".
+#
+# Why: sodiumoxide >= 0.2.7 changed the libsodium FFI bindings ABI, and
+# `stellar-base` links against symbols through those bindings. The failure mode
+# is a link-time or load-time mismatch, not a compile error, so relaxing the
+# pin produces a binary that builds and then misbehaves.
+#
+# Upstream discussion: https://github.com/nickel-org/rust-sodium/issues/234
+#
+# When this pin can be lifted - all four must hold:
+#   1. `stellar-base` is on a release that does not depend on the old bindings,
+#      or has moved off sodiumoxide entirely.
+#   2. A build with the newer sodiumoxide links cleanly.
+#   3. A Stellar transaction signed with that build validates against the
+#      network passphrase for its network. Signing correctness is the whole
+#      point of this crate, so this is not optional.
+#   4. `cargo deny check advisories` is clean for the candidate version.
+#
+# Re-check on any `stellar-base` bump. Until then, treat this line as a to-do,
+# not a preference; a tracking issue exists to stop it being forgotten.
 sodiumoxide = "=0.2.6"
 reqwest = { version = "0.11", features = ["json"] }
 
@@ -65,4 +99,8 @@ harness = false
 
 [[bench]]
 name = "verify_bench"
+harness = false
+
+[[bench]]
+name = "ownership_chain_bench"
 harness = false

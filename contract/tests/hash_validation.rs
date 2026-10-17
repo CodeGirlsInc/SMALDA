@@ -124,6 +124,74 @@ fn test_hash_validator_unexpected_length_sha512() {
 // 2. Axum extractor/validator rejection of non-UTF8 / malformed binary input
 // ─────────────────────────────────────────────────────────────────────────────
 
+#[test]
+fn test_hash_validator_rejects_non_hex_characters_with_position() {
+    // Length is exactly right but the content is not hex. Without a position in
+    // the error an integrator has to diff the string themselves to find which
+    // byte they got wrong.
+    let mut hash = "a".repeat(64);
+    hash.replace_range(0..1, "g");
+    assert_eq!(
+        HashValidator::validate_sha256(&hash),
+        Err(ValidationError::InvalidCharacter {
+            position: 0,
+            character: 'g'
+        })
+    );
+
+    // Uppercase must be accepted, not silently rejected as a non-hex character:
+    // both spellings are the same value, and a client that has been talking to a
+    // lowercase-only service must not start failing.
+    assert!(HashValidator::validate_sha256(&"A".repeat(64)).is_ok());
+
+    for bad in ['g', 'z', ' ', '!', '/'] {
+        let mut hash = "a".repeat(64);
+        hash.replace_range(10..11, &bad.to_string());
+        match HashValidator::validate_sha256(&hash) {
+            Err(ValidationError::InvalidCharacter { position, character }) => {
+                assert_eq!(position, 10, "position reported for {bad}");
+                assert_eq!(character, bad);
+            }
+            other => panic!("expected InvalidCharacter for {bad}, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn test_hash_validator_reports_the_expected_length_not_the_algorithm_guess() {
+    // A 64-char string offered to the SHA-512 validator is a SHA-256 hash, and
+    // the error should say so. Otherwise a caller that mixed up the two helpers
+    // sees "expected 64, got 64" and has nothing to act on.
+    let sha256 = "a".repeat(64);
+    assert_eq!(
+        HashValidator::validate_sha512(&sha256),
+        Err(ValidationError::WrongLength {
+            expected: 128,
+            actual: 64
+        })
+    );
+
+    let sha512 = "a".repeat(128);
+    assert_eq!(
+        HashValidator::validate_sha256(&sha512),
+        Err(ValidationError::WrongLength {
+            expected: 64,
+            actual: 128
+        })
+    );
+}
+
+#[test]
+fn test_hash_validator_normalizes_before_rejecting() {
+    // Trimming and lowercasing happen first, so padding and case must not turn a
+    // valid hash into a length error.
+    assert!(HashValidator::validate_sha256(&format!("  {}  ", "a".repeat(64))).is_ok());
+
+    let mut mixed = "a".repeat(64);
+    mixed.replace_range(0..1, "B");
+    assert!(HashValidator::validate_sha256(&mixed).is_ok());
+}
+
 #[tokio::test]
 async fn test_axum_verify_endpoint_rejects_invalid_utf8_binary_body_with_4xx() {
     let server = TestServer::new(app(test_state())).unwrap();

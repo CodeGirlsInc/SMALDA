@@ -1,4 +1,6 @@
-use prometheus::{opts, Counter, Encoder, Gauge, IntCounterVec, Registry, TextEncoder};
+use prometheus::{
+    opts, Counter, Encoder, Gauge, Histogram, HistogramOpts, IntCounterVec, Registry, TextEncoder,
+};
 
 #[derive(Clone)]
 pub struct MetricsRegistry {
@@ -16,6 +18,8 @@ pub struct MetricsRegistry {
     horizon_circuit_opens_total: Counter,
     /// Current circuit-breaker state. 0 = Closed, 1 = Open, 2 = HalfOpen.
     horizon_circuit_state: Gauge,
+    /// Seconds a Stellar transaction took to confirm (issue #1391).
+    stellar_confirmation_seconds: Histogram,
 }
 
 impl Default for MetricsRegistry {
@@ -52,6 +56,14 @@ impl MetricsRegistry {
         )
         .unwrap();
 
+        let stellar_confirmation_seconds = Histogram::with_opts(HistogramOpts::new(
+            "stellar_confirmation_seconds",
+            "Time for a Stellar transaction to confirm",
+        ))
+        .unwrap();
+        registry
+            .register(Box::new(stellar_confirmation_seconds.clone()))
+            .unwrap();
         registry.register(Box::new(request_count.clone())).unwrap();
         registry.register(Box::new(cache_hits.clone())).unwrap();
         registry.register(Box::new(cache_misses.clone())).unwrap();
@@ -79,7 +91,12 @@ impl MetricsRegistry {
             horizon_retries_total,
             horizon_circuit_opens_total,
             horizon_circuit_state,
+            stellar_confirmation_seconds,
         }
+    }
+
+    pub fn observe_stellar_confirmation(&self, seconds: f64) {
+        self.stellar_confirmation_seconds.observe(seconds);
     }
 
     pub fn increment_request_count(&self) {
