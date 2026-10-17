@@ -53,4 +53,9 @@ export class UsersController {
       })),
     };
   }
+  @Delete('me')
+  async deleteAccount(@Req() req: any) {
+    await this.usersService.softDelete(req.user.id);
+    return { message: 'Account deleted successfully' };
+  }
 }
