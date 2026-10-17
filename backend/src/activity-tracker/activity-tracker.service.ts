@@ -88,7 +88,7 @@ export class ActivityTrackerService {
     });
   }
 
-  async findAll(action:string):promise<Activity {
+  async findAll(action?: string): Promise<Activity[]> {
     return this.activityRepository.find({
       where: { actionType },
       order: { timestamp: 'DESC' },

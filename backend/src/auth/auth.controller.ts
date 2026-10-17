@@ -255,4 +255,27 @@ export class AuthController {
       .filter(Boolean)
       .join(' ');
   }
+  @Get('verify-email')
+  async verifyEmail(@Query('token') token: string) {
+    await this.authService.verifyEmail(token);
+    return { message: 'Email verified successfully' };
+  }
+
+  @Post('resend-verification')
+  async resendVerification(@Body() body: { email: string }) {
+    await this.authService.resendVerification(body.email);
+    return { message: 'Verification email sent' };
+  }
+
+  @Post('forgot-password')
+  async forgotPassword(@Body() body: { email: string }) {
+    await this.authService.forgotPassword(body.email);
+    return { message: 'If the email exists, a reset link has been sent' };
+  }
+
+  @Post('reset-password')
+  async resetPassword(@Body() body: { token: string; password: string }) {
+    await this.authService.resetPassword(body.token, body.password);
+    return { message: 'Password reset successfully' };
+  }
 }
