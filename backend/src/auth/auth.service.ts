@@ -10,6 +10,7 @@ import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
 
 import { UsersService } from '../users/users.service';
 import { RegisterAuthDto } from './dto/register-auth.dto';
@@ -19,6 +20,7 @@ import { JwtPayload } from './interfaces/jwt-payload.interface';
 import { User, UserRole } from '../users/entities/user.entity';
 import { RefreshSession } from './entities/refresh-session.entity';
 import { TwoFactorService } from './two-factor.service';
+import { TokenRevocationService } from './token-revocation.service';
 
 export interface SessionContext {
   userAgent?: string;
@@ -32,10 +34,6 @@ export interface TwoFactorRequired {
 
 @Injectable()
 export class AuthService {
-  private readonly tokenBlacklist = new Set<string>();
-  private readonly refreshTokenBlacklist = new Set<string>();
-  private readonly maxBlacklistEntries = 10000;
-
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
@@ -43,6 +41,7 @@ export class AuthService {
     @InjectRepository(RefreshSession)
     private readonly sessionsRepository: Repository<RefreshSession>,
     private readonly twoFactorService: TwoFactorService,
+    private readonly tokenRevocationService: TokenRevocationService,
   ) {}
 
   async register(dto: RegisterAuthDto, context?: SessionContext) {
@@ -141,10 +140,6 @@ export class AuthService {
       throw new BadRequestException('Refresh token is required');
     }
 
-    if (this.refreshTokenBlacklist.has(refreshToken)) {
-      throw new UnauthorizedException('Invalid refresh token');
-    }
-
     try {
       const payload = await this.jwtService.verifyAsync<JwtPayload>(
         refreshToken,
@@ -152,6 +147,10 @@ export class AuthService {
           secret: this.getRefreshSecret(),
         },
       );
+
+      if (await this.tokenRevocationService.isRevoked(payload.jti)) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
 
       const user = await this.usersService.findById(payload.sub);
       if (!user) {
@@ -169,7 +168,7 @@ export class AuthService {
         await this.sessionsRepository.save(session);
       }
 
-      await this.revokeRefreshToken(refreshToken, payload);
+      await this.revokeRefreshToken(payload);
       return this.issueTokens(user, context);
     } catch {
       throw new UnauthorizedException('Invalid refresh token');
@@ -187,16 +186,18 @@ export class AuthService {
         : [];
     const distinctAccessTokens = [...new Set(accessTokens.filter(Boolean))];
 
-    await Promise.allSettled(
+    // No allSettled here: a failed revocation must surface instead of
+    // silently leaving a token usable.
+    await Promise.all(
       distinctAccessTokens.map((token) => this.blacklistAccessToken(token)),
     );
     if (refreshToken) {
-      await Promise.allSettled([this.revokeRefreshToken(refreshToken)]);
+      await this.revokeRefreshTokenFromToken(refreshToken);
     }
   }
 
-  isTokenBlacklisted(token: string): boolean {
-    return this.tokenBlacklist.has(token);
+  isTokenBlacklisted(jti?: string): Promise<boolean> {
+    return this.tokenRevocationService.isRevoked(jti);
   }
 
   listSessions(userId: string): Promise<RefreshSession[]> {
@@ -277,28 +278,26 @@ export class AuthService {
   private async blacklistAccessToken(token: string): Promise<void> {
     try {
       const payload = await this.jwtService.verifyAsync<JwtPayload>(token);
-      this.rememberToken(this.tokenBlacklist, token, this.getPayloadTtl(payload));
+      await this.revokePayload(payload);
     } catch {
       return;
     }
   }
 
-  private async revokeRefreshToken(
-    token: string,
-    verifiedPayload?: JwtPayload,
-  ): Promise<void> {
-    let payload = verifiedPayload;
-    if (!payload) {
-      try {
-        payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
-          secret: this.getRefreshSecret(),
-        });
-      } catch {
-        return;
-      }
+  private async revokeRefreshTokenFromToken(token: string): Promise<void> {
+    let payload: JwtPayload;
+    try {
+      payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
+        secret: this.getRefreshSecret(),
+      });
+    } catch {
+      return;
     }
-    if (!payload) return;
 
+    await this.revokeRefreshToken(payload);
+  }
+
+  private async revokeRefreshToken(payload: JwtPayload): Promise<void> {
     if (payload.sid) {
       await this.sessionsRepository.update(
         { id: payload.sid },
@@ -306,24 +305,16 @@ export class AuthService {
       );
     }
 
-    this.rememberToken(
-      this.refreshTokenBlacklist,
-      token,
-      this.getPayloadTtl(payload),
-    );
+    await this.revokePayload(payload);
   }
 
-  private rememberToken(
-    blacklist: Set<string>,
-    token: string,
-    ttl: number | null,
-  ): void {
-    if (ttl === null || ttl <= 0 || blacklist.has(token)) return;
+  private async revokePayload(payload: JwtPayload): Promise<void> {
+    if (!payload.jti) return;
 
-    if (blacklist.size >= this.maxBlacklistEntries) return;
+    const ttl = this.getPayloadTtl(payload);
+    if (ttl === null) return;
 
-    blacklist.add(token);
-    setTimeout(() => blacklist.delete(token), ttl * 1000);
+    await this.tokenRevocationService.revoke(payload.jti, ttl);
   }
 
   private getPayloadTtl(payload: JwtPayload): number | null {
@@ -355,6 +346,7 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: user.role,
+      jti: randomUUID(),
     };
 
     return this.jwtService.signAsync(payload);
@@ -366,6 +358,7 @@ export class AuthService {
       email: user.email,
       role: user.role,
       sid: sessionId,
+      jti: randomUUID(),
     };
 
     return this.jwtService.signAsync(payload, {

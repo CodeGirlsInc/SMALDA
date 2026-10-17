@@ -13,6 +13,7 @@ import { DocumentStatus } from '../documents/entities/document.entity';
 import { VerificationService } from '../verification/verification.service';
 import { VerificationStatus } from '../verification/entities/verification-record.entity';
 import { RiskAssessmentService } from '../risk-assessment/risk-assessment.service';
+import { getRiskThresholds } from '../risk-assessment/risk-thresholds.config';
 import { StellarService } from '../stellar/stellar.service';
 import { QueueService, DocumentJobData } from './queue.service';
 import {
@@ -47,7 +48,7 @@ export class DocumentProcessor implements OnModuleDestroy {
           );
 
           if (job.name === 'analyze') {
-            await this.riskService.assessDocument(data.documentId);
+            await this.handleAnalyze(data.documentId);
             return;
           }
           if (job.name === 'anchor') {
@@ -92,7 +93,7 @@ export class DocumentProcessor implements OnModuleDestroy {
     const result = await this.riskService.assessDocument(documentId);
 
     let newStatus: DocumentStatus;
-    if (result.score >= 60) {
+    if (result.score >= getRiskThresholds().medium) {
       newStatus = DocumentStatus.FLAGGED;
     } else {
       newStatus = DocumentStatus.VERIFIED;

@@ -6,6 +6,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
+import { TokenRevocationService } from './token-revocation.service';
 import { TwoFactorService } from './two-factor.service';
 import { RefreshSession } from './entities/refresh-session.entity';
 import { UsersModule } from '../users/users.module';
@@ -33,6 +34,7 @@ import { GithubStrategy } from './strategies/github.strategy';
   controllers: [AuthController],
   providers: [
     AuthService,
+    TokenRevocationService,
     TwoFactorService,
     JwtStrategy,
     GoogleStrategy,

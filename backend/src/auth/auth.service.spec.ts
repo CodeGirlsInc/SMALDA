@@ -4,6 +4,10 @@ import { JwtService } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { RefreshSession } from './entities/refresh-session.entity';
+import { TwoFactorService } from './two-factor.service';
+import { TokenRevocationService } from './token-revocation.service';
 
 const mockUser = {
   id: 'user-1',
@@ -28,16 +32,39 @@ const mockJwtService = {
   decode: jest.fn(),
 };
 
+const revokedJtis = new Set<string>();
+const mockRevocationService = {
+  revoke: jest.fn(async (jti: string) => {
+    revokedJtis.add(jti);
+  }),
+  isRevoked: jest.fn(async (jti?: string) => !!jti && revokedJtis.has(jti)),
+};
+
+const mockSessionsRepository = {
+  save: jest.fn(async (session: object) => ({ id: 'session-1', ...session })),
+  create: jest.fn((session: object) => session),
+  update: jest.fn(),
+  findOne: jest.fn(),
+  find: jest.fn(),
+};
+
 describe('AuthService', () => {
   let service: AuthService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    revokedJtis.clear();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
         { provide: UsersService, useValue: mockUsersService },
         { provide: JwtService, useValue: mockJwtService },
+        {
+          provide: getRepositoryToken(RefreshSession),
+          useValue: mockSessionsRepository,
+        },
+        { provide: TwoFactorService, useValue: { challenge: jest.fn() } },
+        { provide: TokenRevocationService, useValue: mockRevocationService },
         {
           provide: ConfigService,
           useValue: {
@@ -124,38 +151,43 @@ describe('AuthService', () => {
   });
 
   describe('logout()', () => {
-    it('should add a verified token to the blacklist', async () => {
+    const exp = () => Math.floor(Date.now() / 1000) + 3600;
+
+    it('should revoke the jti of a verified token', async () => {
       mockJwtService.verifyAsync.mockResolvedValueOnce({
         sub: 'user-1',
-        exp: Math.floor(Date.now() / 1000) + 3600,
+        jti: 'jti-1',
+        exp: exp(),
       });
 
       await service.logout('test-token');
-      expect(service.isTokenBlacklisted('test-token')).toBe(true);
+      await expect(service.isTokenBlacklisted('jti-1')).resolves.toBe(true);
     });
 
     it('revokes both distinct verified access credentials', async () => {
-      mockJwtService.verifyAsync.mockResolvedValue({
+      mockJwtService.verifyAsync.mockImplementation(async (token: string) => ({
         sub: 'user-1',
-        exp: Math.floor(Date.now() / 1000) + 3600,
-      });
+        jti: `jti-${token}`,
+        exp: exp(),
+      }));
 
       await service.logout(
         ['access-token-a', 'access-token-b'],
         'refresh-token',
       );
 
-      expect(service.isTokenBlacklisted('access-token-a')).toBe(true);
-      expect(service.isTokenBlacklisted('access-token-b')).toBe(true);
+      await expect(
+        service.isTokenBlacklisted('jti-access-token-a'),
+      ).resolves.toBe(true);
+      await expect(
+        service.isTokenBlacklisted('jti-access-token-b'),
+      ).resolves.toBe(true);
     });
 
     it('continues revoking after a malformed access credential', async () => {
       mockJwtService.verifyAsync.mockImplementation(async (token: string) => {
         if (token === 'bad-access-token') throw new Error('invalid');
-        return {
-          sub: 'user-1',
-          exp: Math.floor(Date.now() / 1000) + 3600,
-        };
+        return { sub: 'user-1', jti: `jti-${token}`, exp: exp() };
       });
 
       await service.logout(
@@ -163,21 +195,27 @@ describe('AuthService', () => {
         'refresh-token',
       );
 
-      expect(service.isTokenBlacklisted('good-access-token')).toBe(true);
-      expect(service.isTokenBlacklisted('bad-access-token')).toBe(false);
+      await expect(
+        service.isTokenBlacklisted('jti-good-access-token'),
+      ).resolves.toBe(true);
+      await expect(
+        service.isTokenBlacklisted('jti-bad-access-token'),
+      ).resolves.toBe(false);
     });
 
     it('should handle malformed tokens gracefully', async () => {
       mockJwtService.verifyAsync.mockRejectedValueOnce(new Error('invalid'));
 
       await expect(service.logout('bad-token')).resolves.toBeUndefined();
-      expect(service.isTokenBlacklisted('bad-token')).toBe(false);
+      expect(mockRevocationService.revoke).not.toHaveBeenCalled();
     });
   });
 
   describe('isTokenBlacklisted()', () => {
-    it('should return false for non-blacklisted tokens', () => {
-      expect(service.isTokenBlacklisted('nonexistent-token')).toBe(false);
+    it('should return false for non-revoked tokens', async () => {
+      await expect(service.isTokenBlacklisted('nonexistent-jti')).resolves.toBe(
+        false,
+      );
     });
   });
 });

@@ -23,11 +23,24 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ApiKeyAuthGuard } from './guards/api-key-auth.guard';
 import { User, UserRole } from './entities/user.entity';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ListUsersDto } from './dto/list-users.dto';
 import { AdminUpdateUserDto } from './dto/admin-update-user.dto';
 import { CreateApiKeyDto } from './dto/create-api-key.dto';
 
 type AuthedRequest = Request & { user?: User };
+
+function toProfile(user: User) {
+  return {
+    id: user.id,
+    email: user.email,
+    fullName: user.fullName,
+    role: user.role,
+    isVerified: user.isVerified,
+    preferredLanguage: user.preferredLanguage,
+    twoFactorEnabled: user.twoFactorEnabled,
+  };
+}
 
 function toPublicUser(user: User) {
   return {
@@ -57,6 +70,29 @@ export class UsersController {
     private readonly apiKeysService: ApiKeysService,
     private readonly accessLogsService: AccessLogsService,
   ) {}
+
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  async getMyProfile(@Req() req: Request & { user?: User }) {
+    const user = await this.usersService.findById(req.user!.id);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return toProfile(user);
+  }
+
+  @Patch('me')
+  @UseGuards(JwtAuthGuard)
+  async updateMyProfile(
+    @Req() req: Request & { user?: User },
+    @Body() dto: UpdateProfileDto,
+  ) {
+    const updated = await this.usersService.update(req.user!.id, dto);
+    if (!updated) {
+      throw new NotFoundException('User not found');
+    }
+    return toProfile(updated);
+  }
 
   @Get('me/export')
   @UseGuards(ApiKeyAuthGuard)
