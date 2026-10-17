@@ -27,7 +27,9 @@ type ApiContracts = {
   };
 };
 
-export const apiContracts = require('../contracts/api-contracts.json') as ApiContracts;
+import apiContractsJson from '../contracts/api-contracts.json';
+
+export const apiContracts = apiContractsJson as ApiContracts;
 
 const contractFormats: Array<[string | undefined, string]> = [
   [apiContracts.register.email.format, 'email'],

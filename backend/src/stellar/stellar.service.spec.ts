@@ -1,6 +1,5 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
 import { InternalServerErrorException } from '@nestjs/common';
+import { Networks, Operation, TransactionBuilder } from 'stellar-sdk';
 
 // ───────────────────────────────────────────────────────────
 // Mock stellar-sdk before importing the service
@@ -85,7 +84,6 @@ describe('StellarService', () => {
 
   describe('constructor', () => {
     it('should default to testnet when STELLAR_NETWORK is not set', () => {
-      const { Networks } = require('stellar-sdk');
       const service = createService({ STELLAR_NETWORK: '' });
 
       // The service should use Networks.TESTNET as default
@@ -154,7 +152,6 @@ describe('StellarService', () => {
     });
 
     it('should use manageData operation with sanitized key', async () => {
-      const { Operation } = require('stellar-sdk');
       service = createService();
 
       await service.anchorHash('abc-123-def');
@@ -192,7 +189,6 @@ describe('StellarService', () => {
     });
 
     it('should return true when the hash key exists in account data', async () => {
-      const { Operation } = require('stellar-sdk');
       // Call anchorHash first to see what key name is generated,
       // then set it in the mock
       service = createService();
@@ -304,7 +300,6 @@ describe('StellarService', () => {
     });
 
     it('should never use mainnet by default', () => {
-      const { TransactionBuilder } = require('stellar-sdk');
 
       service = createService({ STELLAR_NETWORK: '' });
       // anchorHash should work without errors using testnet

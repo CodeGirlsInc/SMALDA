@@ -1,5 +1,7 @@
 
 import { CorsOptions } from '@nestjs/common/interfaces/external/cors-options.interface';
+import { ConfigService } from '@nestjs/config';
+import { buildCorsOptions, getFrontendUrl } from './cors.config';
 
 type OriginCallback = (
   origin: string | undefined,
@@ -42,9 +44,9 @@ describe('CORS configuration', () => {
   it('should enable credentials by default', () => {
     const config = createConfig();
     expect(config.credentials).toBe(true);
+  });
+});
 
-import { ConfigService } from '@nestjs/config';
-import { buildCorsOptions, getFrontendUrl } from './cors.config';
 
 describe('buildCorsOptions', () => {
   function createConfigService(values: Record<string, string>): ConfigService {

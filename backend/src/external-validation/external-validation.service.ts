@@ -12,11 +12,7 @@ import {
   ValidationResult,
   ValidationType,
 } from './entities/validation-request.entity';
-import {
-  CreateValidationRequestDto,
-  QueryValidationRequestDto,
-  RetryValidationDto,
-} from './dto/validation-request.dto';
+import { CreateValidationRequestDto } from './dto/validation-request.dto';
 import { IValidationProvider } from './interfaces/validation-provider.interface';
 import { LandRegistryProvider } from './providers/land-registry.provider';
 import { GovernmentIdProvider } from './providers/government-id.provider';

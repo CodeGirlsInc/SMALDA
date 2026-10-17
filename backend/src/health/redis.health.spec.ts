@@ -169,7 +169,7 @@ describe('RedisHealthIndicator', () => {
 
   describe('password configuration', () => {
     it('should pass the password to the Redis constructor when set', async () => {
-      const IORedis = require('ioredis').default;
+      const IORedis = jest.requireMock('ioredis').default;
 
       const configWithPassword = {
         ...configValues,

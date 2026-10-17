@@ -1,12 +1,6 @@
 ﻿import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import {
-  Repository,
-  Between,
-  LessThanOrEqual,
-  MoreThanOrEqual,
-  ILike,
-} from 'typeorm';
+import { Repository, ILike } from 'typeorm';
 import { promises as fs } from 'fs';
 import { Document, DocumentStatus } from './entities/document.entity';
 

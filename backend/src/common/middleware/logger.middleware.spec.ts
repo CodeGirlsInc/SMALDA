@@ -1,7 +1,6 @@
 import { LoggerMiddleware } from './logger.middleware';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { Test } from '@nestjs/testing';
-import { Logger } from 'winston';
 import { Request, Response } from 'express';
 import { AccessLogsService } from '../../access-logs/access-logs.service';
 

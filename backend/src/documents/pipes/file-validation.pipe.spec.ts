@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { PDFDocument } from 'pdf-lib';
-const sharp = require('sharp') as (...args: any[]) => any;
+import sharp from 'sharp';
 import { FileValidationPipe } from './file-validation.pipe';
 
 function createFile(

@@ -1,9 +1,13 @@
 ﻿import {
   Body,
   Controller,
-  Post,
+  Delete,
   Get,
   Header,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
   Req,
   Res,
   UseGuards,
@@ -16,10 +20,17 @@ import { Request, Response } from 'express';
 import { Profile as GoogleProfile } from 'passport-google-oauth20';
 import { Profile as GithubProfile } from 'passport-github2';
 
-import { AuthService } from './auth.service';
+import { AuthService, SessionContext } from './auth.service';
+import { TwoFactorService } from './two-factor.service';
 import { RegisterAuthDto } from './dto/register-auth.dto';
 import { LoginAuthDto } from './dto/login-auth.dto';
 import { RefreshAuthDto } from './dto/refresh-auth.dto';
+import {
+  ChangePasswordDto,
+  DisableTwoFactorDto,
+  TwoFactorChallengeDto,
+  TwoFactorCodeDto,
+} from './dto/two-factor.dto';
 import {
   getFrontendUrl,
   isAllowedFrontendOrigin,
@@ -39,6 +50,7 @@ import { User } from '../users/entities/user.entity';
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
+    private readonly twoFactorService: TwoFactorService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -49,7 +61,10 @@ export class AuthController {
     @Req() request?: Request,
   ) {
     this.assertTrustedBrowserRequest(request);
-    const tokens = await this.authService.register(dto);
+    const tokens = await this.authService.register(
+      dto,
+      this.getSessionContext(request),
+    );
     setAuthCookies(response, tokens, this.configService);
     return tokens;
   }
@@ -61,9 +76,15 @@ export class AuthController {
     @Req() request?: Request,
   ) {
     this.assertTrustedBrowserRequest(request);
-    const tokens = await this.authService.login(dto);
-    setAuthCookies(response, tokens, this.configService);
-    return tokens;
+    const result = await this.authService.login(
+      dto,
+      this.getSessionContext(request),
+    );
+
+    if ('access_token' in result) {
+      setAuthCookies(response, result, this.configService);
+    }
+    return result;
   }
 
   @Post('refresh')
@@ -77,9 +98,12 @@ export class AuthController {
       request.headers.cookie,
       REFRESH_COOKIE_NAME,
     );
-    const tokens = await this.authService.refreshToken({
-      refreshToken: cookieRefreshToken ?? dto?.refreshToken,
-    });
+    const tokens = await this.authService.refreshToken(
+      {
+        refreshToken: cookieRefreshToken ?? dto?.refreshToken,
+      },
+      this.getSessionContext(request),
+    );
     setAuthCookies(response, tokens, this.configService);
     return tokens;
   }
@@ -129,6 +153,74 @@ export class AuthController {
     };
   }
 
+  @Get('sessions')
+  @UseGuards(JwtAuthGuard)
+  listSessions(@Req() request: Request & { user?: User }) {
+    return this.authService.listSessions(request.user!.id);
+  }
+
+  @Delete('sessions/:id')
+  @UseGuards(JwtAuthGuard)
+  revokeSession(
+    @Req() request: Request & { user?: User },
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.authService.revokeSession(request.user!.id, id);
+  }
+
+  @Patch('change-password')
+  @UseGuards(JwtAuthGuard)
+  changePassword(
+    @Req() request: Request & { user?: User },
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.authService.changePassword(
+      request.user!.id,
+      dto.currentPassword,
+      dto.newPassword,
+    );
+  }
+
+  @Post('2fa/setup')
+  @UseGuards(JwtAuthGuard)
+  setupTwoFactor(@Req() request: Request & { user?: User }) {
+    return this.twoFactorService.setup(request.user!);
+  }
+
+  @Post('2fa/verify')
+  @UseGuards(JwtAuthGuard)
+  verifyTwoFactor(
+    @Req() request: Request & { user?: User },
+    @Body() dto: TwoFactorCodeDto,
+  ) {
+    return this.twoFactorService.confirm(request.user!.id, dto.code);
+  }
+
+  @Post('2fa/challenge')
+  async challengeTwoFactor(
+    @Body() dto: TwoFactorChallengeDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response?: Response,
+  ) {
+    this.assertTrustedBrowserRequest(request);
+    const tokens = await this.authService.completeTwoFactorLogin(
+      dto.twoFactorToken,
+      dto.code,
+      this.getSessionContext(request),
+    );
+    setAuthCookies(response, tokens, this.configService);
+    return tokens;
+  }
+
+  @Post('2fa/disable')
+  @UseGuards(JwtAuthGuard)
+  disableTwoFactor(
+    @Req() request: Request & { user?: User },
+    @Body() dto: DisableTwoFactorDto,
+  ) {
+    return this.twoFactorService.disable(request.user!.id, dto.password);
+  }
+
   @Get('google')
   @UseGuards(AuthGuard('google'))
   googleAuth() {
@@ -158,6 +250,7 @@ export class AuthController {
     const tokens = await this.authService.handleOAuthLogin(
       email,
       fullName || email,
+      this.getSessionContext(req),
     );
 
     return this.redirectWithCookies(tokens, res);
@@ -192,6 +285,7 @@ export class AuthController {
     const tokens = await this.authService.handleOAuthLogin(
       identifier,
       fullName,
+      this.getSessionContext(req),
     );
 
     return this.redirectWithCookies(tokens, res);
@@ -200,13 +294,20 @@ export class AuthController {
   private redirectWithCookies(tokens: AuthTokens, res: Response) {
     setAuthCookies(res, tokens, this.configService);
     const redirectUrl = new URL(getFrontendUrl(this.configService));
-    const basePath = redirectUrl.pathname.replace(/\/+$/, "");
+    const basePath = redirectUrl.pathname.replace(/\/+$/, '');
     redirectUrl.pathname = `${basePath}/auth/oauth/callback`;
     redirectUrl.search = '';
     redirectUrl.hash = new URLSearchParams({
       access_token: tokens.access_token,
     }).toString();
     return res.redirect(redirectUrl.toString());
+  }
+
+  private getSessionContext(request?: Request): SessionContext {
+    return {
+      userAgent: request?.headers['user-agent'],
+      ipAddress: request?.ip,
+    };
   }
 
   private assertTrustedBrowserRequest(request?: Request): void {
