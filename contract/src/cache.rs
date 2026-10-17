@@ -3,8 +3,28 @@ use redis::{aio::ConnectionManager, AsyncCommands};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::warn;
+
+use crate::retry::{with_retry_and_cb, CircuitBreaker, RetryPolicy, RetryableError};
+
+/// How long to keep retrying the initial Redis connection at startup.
+///
+/// `ConnectionManager` reconnects on its own once established, but if Redis is
+/// momentarily unavailable when the process boots — a rolling restart, a
+/// failover, a container starting before its dependency — `new` fails and the
+/// service refuses to start at all. Retrying here turns that into a slow start.
+const STARTUP_CONNECT_ATTEMPTS: u32 = 5;
+const STARTUP_CONNECT_BACKOFF: Duration = Duration::from_millis(500);
+
+/// How long a single cache operation may be retried for.
+///
+/// Deliberately short. A cache miss is cheap to absorb — the caller falls back
+/// to Horizon — so spending seconds retrying a dead Redis would add latency to
+/// every request for a benefit the caller does not need.
+const OP_RETRY_ATTEMPTS: u32 = 2;
+const OP_RETRY_BACKOFF: Duration = Duration::from_millis(50);
 
 #[derive(Clone)]
 pub enum CacheBackend {
@@ -80,10 +100,81 @@ pub struct RedisCache {
 }
 
 impl RedisCache {
+    /// Open a retrying connection manager, tolerating a Redis that is not yet up.
+    ///
+    /// Without this, a Redis that is briefly unavailable at boot fails the whole
+    /// service start rather than starting a moment later.
     pub async fn new(redis_url: &str) -> Result<Self> {
+        let mut last_err = None;
+
+        for attempt in 0..STARTUP_CONNECT_ATTEMPTS {
+            match Self::connect_once(redis_url).await {
+                Ok(connection) => {
+                    if attempt > 0 {
+                        tracing::info!(
+                            "Connected to Redis after {} attempt(s)",
+                            attempt + 1
+                        );
+                    }
+                    return Ok(Self { connection });
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                    if attempt + 1 < STARTUP_CONNECT_ATTEMPTS {
+                        warn!(
+                            "Redis not reachable yet (attempt {}/{}): {}. Retrying in {}ms.",
+                            attempt + 1,
+                            STARTUP_CONNECT_ATTEMPTS,
+                            last_err.as_ref().unwrap(),
+                            STARTUP_CONNECT_BACKOFF.as_millis()
+                        );
+                        tokio::time::sleep(STARTUP_CONNECT_BACKOFF).await;
+                    }
+                }
+            }
+        }
+
+        Err(last_err
+            .map(|e| {
+                anyhow::anyhow!(
+                    "failed to connect to Redis at {redis_url} after {STARTUP_CONNECT_ATTEMPTS} attempts: {e}"
+                )
+            })
+            .unwrap_or_else(|| {
+                anyhow::anyhow!("failed to connect to Redis at {redis_url}")
+            }))
+    }
+
+    async fn connect_once(redis_url: &str) -> Result<ConnectionManager> {
         let client = redis::Client::open(redis_url)?;
-        let connection = ConnectionManager::new(client).await?;
-        Ok(Self { connection })
+        ConnectionManager::new(client).await.map_err(Into::into)
+    }
+
+    /// Retry policy for individual cache operations.
+    ///
+    /// Separate from the Stellar policy: a cache miss is absorbable, so this must
+    /// be far cheaper than retrying a Horizon call.
+    fn op_policy() -> RetryPolicy {
+        RetryPolicy::new(OP_RETRY_ATTEMPTS, OP_RETRY_BACKOFF)
+    }
+
+    /// Run one Redis command, retrying transient failures.
+    ///
+    /// `ConnectionManager` re-establishes the socket on its own, but a command
+    /// issued while the connection is down still fails outright. Without this
+    /// wrapper a single dropped connection turns into a 500 on whichever request
+    /// happened to be in flight, even though the next request would have worked.
+    async fn with_retry<T, F, Fut>(&self, label: &str, op: F) -> Result<T>
+    where
+        F: FnMut() -> Fut,
+        Fut: std::future::Future<Output = Result<T, RetryableError>>,
+    {
+        let policy = Self::op_policy();
+        let breaker = Arc::new(CircuitBreaker::with_defaults());
+
+        with_retry_and_cb(&breaker, &policy, op)
+            .await
+            .map_err(|e| anyhow::anyhow!("cache {label} failed: {}", e.into_string()))
     }
 
     async fn check_connection(&self) -> bool {
@@ -104,20 +195,49 @@ impl RedisCache {
 
     async fn get_raw(&self, key: &str) -> Result<Option<String>> {
         let mut conn = self.connection.clone();
-        let value: Option<String> = conn.get(key).await?;
-        Ok(value)
+        let key = key.to_string();
+        self.with_retry("get", move || {
+            let mut conn = conn.clone();
+            let key = key.clone();
+            async move {
+                conn.get::<_, Option<String>>(&key)
+                    .await
+                    .map_err(|e| RetryableError::Retryable(format!("redis GET failed: {e}")))
+            }
+        })
+        .await
     }
 
     async fn set_raw(&self, key: &str, value: &str, ttl: u64) -> Result<()> {
         let mut conn = self.connection.clone();
-        conn.set_ex::<_, _, ()>(key, value, ttl).await?;
-        Ok(())
+        let key = key.to_string();
+        let value = value.to_string();
+        self.with_retry("set", move || {
+            let mut conn = conn.clone();
+            let key = key.clone();
+            let value = value.clone();
+            async move {
+                conn.set_ex::<_, _, ()>(&key, &value, ttl)
+                    .await
+                    .map_err(|e| RetryableError::Retryable(format!("redis SET failed: {e}")))
+            }
+        })
+        .await
     }
 
     async fn delete(&self, key: &str) -> Result<()> {
         let mut conn = self.connection.clone();
-        conn.del::<_, ()>(key).await?;
-        Ok(())
+        let key = key.to_string();
+        self.with_retry("delete", move || {
+            let mut conn = conn.clone();
+            let key = key.clone();
+            async move {
+                conn.del::<_, ()>(&key)
+                    .await
+                    .map_err(|e| RetryableError::Retryable(format!("redis DEL failed: {e}")))
+            }
+        })
+        .await
     }
 }
 
@@ -281,5 +401,69 @@ mod tests {
             .unwrap();
         let result: Option<String> = cache.get("enum_key").await.unwrap();
         assert_eq!(result, Some("enum_value".to_string()));
+    }
+
+    // ── Redis resilience (#1369) ────────────────────────────────
+
+    #[test]
+    fn the_startup_connect_budget_is_bounded() {
+        // A service that cannot reach Redis must fail rather than hang forever,
+        // and must not fail instantly either.
+        assert!(STARTUP_CONNECT_ATTEMPTS >= 2, "should retry at least once");
+        assert!(
+            STARTUP_CONNECT_ATTEMPTS <= 10,
+            "boot should not be held hostage by Redis"
+        );
+    }
+
+    #[test]
+    fn the_operation_retry_budget_is_much_smaller_than_the_stellar_one() {
+        // A cache miss is absorbable, so retrying it hard would add latency for
+        // no benefit. This pins the asymmetry so nobody "fixes" it by aligning
+        // the two.
+        let cache = RetryPolicy::new(OP_RETRY_ATTEMPTS, OP_RETRY_BACKOFF);
+        let stellar = RetryPolicy::default();
+
+        assert!(
+            cache.max_attempts < stellar.max_attempts,
+            "cache retries ({}) should be fewer than stellar retries ({})",
+            cache.max_attempts,
+            stellar.max_attempts
+        );
+    }
+
+    #[tokio::test]
+    async fn connecting_to_an_unreachable_redis_fails_with_a_useful_message() {
+        // No Redis is running in the test environment. The point is the message:
+        // it should say how many attempts were made and name the URL, so an
+        // operator can tell "Redis is down" from "the URL is wrong".
+        let result = RedisCache::new("redis://127.0.0.1:6390").await;
+        let err = result.expect_err("an unreachable Redis must not succeed");
+
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("127.0.0.1:6390"),
+            "the message should name the endpoint: {message}"
+        );
+        assert!(
+            message.contains(&STARTUP_CONNECT_ATTEMPTS.to_string()),
+            "the message should say how many attempts were made: {message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_in_memory_backend_survives_the_redis_failure_paths() {
+        // The retry plumbing is Redis-specific; the in-memory backend must stay
+        // usable so tests and local development never depend on a live Redis.
+        let cache = in_memory_backend();
+        assert!(cache.check_connection().await);
+        cache
+            .set("k", &"v".to_string(), 60)
+            .await
+            .unwrap();
+        let got: Option<String> = cache.get("k").await.unwrap();
+        assert_eq!(got, Some("v".to_string()));
+        cache.delete("k").await.unwrap();
+        assert!(cache.get::<String>("k").await.unwrap().is_none());
     }
 }
