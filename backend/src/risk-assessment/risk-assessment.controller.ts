@@ -1,8 +1,11 @@
 ﻿import {
   Controller,
+  ForbiddenException,
   Get,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
+  Post,
   Query,
   Req,
   UseGuards,
@@ -14,6 +17,7 @@ import { RiskAssessmentService } from './risk-assessment.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ListRiskAssessmentsDto } from './dto/list-risk-assessments.dto';
 import { DocumentsService } from '../documents/documents.service';
+import { Document } from '../documents/entities/document.entity';
 import { User, UserRole } from '../users/entities/user.entity';
 
 @ApiTags('documents')
@@ -27,11 +31,27 @@ export class RiskAssessmentController {
   @Get('documents/:id/risk')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Assess the risk score of a document' })
+  @ApiOperation({ summary: 'Get the stored risk assessment of a document' })
   async getRisk(
     @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request & { user?: User },
     @Query('lang') lang?: string,
   ) {
+    await this.getAccessibleDocument(id, req.user);
+    // Reads must not mutate data; scoring happens in the queue job.
+    return this.riskService.getStoredAssessment(id, lang);
+  }
+
+  @Post('documents/:id/risk/reassess')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Explicitly recompute the risk score of a document' })
+  async reassessRisk(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request & { user?: User },
+    @Query('lang') lang?: string,
+  ) {
+    await this.getAccessibleDocument(id, req.user);
     return this.riskService.assessDocument(id, lang);
   }
 
@@ -83,5 +103,21 @@ export class RiskAssessmentController {
       limit,
       totalPages: Math.ceil(result.total / limit),
     };
+  }
+
+  private async getAccessibleDocument(
+    id: string,
+    user?: User,
+  ): Promise<Document> {
+    const document = await this.documentsService.findById(id);
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+
+    if (!user || (document.ownerId !== user.id && user.role !== UserRole.ADMIN)) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    return document;
   }
 }

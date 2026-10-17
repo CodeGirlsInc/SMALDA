@@ -8,7 +8,7 @@ import {
   DOCUMENT_ALLOWED_MIME_TYPES,
   DOCUMENT_MAX_FILE_SIZE_BYTES,
 } from '../../common/api-contracts';
-const sharp = require('sharp') as (...args: any[]) => any;
+import sharp from 'sharp';
 
 const ALLOWED_MIME_TYPES = DOCUMENT_ALLOWED_MIME_TYPES;
 const MAX_FILE_SIZE_BYTES = DOCUMENT_MAX_FILE_SIZE_BYTES;

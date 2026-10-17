@@ -1,5 +1,4 @@
 import { JwtAuthGuard } from './jwt-auth.guard';
-import { ExecutionContext } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 
 describe('JwtAuthGuard', () => {
