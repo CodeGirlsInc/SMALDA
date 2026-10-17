@@ -31,6 +31,7 @@ fn test_state(horizon_url: &str) -> AppState {
         submit_rate_limiter: build_rate_limiter(100, 100),
         webhook_urls: Vec::new(),
         webhook_secret: None,
+        metrics_token: None,
     }
 }
 

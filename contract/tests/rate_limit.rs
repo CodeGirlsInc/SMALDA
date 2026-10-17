@@ -22,6 +22,7 @@ fn test_state(burst: u32) -> AppState {
         submit_rate_limiter: build_rate_limiter(1, 1),
         webhook_urls: Vec::new(),
         webhook_secret: None,
+        metrics_token: None,
     }
 }
 

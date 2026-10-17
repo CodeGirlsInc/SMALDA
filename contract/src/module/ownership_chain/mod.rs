@@ -4,8 +4,9 @@
 //! in the Redis cache.  A valid chain requires that each transfer record's
 //! `from_owner` matches the previous record's `to_owner`.
 //!
-//! Routes wired in `lib.rs`:
+//! Routes wired in `routes.rs`:
 //!   GET /module/chain/:document_hash  → [`chain_handler`]
+//!   GET /module/owner/:document_hash  → [`current_owner_handler`]
 
 use axum::{
     extract::{Path, State},
@@ -129,6 +130,59 @@ pub async fn chain_handler(
     }
 }
 
+/// Return only the current owner of `document_hash`, without validating the
+/// full chain (#1379).
+///
+/// The current owner is the `to_owner` of the most recent transfer record.
+/// This deliberately skips the link-by-link walk that [`validate_chain`]
+/// performs, so a caller that only needs "who owns this now" does not pay for
+/// a full integrity check — and still gets an answer even when the historical
+/// chain has a gap.
+///
+/// Returns `Ok(None)` when no transfer records exist for the document.
+pub async fn current_owner(
+    document_hash: &str,
+    cache: &CacheBackend,
+) -> Result<Option<String>, anyhow::Error> {
+    let key = format!("transfer:{}", document_hash);
+    let records: Vec<TransferRecord> = match cache.get(&key).await? {
+        Some(v) => v,
+        None => return Ok(None),
+    };
+
+    Ok(records.last().map(|record| record.to_owner.clone()))
+}
+
+/// `GET /module/owner/:document_hash` — returns just the current owner as JSON.
+pub async fn current_owner_handler(
+    State(state): State<AppState>,
+    Path(document_hash): Path<String>,
+) -> impl IntoResponse {
+    match current_owner(&document_hash, &state.cache).await {
+        Ok(Some(owner)) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "document_hash": document_hash,
+                "owner": owner,
+            })),
+        )
+            .into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": "no ownership records found for document",
+                "document_hash": document_hash,
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Unit tests
 // ────────────────────────────────────────────────────────────────────────────
@@ -231,5 +285,30 @@ mod tests {
         let cache = cache_with_records(records).await;
         let result = validate_chain("test_doc", &cache).await.unwrap();
         assert_eq!(result, ValidationResult::Valid);
+    }
+
+    #[tokio::test]
+    async fn current_owner_returns_latest_to_owner() {
+        let records = vec![make_record("Alice", "Bob"), make_record("Bob", "Charlie")];
+        let cache = cache_with_records(records).await;
+        let owner = current_owner("test_doc", &cache).await.unwrap();
+        assert_eq!(owner.as_deref(), Some("Charlie"));
+    }
+
+    #[tokio::test]
+    async fn current_owner_is_none_for_unknown_document() {
+        let cache = CacheBackend::InMemory(InMemoryCache::new());
+        let owner = current_owner("missing_doc", &cache).await.unwrap();
+        assert_eq!(owner, None);
+    }
+
+    #[tokio::test]
+    async fn current_owner_does_not_require_an_intact_chain() {
+        // The latest record still answers the ownership question even when the
+        // chain is broken; that is the point of the lightweight endpoint.
+        let records = vec![make_record("Alice", "Bob"), make_record("Mallory", "Frank")];
+        let cache = cache_with_records(records).await;
+        let owner = current_owner("test_doc", &cache).await.unwrap();
+        assert_eq!(owner.as_deref(), Some("Frank"));
     }
 }

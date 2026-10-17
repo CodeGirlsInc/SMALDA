@@ -27,6 +27,7 @@ fn test_app_state() -> AppState {
         submit_rate_limiter: build_rate_limiter(1000, 1000),
         webhook_urls: Vec::new(),
         webhook_secret: None,
+        metrics_token: None,
     }
 }
 

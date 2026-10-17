@@ -89,6 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
         webhook_urls: config.webhook_urls.clone(),
         webhook_secret: config.webhook_secret.clone(),
+        metrics_token: config.metrics_token.clone(),
     };
     let app = app(state);
 

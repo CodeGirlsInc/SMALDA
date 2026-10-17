@@ -45,6 +45,10 @@ pub struct AppConfig {
     pub environment: Environment,
     pub webhook_urls: Vec<String>,
     pub webhook_secret: Option<String>,
+    /// Bearer token required to read `/metrics` (#1380). When unset the
+    /// endpoint is left open for local development, but production refuses to
+    /// start without it.
+    pub metrics_token: Option<String>,
     pub cache_verification_ttl: u64,
     pub shutdown_timeout_secs: u64,
 }
@@ -168,6 +172,19 @@ impl AppConfig {
                 Some(key)
             }
         });
+
+        // Bearer token guarding /metrics (#1380). Optional outside production;
+        // required in production so request-pattern data is never public.
+        let metrics_token = env::var("METRICS_TOKEN")
+            .ok()
+            .map(|token| token.trim().to_string())
+            .filter(|token| !token.is_empty());
+        if is_production && metrics_token.is_none() {
+            errors.push(
+                "METRICS_TOKEN must be set in production so /metrics is not publicly readable"
+                    .to_string(),
+            );
+        }
 
         // Numeric values with defaults
         let rate_limit_per_second_raw = get_env_or_default(
@@ -395,6 +412,7 @@ impl AppConfig {
             environment,
             webhook_urls,
             webhook_secret,
+            metrics_token,
             cache_verification_ttl,
             shutdown_timeout_secs,
         })
@@ -425,6 +443,7 @@ mod tests {
             "APP_ENV",
             "WEBHOOK_URLS",
             "WEBHOOK_SECRET",
+            "METRICS_TOKEN",
             "CACHE_VERIFICATION_TTL",
             "SHUTDOWN_TIMEOUT_SECS",
         ];
