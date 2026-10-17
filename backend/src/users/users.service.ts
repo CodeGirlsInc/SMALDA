@@ -1,7 +1,7 @@
 ﻿import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { User } from './entities/user.entity';
+import { FindOptionsWhere, ILike, Repository } from 'typeorm';
+import { User, UserRole } from './entities/user.entity';
 
 interface RateLimitEntry {
   count: number;
@@ -71,5 +71,34 @@ export class UsersService {
 
   async softDelete(id: string): Promise<void> {
     await this.userRepository.softDelete(id);
+  }
+
+  async findAllPaginated(
+    page = 1,
+    limit = 20,
+    search?: string,
+    role?: UserRole,
+  ): Promise<{ data: User[]; total: number; page: number; limit: number }> {
+    const where: FindOptionsWhere<User> = {};
+    if (role) where.role = role;
+    if (search?.trim()) where.fullName = ILike(`%${search.trim()}%`);
+
+    const [data, total] = await this.userRepository.findAndCount({
+      where,
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+
+    return { data, total, page, limit };
+  }
+
+  countAdmins(): Promise<number> {
+    return this.userRepository.count({ where: { role: UserRole.ADMIN } });
+  }
+
+  async updateRole(id: string, role: UserRole): Promise<User | null> {
+    await this.userRepository.update(id, { role });
+    return this.findById(id);
   }
 }

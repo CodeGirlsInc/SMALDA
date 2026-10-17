@@ -74,6 +74,7 @@ export class DocumentsService {
   async findByRiskFilters(filters: {
     page: number;
     limit: number;
+    ownerId?: string;
     minScore?: number;
     maxScore?: number;
     startDate?: Date;
@@ -83,6 +84,12 @@ export class DocumentsService {
     const qb = this.documentRepository.createQueryBuilder('document');
 
     qb.where('document.risk_score IS NOT NULL');
+
+    if (filters.ownerId) {
+      qb.andWhere('document.owner_id = :ownerId', {
+        ownerId: filters.ownerId,
+      });
+    }
 
     if (filters.minScore !== undefined) {
       qb.andWhere('document.risk_score >= :minScore', {
