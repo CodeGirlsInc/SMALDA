@@ -273,33 +273,18 @@ impl StellarClient {
     /// Split out from [`Self::horizon_network`] so the decision is testable
     /// without depending on the `Network` type's accessor methods, which differ
     /// between `stellar-base` releases.
+    #[cfg(test)]
     fn horizon_is_testnet(&self) -> bool {
         self.horizon_url.contains("testnet")
     }
 
-    /// The Stellar network passphrase implied by the configured Horizon URL.
+    /// The Stellar network used to sign transactions for this client.
     ///
-    /// The endpoint *is* configuration — `STELLAR_HORIZON_URL` is read in
-    /// `config.rs` and validated against `STELLAR_NETWORK` at startup — so
-    /// pointing at a different Horizon instance needs no code change. This
-    /// method just makes the coupling in one place instead of repeating the
-    /// same four-line `contains("testnet")` block at each of the three
-    /// transaction builders, where a future edit could easily catch only some of
-    /// them.
-    ///
-    /// Known limitation, deliberately left for #1439: deriving the network from
-    /// the URL means a self-hosted Horizon (`http://localhost:8000`, or any
-    /// host that is neither testnet nor public) silently falls through to the
-    /// public passphrase and every transaction it signs is rejected. The correct
-    /// fix is to thread the already-validated `STELLAR_NETWORK` through
-    /// `StellarClient` instead of re-deriving it here, which is a signature
-    /// change and not something to smuggle in alongside a backoff fix.
+    /// One place for all three transaction builders. `STELLAR_NETWORK` wins
+    /// over guessing from the URL, so a self-hosted Horizon signs with the
+    /// right passphrase (issue #1439); see [`signing_network`].
     fn horizon_network(&self) -> Network {
-        if self.horizon_is_testnet() {
-            Network::new_test()
-        } else {
-            Network::new_public()
-        }
+        signing_network(&self.horizon_url)
     }
 
     /// Build a client with a custom retry policy and circuit breaker.
@@ -867,6 +852,16 @@ impl StellarClient {
 /// Build the ManageData key: `"doc_" + &hash[..58]` (max 62 bytes ≤ 64-byte limit).
 fn hash_prefix(hash: &str) -> &str {
     &hash[..hash.len().min(16)]
+}
+
+/// Signing network: `STELLAR_NETWORK` wins over guessing from the URL (issue #1439).
+fn signing_network(horizon_url: &str) -> Network {
+    match std::env::var("STELLAR_NETWORK").map(|s| s.to_lowercase()).as_deref() {
+        Ok("mainnet") => Network::new_public(),
+        Ok("testnet") => Network::new_test(),
+        _ if horizon_url.contains("testnet") => Network::new_test(),
+        _ => Network::new_public(),
+    }
 }
 
 pub fn build_data_key(hash: &str) -> String {
