@@ -279,7 +279,7 @@ export class DocumentsController {
 
     res.set({
       'Content-Type': contentType,
-      'Content-Disposition': `attachment; filename="`{safeFilename}"`,
+      'Content-Disposition': `attachment; filename="${safeFilename}"`,
       'X-Content-Type-Options': 'nosniff',
     });
 
