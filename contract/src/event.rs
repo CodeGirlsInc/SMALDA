@@ -1,6 +1,10 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicU64, Ordering};
 use uuid::Uuid;
+
+/// Process-wide, strictly increasing event counter (issue #1433).
+static NEXT_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 /// Current event schema version.
 ///
@@ -56,7 +60,7 @@ impl Event {
             event_type,
             data,
             timestamp: Utc::now(),
-            sequence: 0,
+            sequence: NEXT_SEQUENCE.fetch_add(1, Ordering::SeqCst),
             actor,
             metadata: None,
             schema_version: EVENT_SCHEMA_VERSION,

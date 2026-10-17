@@ -319,12 +319,23 @@ async fn record_audit_event(
 }
 
 /// GET /audit — read back emitted audit events, most recent first (CT-39).
-pub async fn audit_log_handler(State(state): State<AppState>) -> Response {
+pub async fn audit_log_handler(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    // When AUDIT_API_TOKEN is set, require it in `x-audit-token` (issue #1434).
+    if let Ok(expected) = std::env::var("AUDIT_API_TOKEN") {
+        let supplied = headers.get("x-audit-token").and_then(|v| v.to_str().ok());
+        if !expected.is_empty() && supplied != Some(expected.as_str()) {
+            return StatusCode::UNAUTHORIZED.into_response();
+        }
+    }
     let mut events: Vec<Event> = match state.cache.get("audit:events").await {
         Ok(Some(events)) => events,
         _ => Vec::new(),
     };
     events.reverse();
+    events.truncate(100); // cap the response size (issue #1434)
     Json(events).into_response()
 }
 
@@ -687,7 +698,7 @@ pub async fn verify_document_history(
     }
 
     let cache_key = format!("history:{}", normalized_hash);
-    let transactions: Vec<TransactionRecord> = match state.cache.get(&cache_key).await {
+    let mut transactions: Vec<TransactionRecord> = match state.cache.get(&cache_key).await {
         Ok(Some(records)) => records,
         Ok(None) => Vec::new(),
         Err(e) => {
@@ -696,8 +707,30 @@ pub async fn verify_document_history(
         }
     };
 
-    let count = transactions.len();
     let cached = !transactions.is_empty();
+
+    if !cached {
+        // Cache miss: read the history from Horizon and cache it (issue #1435).
+        let account_id = match derive_account_id(&state.stellar_secret_key) {
+            Ok(id) => id,
+            Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        };
+        match state.stellar.get_hash_history(&normalized_hash, &account_id).await {
+            Ok(entries) => {
+                transactions = entries
+                    .into_iter()
+                    .filter_map(|e| {
+                        let v = serde_json::json!({"op_type": "manage_data", "name": e.data_name, "value": e.data_value_base64});
+                        serde_json::from_value::<TransactionRecord>(v).ok()
+                    })
+                    .collect();
+                let _ = state.cache.set(&cache_key, &transactions, 300).await;
+            }
+            Err(_) => return StatusCode::BAD_GATEWAY.into_response(),
+        }
+    }
+
+    let count = transactions.len();
 
     Json(HistoryResponse {
         document_hash: normalized_hash,
