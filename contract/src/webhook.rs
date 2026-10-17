@@ -69,7 +69,7 @@ pub async fn post_webhook(
     let resp = WEBHOOK_CLIENT
         .post(url)
         .header("Content-Type", "application/json")
-        .header("X-Signature", signature)
+        .header("X-Signature", signature).header("X-Timestamp", timestamp.clone())
         .body(body)
         .send()
         .await?;
