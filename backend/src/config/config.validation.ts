@@ -153,6 +153,12 @@ export const ConfigValidationSchema = Joi.object({
   // ── File Upload ────────────────────────────────────────────────────────────
   UPLOAD_DIR: Joi.string().default('./uploads'),
 
+  // -- Encryption secret ----------
+  ENCRYPTION_SECRET: Joi.string().min(32).required().messages({
+    'string.min': 'ENCRYPTION_SECRET must be at least 32 characters.',
+    'any.required': 'ENCRYPTION_SECRET is required.',
+  }),
+
   // ── Logging ────────────────────────────────────────────────────────────────
   // Defaults to "debug" in development and "warn" in production.
   LOG_LEVEL: Joi.string()
