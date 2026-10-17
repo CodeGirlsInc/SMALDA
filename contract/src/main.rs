@@ -54,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Configuration: port={}, stellar_horizon_url={}, redis_url={}, rate_limit_per_second={}, rate_limit_burst={}, submit_rate_limit_per_second={}, submit_rate_limit_burst={}, stellar_max_retries={}, stellar_base_fee={}, log_level={}, webhook_urls={:?}, stellar_secret_key=[REDACTED], webhook_secret=[REDACTED], cache_verification_ttl={}, shutdown_timeout_secs={}",
         config.port,
         config.stellar_horizon_url,
-        config.redis_url,
+        redact_url(&config.redis_url),
         config.rate_limit_per_second,
         config.rate_limit_burst,
         config.submit_rate_limit_per_second,
@@ -62,7 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.stellar_max_retries,
         config.stellar_base_fee,
         config.log_level,
-        config.webhook_urls,
+        config.webhook_urls.iter().map(|u| redact_url(u)).collect::<Vec<_>>(),
         config.cache_verification_ttl,
         config.shutdown_timeout_secs,
     );
@@ -128,6 +128,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     cache.close().await;
 
     Ok(())
+}
+
+/// Strip userinfo and query string so credentials and tokens never reach logs (issue #1444).
+fn redact_url(raw: &str) -> String {
+    match url::Url::parse(raw) {
+        Ok(mut u) => {
+            let _ = u.set_username("");
+            let _ = u.set_password(None);
+            u.set_query(None);
+            u.to_string()
+        }
+        Err(_) => "[unparseable url]".to_string(),
+    }
 }
 
 /// Waits for SIGINT (Ctrl+C) or SIGTERM, then notifies the shutdown timeout
