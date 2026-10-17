@@ -417,6 +417,21 @@ pub async fn record_transfer(
     state.metrics.increment_request_count();
     state.metrics.increment_route_count("transfer");
 
+    // Reject empty/oversized owners and self-transfers (issue #1451).
+    let owner_ok = |s: &str| !s.trim().is_empty() && s.len() <= 256;
+    if !owner_ok(&req.from_owner)
+        || !owner_ok(&req.to_owner)
+        || req.from_owner == req.to_owner
+        || req.transfer_reference.len() > 256
+    {
+        return Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(ValidationErrorResponse {
+                error: "owners must be non-empty, differ, and be at most 256 bytes".to_string(),
+            }),
+        ));
+    }
+
     let normalized_hash = HashValidator::normalize(&req.document_hash);
     if let Err(err) = HashValidator::validate_sha256(&normalized_hash) {
         let (status, body) = map_validation_error(err);

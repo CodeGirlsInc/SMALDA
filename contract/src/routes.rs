@@ -39,7 +39,9 @@ pub fn app(state: AppState) -> Router {
                 .route("/submit", post(submit_document))
                 .route("/revoke", post(revoke_document))
                 .route("/transfer", post(record_transfer))
-                .route("/transfer/:document_hash", get(get_transfer_history)),
+                .route("/transfer/:document_hash", get(get_transfer_history))
+                .route("/module/network", get(crate::module::network::network_handler))
+                .route("/module/chain/:hash", get(crate::module::ownership_chain::chain_handler)),
         )
         .route("/health", get(health_check))
         .route("/metrics", get(metrics_handler))
@@ -52,6 +54,8 @@ pub fn app(state: AppState) -> Router {
         .route("/revoke", post(revoke_document))
         .route("/transfer", post(record_transfer))
         .route("/transfer/:document_hash", get(get_transfer_history))
+        .route("/module/network", get(crate::module::network::network_handler))
+        .route("/module/chain/:hash", get(crate::module::ownership_chain::chain_handler))
         .layer(
             ServiceBuilder::new()
                 // Honor an inbound X-Request-Id; generate one only when absent.
