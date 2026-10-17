@@ -142,10 +142,10 @@ export class AuthController {
     @Res() res: Response,
   ) {
     const profile = req.user;
-    const email = profile?.emails?.[0]?.value;
+    const email = profile?.emails?.find((entry) => entry.verified)?.value;
     if (!email) {
       throw new BadRequestException(
-        'Google profile did not contain an email address',
+        'Google account has no verified email address',
       );
     }
 
@@ -176,23 +176,20 @@ export class AuthController {
     @Res() res: Response,
   ) {
     const profile = req.user;
-    const githubId = profile?.id?.toString();
-    const email = profile?.emails?.[0]?.value;
-    const identifier = email || (githubId ? `github:${githubId}` : null);
-    if (!identifier) {
-      throw new BadRequestException('GitHub profile could not be identified');
+    const email = profile?.emails?.find((entry) => entry.verified)?.value;
+    if (!email) {
+      throw new BadRequestException(
+        'GitHub account has no verified email address',
+      );
     }
 
     const fullName =
       this.buildFullName([
         profile?.displayName,
         profile?.username,
-      ]) || identifier;
+      ]) || email;
 
-    const tokens = await this.authService.handleOAuthLogin(
-      identifier,
-      fullName,
-    );
+    const tokens = await this.authService.handleOAuthLogin(email, fullName);
 
     return this.redirectWithCookies(tokens, res);
   }

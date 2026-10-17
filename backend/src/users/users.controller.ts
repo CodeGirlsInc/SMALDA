@@ -1,9 +1,30 @@
-import { Controller, Get, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  NotFoundException,
+  Patch,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { Request } from 'express';
 import { UsersService } from './users.service';
 import { DocumentsService } from '../documents/documents.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User } from './entities/user.entity';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+
+function toProfile(user: User) {
+  return {
+    id: user.id,
+    email: user.email,
+    fullName: user.fullName,
+    role: user.role,
+    isVerified: user.isVerified,
+    preferredLanguage: user.preferredLanguage,
+    twoFactorEnabled: user.twoFactorEnabled,
+  };
+}
 
 /**
  * Self-service data export for GDPR-style portability requests.
@@ -17,6 +38,29 @@ export class UsersController {
     private readonly usersService: UsersService,
     private readonly documentsService: DocumentsService,
   ) {}
+
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  async getMyProfile(@Req() req: Request & { user?: User }) {
+    const user = await this.usersService.findById(req.user!.id);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return toProfile(user);
+  }
+
+  @Patch('me')
+  @UseGuards(JwtAuthGuard)
+  async updateMyProfile(
+    @Req() req: Request & { user?: User },
+    @Body() dto: UpdateProfileDto,
+  ) {
+    const updated = await this.usersService.update(req.user!.id, dto);
+    if (!updated) {
+      throw new NotFoundException('User not found');
+    }
+    return toProfile(updated);
+  }
 
   @Get('me/export')
   @UseGuards(JwtAuthGuard)
