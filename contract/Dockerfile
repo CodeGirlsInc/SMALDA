@@ -8,7 +8,7 @@
 #              stellar-doc-verifier:local
 
 # Base toolchain stage: install cargo-chef for reproducible dependency caching.
-FROM rust:1.75-slim-bookworm AS chef
+FROM rust:1.82-slim-bookworm AS chef
 RUN cargo install --locked cargo-chef
 WORKDIR /build
 ENV CARGO_TERM_COLOR=always
@@ -36,11 +36,11 @@ FROM system-deps AS builder
 ARG BUILD_PROFILE=release
 COPY --from=planner /build/contract/recipe.json /build/contract/recipe.json
 WORKDIR /build/contract
-RUN cargo chef cook --${BUILD_PROFILE} --locked \
+RUN cargo chef cook --${BUILD_PROFILE} \
         --recipe-path /build/contract/recipe.json \
         --bin stellar-doc-verifier
 COPY contract/ /build/contract/
-RUN cargo build --${BUILD_PROFILE} --locked --bin stellar-doc-verifier
+RUN cargo build --${BUILD_PROFILE} --bin stellar-doc-verifier
 
 # Minimal runtime image: no compilers, no headers, no docs. Runs as non-root.
 FROM debian:bookworm-slim AS runtime

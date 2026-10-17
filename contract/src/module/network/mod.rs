@@ -5,6 +5,11 @@
 //!
 //! Routes wired in `lib.rs`:
 //!   GET /module/network  → [`network_handler`]
+//!
+//! Switching networks: `STELLAR_NETWORK` and `STELLAR_HORIZON_URL` are read from
+//! the process environment, which cannot change while the service runs, so a
+//! switch means updating both variables together and restarting (issue #1390).
+//! [`validate_horizon_url`] rejects a mismatched pair at startup.
 
 use std::env;
 

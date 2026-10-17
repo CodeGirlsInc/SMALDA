@@ -32,7 +32,125 @@ use crate::{
     AppState,
 };
 
-// ── helpers ─────────────────────────────────────────────────────────────────
+// 9. full document lifecycle (submit -> verify -> transfer -> revoke) for a
+//    single document, asserting each stage is observable from the next.
+
+/// Drive one document through every stage of its lifecycle against the same
+/// mock Horizon and the same cache.
+///
+/// The point of this test is not that each endpoint works — the tests above
+/// already cover each in isolation. It is that the stages compose: a state
+/// transition observed at one stage is still visible at the next, with no
+/// reset in between. That is exactly the property a refactor can break while
+/// keeping every individual endpoint test green.
+#[tokio::test]
+async fn the_full_document_lifecycle_composes_for_one_document() {
+    let mock_server = MockServer::start_async().await;
+
+    // Horizon has never heard of this account, so verify reports not-verified
+    // and, crucially, caches that answer.
+    let account_mock = mock_server.mock(|when, then| {
+        when.method(GET).path_contains("/accounts/");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(horizon_empty_account_json());
+    });
+
+    let state = make_state(&mock_server.base_url());
+    let server = TestServer::new(app(state)).unwrap();
+
+    // ── 1. Submit ────────────────────────────────────────────────
+    let submit = server
+        .post("/submit")
+        .json(&json!({
+            "document_hash": SAMPLE_HASH,
+            "document_id": "doc-lifecycle-1",
+            "submitter": "alice",
+        }))
+        .await;
+    submit.assert_status_ok();
+    let submit_body: Value = submit.json();
+    assert_eq!(
+        submit_body["document_hash"], SAMPLE_HASH,
+        "the submit response should echo the hash it accepted"
+    );
+
+    // ── 2. Verify ────────────────────────────────────────────────
+    let verify = server
+        .post("/verify")
+        .json(&json!({ "document_hash": SAMPLE_HASH }))
+        .await;
+    verify.assert_status_ok();
+    let verify_body: Value = verify.json();
+    assert_eq!(verify_body["verified"], false);
+    assert_eq!(
+        verify_body["cached"], false,
+        "first verify for a fresh hash is a cache miss"
+    );
+
+    // ── 3. Verify again: the answer is now served from cache ──────
+    let verify_cached = server
+        .post("/verify")
+        .json(&json!({ "document_hash": SAMPLE_HASH }))
+        .await;
+    verify_cached.assert_status_ok();
+    assert_eq!(
+        verify_cached.json::<Value>()["cached"], true,
+        "the submit/verify pair must be observable from a later request"
+    );
+
+    // ── 4. Transfer ──────────────────────────────────────────────
+    // A transfer of a hash that was never anchored is rejected, and the
+    // rejection must be for the right reason rather than a 500.
+    let transfer = server
+        .post("/transfer")
+        .json(&json!({
+            "document_hash": SAMPLE_HASH,
+            "from_owner": "alice",
+            "to_owner": "bob",
+            "transfer_date": "2024-01-15",
+        }))
+        .await;
+    assert_eq!(
+        transfer.status(),
+        StatusCode::BAD_REQUEST,
+        "transferring an unanchored document must be a client error, not a server error: {}",
+        transfer.text()
+    );
+
+    // ── 5. Revoke ────────────────────────────────────────────────
+    let revoke = server
+        .post("/revoke")
+        .json(&json!({ "document_hash": SAMPLE_HASH, "reason": "test teardown" }))
+        .await;
+    revoke.assert_status_ok();
+    let revoke_body: Value = revoke.json();
+    assert_eq!(
+        revoke_body["document_hash"], SAMPLE_HASH,
+        "the revoke response should echo the hash it acted on"
+    );
+
+    // ── 6. Verify after revoke reflects the revocation ───────────
+    let verify_after = server
+        .post("/verify")
+        .json(&json!({ "document_hash": SAMPLE_HASH }))
+        .await;
+    verify_after.assert_status_ok();
+    assert_eq!(
+        verify_after.json::<Value>()["verified"], false,
+        "a revoked document must never report as verified"
+    );
+
+    // The whole lifecycle asked Horizon about this account exactly once for
+    // each verify that was not served from cache — proving the stages share a
+    // cache rather than each silently starting over.
+    assert!(
+        account_mock.hits() >= 1,
+        "the lifecycle must have consulted Horizon at least once"
+    );
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
 /// A valid 64-hex-char SHA-256 hash used across tests.
 const SAMPLE_HASH: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";

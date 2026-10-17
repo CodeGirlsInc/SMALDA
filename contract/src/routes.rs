@@ -59,6 +59,7 @@ pub fn app(state: AppState) -> Router {
                 .route("/revoke", post(revoke_document))
                 .route("/transfer", post(record_transfer))
                 .route("/transfer/:document_hash", get(get_transfer_history))
+                .route("/module/network", get(crate::module::network::network_handler))
                 .route("/module/chain/:document_hash", get(chain_handler))
                 .route("/module/owner/:document_hash", get(current_owner_handler)),
         )
@@ -82,6 +83,7 @@ pub fn app(state: AppState) -> Router {
         .route("/revoke", post(revoke_document))
         .route("/transfer", post(record_transfer))
         .route("/transfer/:document_hash", get(get_transfer_history))
+        .route("/module/network", get(crate::module::network::network_handler))
         .route("/module/chain/:document_hash", get(chain_handler))
         .route("/module/owner/:document_hash", get(current_owner_handler))
         .layer(

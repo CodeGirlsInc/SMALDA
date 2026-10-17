@@ -83,9 +83,10 @@ pub async fn validate_chain(
         return Ok(ValidationResult::Valid);
     }
 
-    let mut owners = HashSet::new();
-    owners.insert(records[0].from_owner.clone());
-    owners.insert(records[0].to_owner.clone());
+    // An owner re-acquiring the property (A -> B -> A) is valid; only a repeated
+    // transfer record or a self-transfer is suspect (issue #1450).
+    let mut seen_hashes = HashSet::new();
+    seen_hashes.insert(records[0].transfer_hash.clone());
 
     for i in 1..records.len() {
         let expected = &records[i - 1].to_owner;
@@ -97,7 +98,9 @@ pub async fn validate_chain(
                 found_owner: found.clone(),
             });
         }
-        if !owners.insert(records[i].to_owner.clone()) {
+        if records[i].from_owner == records[i].to_owner
+            || !seen_hashes.insert(records[i].transfer_hash.clone())
+        {
             return Ok(ValidationResult::Cycle {
                 at_index: i,
                 owner: records[i].to_owner.clone(),
@@ -197,7 +200,7 @@ mod tests {
             to_owner: to.to_string(),
             transfer_date: "2025-01-01".to_string(),
             transfer_reference: "REF".to_string(),
-            transfer_hash: "hash".to_string(),
+            transfer_hash: format!("{}->{}", from, to),
             memo: "memo".to_string(),
             anchored_at: "2025-01-01T00:00:00Z".to_string(),
         }
@@ -277,17 +280,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn circular_chain_is_detected() {
+    async fn owner_reacquiring_property_is_valid() {
         let records = vec![make_record("Alice", "Bob"), make_record("Bob", "Alice")];
         let cache = cache_with_records(records).await;
         let result = validate_chain("test_doc", &cache).await.unwrap();
-        assert_eq!(
-            result,
-            ValidationResult::Cycle {
-                at_index: 1,
-                owner: "Alice".to_string(),
-            }
-        );
+        assert_eq!(result, ValidationResult::Valid);
     }
 
     #[tokio::test]
