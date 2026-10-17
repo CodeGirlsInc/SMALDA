@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsBoolean, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class ListRiskAssessmentsDto {
   @ApiPropertyOptional({ default: 1 })
@@ -47,4 +47,13 @@ export class ListRiskAssessmentsDto {
   @IsOptional()
   @IsString()
   sortOrder?: 'ASC' | 'DESC' = 'DESC';
+
+  @ApiPropertyOptional({
+    default: false,
+    description: 'Admins only: include documents from every user',
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  all?: boolean = false;
 }

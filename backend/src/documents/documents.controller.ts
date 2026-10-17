@@ -29,7 +29,7 @@ import * as multer from 'multer';
 import { DocumentsService } from './documents.service';
 import { DocumentStatus, Document } from './entities/document.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { User } from '../users/entities/user.entity';
+import { User, UserRole } from '../users/entities/user.entity';
 import { QueueService } from '../queue/queue.service';
 import { VerificationService } from '../verification/verification.service';
 import { AccessLogsService } from '../access-logs/access-logs.service';
@@ -159,7 +159,7 @@ export class DocumentsController {
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   async getDocument(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Req() req: Request & { user?: User },
   ) {
     const user = req.user!;
@@ -169,9 +169,7 @@ export class DocumentsController {
       throw new NotFoundException('Document not found');
     }
 
-    if (document.ownerId !== user.id && user.role !== 'admin') {
-      throw new ForbiddenException('Access denied');
-    }
+    this.assertOwnerOrAdmin(document, user);
 
     return toDocumentResponse(document);
   }
@@ -179,14 +177,16 @@ export class DocumentsController {
   @Post(':id/verify')
   @UseGuards(JwtAuthGuard)
   async verifyDocument(
-    @Param('id') id: string,
-    @Req() req: Request,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request & { user?: User },
     @Res() res: Response,
   ) {
     const document = await this.documentsService.findById(id);
     if (!document) {
       throw new NotFoundException('Document not found');
     }
+
+    this.assertOwnerOrAdmin(document, req.user);
 
     if (document.status === DocumentStatus.VERIFIED) {
       throw new ConflictException('Document has already been verified');
@@ -202,11 +202,16 @@ export class DocumentsController {
 
   @Get(':id/verification')
   @UseGuards(JwtAuthGuard)
-  async getVerification(@Param('id') id: string) {
+  async getVerification(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request & { user?: User },
+  ) {
     const document = await this.documentsService.findById(id);
     if (!document) {
       throw new NotFoundException('Document not found');
     }
+
+    this.assertOwnerOrAdmin(document, req.user);
 
     const record = await this.verificationService.findLatestByDocument(id);
     if (!record) {
@@ -229,10 +234,7 @@ export class DocumentsController {
       throw new NotFoundException('Document not found');
     }
 
-    const user = req.user!;
-    if (document.ownerId !== user.id && user.role !== 'admin') {
-      throw new ForbiddenException('Access denied');
-    }
+    this.assertOwnerOrAdmin(document, req.user);
 
     const updated = await this.documentsService.revokeAccess(id);
     return { message: 'Access revoked', documentId: updated?.id, status: updated?.status };
@@ -278,6 +280,15 @@ export class DocumentsController {
     });
 
     stream.pipe(res);
+  }
+
+  private assertOwnerOrAdmin(document: Document, user?: User): void {
+    if (!user) {
+      throw new ForbiddenException('Access denied');
+    }
+    if (document.ownerId !== user.id && user.role !== UserRole.ADMIN) {
+      throw new ForbiddenException('Access denied');
+    }
   }
 
   private safeExtension(mimeType: string): string {
