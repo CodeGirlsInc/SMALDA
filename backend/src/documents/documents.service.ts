@@ -17,41 +17,7 @@ export class DocumentsService {
   }
 
   findById(id: string): Promise<Document | null> {
-    return this.documentRepository.findOne({ where: { id } });
-  }
-
-  findByOwner(ownerId: string): Promise<Document[]> {
-    return this.documentRepository.find({ where: { ownerId } });
-  }
-
-  async findByOwnerPaginated(
-    ownerId: string,
-    page: number,
-    limit: number,
-    status?: DocumentStatus,
-    search?: string,
-  ): Promise<{ data: Document[]; total: number; page: number; limit: number }> {
-    const where: any = { ownerId };
-    if (status) {
-      where.status = status;
-    }
-    const normalizedSearch = search?.trim();
-    if (normalizedSearch) {
-      where.title = ILike(`%${normalizedSearch}%`);
-    }
-
-    const [data, total] = await this.documentRepository.findAndCount({
-      where,
-      skip: (page - 1) * limit,
-      take: limit,
-      order: { createdAt: 'DESC', id: 'DESC' },
-    });
-
-    return { data, total, page, limit };
-  }
-
-  findByFileHash(fileHash: string): Promise<Document | null> {
-    return this.documentRepository.findOne({ where: { fileHash } });
+    return this.documentRepository.findOne({ where: Object.assign({ fileHash }, ownerId ? { ownerId } : {}) });
   }
 
   async updateStatus(
@@ -102,6 +68,7 @@ export class DocumentsService {
   async findByRiskFilters(filters: {
     page: number;
     limit: number;
+    ownerId?: string;
     minScore?: number;
     maxScore?: number;
     startDate?: Date;
@@ -111,6 +78,12 @@ export class DocumentsService {
     const qb = this.documentRepository.createQueryBuilder('document');
 
     qb.where('document.risk_score IS NOT NULL');
+
+    if (filters.ownerId) {
+      qb.andWhere('document.owner_id = :ownerId', {
+        ownerId: filters.ownerId,
+      });
+    }
 
     if (filters.minScore !== undefined) {
       qb.andWhere('document.risk_score >= :minScore', {

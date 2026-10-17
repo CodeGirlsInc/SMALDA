@@ -2,6 +2,8 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WinstonModule } from 'nest-winston';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -24,60 +26,58 @@ import { ConfigValidationSchema } from './config/config.validation';
 
 import { MetricsModule } from './metrics/metrics.module';
 import { QueueObservabilityModule } from './queue/queue-observability.module';
+import { NetworkModule } from './network/network.module';
+import { TransferModule } from './transfer/transfer.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: [`.env.${process.env.NODE_ENV ?? 'development'}`, '.env'],
       validationSchema: ConfigValidationSchema,
-      validationOptions: {
-        abortEarly: false,
-        allowUnknown: false,
-      },
-    }),
-    WinstonModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) =>
-        buildWinstonOptions(config.get<string>('LOG_LEVEL') || undefined),
     }),
     TypeOrmModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         type: 'postgres',
-        database: configService.get('DATABASE_NAME'),
-        password: configService.get('DATABASE_PASSWORD'),
-        username: configService.get('DATABASE_USER'),
-        port: +configService.get('DATABASE_PORT'),
-        host: configService.get('DATABASE_HOST'),
-        autoLoadEntities: true,
-        synchronize: true,
+        url: configService.get('DATABASE_URL'),
+        entities: [__dirname + '/**/*.entity{.ts,.js}'],
+        synchronize: configService.get('NODE_ENV') !== 'production',
       }),
+      inject: [ConfigService],
     }),
-    AccessLogsModule,
-    UsersModule,
+    ThrottlerModule.forRootAsync({
+      useFactory: (configService: ConfigService) => ({
+        ttl: configService.get<number>('THROTTLE_TTL', 60000),
+        limit: configService.get<number>('THROTTLE_LIMIT', 100),
+      }),
+      inject: [ConfigService],
+    }),
+    WinstonModule.forRoot(buildWinstonOptions),
     AuthModule,
+    UsersModule,
     DocumentsModule,
+    MailModule,
+    QueueModule,
     RiskAssessmentModule,
     StellarModule,
     VerificationModule,
-    MailModule,
-    QueueModule,
     DisputeModule,
     ExternalValidationModule,
     HealthModule,
+    AccessLogsModule,
     MetricsModule,
     QueueObservabilityModule,
+    NetworkModule,
+    TransferModule,
   ],
   controllers: [AppController],
-  providers: [AppService, LoggerMiddleware, CorrelationIdMiddleware],
+  providers: [
+    AppService,
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer
-      .apply(CorrelationIdMiddleware, LoggerMiddleware)
-      .forRoutes('*');
+    consumer.apply(CorrelationIdMiddleware).forRoutes('*');
+    consumer.apply(LoggerMiddleware).forRoutes('*');
   }
 }

@@ -45,6 +45,7 @@ import {
   setAuthCookies,
 } from './auth-cookie';
 import { User } from '../users/entities/user.entity';
+import { LoginRateLimitGuard } from './login-rate-limit.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -70,6 +71,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @UseGuards(LoginRateLimitGuard)
   async login(
     @Body() dto: LoginAuthDto,
     @Res({ passthrough: true }) response?: Response,
@@ -353,5 +355,28 @@ export class AuthController {
       .map((part) => part?.trim())
       .filter(Boolean)
       .join(' ');
+  }
+  @Get('verify-email')
+  async verifyEmail(@Query('token') token: string) {
+    await this.authService.verifyEmail(token);
+    return { message: 'Email verified successfully' };
+  }
+
+  @Post('resend-verification')
+  async resendVerification(@Body() body: { email: string }) {
+    await this.authService.resendVerification(body.email);
+    return { message: 'Verification email sent' };
+  }
+
+  @Post('forgot-password')
+  async forgotPassword(@Body() body: { email: string }) {
+    await this.authService.forgotPassword(body.email);
+    return { message: 'If the email exists, a reset link has been sent' };
+  }
+
+  @Post('reset-password')
+  async resetPassword(@Body() body: { token: string; password: string }) {
+    await this.authService.resetPassword(body.token, body.password);
+    return { message: 'Password reset successfully' };
   }
 }

@@ -21,14 +21,14 @@ import { Document } from '../documents/entities/document.entity';
 import { User, UserRole } from '../users/entities/user.entity';
 
 @ApiTags('documents')
-@Controller('documents')
+@Controller()
 export class RiskAssessmentController {
   constructor(
     private readonly riskService: RiskAssessmentService,
     private readonly documentsService: DocumentsService,
   ) {}
 
-  @Get(':id/risk')
+  @Get('documents/:id/risk')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get the stored risk assessment of a document' })
@@ -42,7 +42,7 @@ export class RiskAssessmentController {
     return this.riskService.getStoredAssessment(id, lang);
   }
 
-  @Post(':id/risk/reassess')
+  @Post('documents/:id/risk/reassess')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Explicitly recompute the risk score of a document' })
@@ -59,10 +59,27 @@ export class RiskAssessmentController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'List documents by risk filters (paginated)' })
-  async listRiskAssessments(@Query() query: ListRiskAssessmentsDto) {
-    const { page = 1, limit = 20, minScore, maxScore, startDate, endDate, sortOrder = 'DESC' } = query;
+  async listRiskAssessments(
+    @Query() query: ListRiskAssessmentsDto,
+    @Req() req: Request & { user?: User },
+  ) {
+    const {
+      page = 1,
+      limit = 20,
+      minScore,
+      maxScore,
+      startDate,
+      endDate,
+      sortOrder = 'DESC',
+      all = false,
+    } = query;
+
+    const user = req.user!;
+    // Only admins may explicitly ask for every user's documents.
+    const ownerId = user.role === UserRole.ADMIN && all ? undefined : user.id;
 
     const result = await this.documentsService.findByRiskFilters({
+      ownerId,
       page,
       limit,
       minScore,
