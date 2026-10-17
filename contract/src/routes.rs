@@ -7,6 +7,7 @@
 //! aliases for existing clients.
 
 use axum::{
+    extract::DefaultBodyLimit,
     routing::{get, post},
     Router,
 };
@@ -16,10 +17,19 @@ use tower_http::trace::TraceLayer;
 
 use crate::{
     audit_log_handler, batch_verify_documents, enforce_rate_limit, health_check, metrics_handler,
-    record_transfer, revoke_document, submit_document, verify_document, verify_document_by_hash,
-    verify_document_history, AppState, REQUEST_ID_HEADER,
+    record_transfer, require_metrics_auth, revoke_document, submit_document, verify_document,
+    verify_document_by_hash, verify_document_history, AppState, REQUEST_ID_HEADER,
 };
 use crate::handlers::transfer::get_transfer_history;
+use crate::module::ownership_chain::{chain_handler, current_owner_handler};
+
+/// Largest accepted `POST /submit` body (#1377).
+///
+/// A submit payload is three short strings, so 64 KiB is already generous.
+/// Capping it makes the limit explicit and guarantees axum rejects an oversized
+/// body with `413 Payload Too Large` before it is buffered into memory, rather
+/// than letting an unbounded request exhaust the process.
+pub const MAX_SUBMIT_BODY_BYTES: usize = 64 * 1024;
 
 pub fn app(state: AppState) -> Router {
     let request_id_header = axum::http::HeaderName::from_static(REQUEST_ID_HEADER);
@@ -30,28 +40,50 @@ pub fn app(state: AppState) -> Router {
             "/v1",
             Router::new()
                 .route("/health", get(health_check))
-                .route("/metrics", get(metrics_handler))
+                .route(
+                    "/metrics",
+                    get(metrics_handler).layer(axum::middleware::from_fn_with_state(
+                        state.clone(),
+                        require_metrics_auth,
+                    )),
+                )
                 .route("/audit", get(audit_log_handler))
                 .route("/verify", post(verify_document))
                 .route("/verify/batch", post(batch_verify_documents))
                 .route("/verify/:hash", get(verify_document_by_hash))
                 .route("/verify/:hash/history", get(verify_document_history))
-                .route("/submit", post(submit_document))
+                .route(
+                    "/submit",
+                    post(submit_document).layer(DefaultBodyLimit::max(MAX_SUBMIT_BODY_BYTES)),
+                )
                 .route("/revoke", post(revoke_document))
                 .route("/transfer", post(record_transfer))
-                .route("/transfer/:document_hash", get(get_transfer_history)),
+                .route("/transfer/:document_hash", get(get_transfer_history))
+                .route("/module/chain/:document_hash", get(chain_handler))
+                .route("/module/owner/:document_hash", get(current_owner_handler)),
         )
         .route("/health", get(health_check))
-        .route("/metrics", get(metrics_handler))
+        .route(
+            "/metrics",
+            get(metrics_handler).layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                require_metrics_auth,
+            )),
+        )
         .route("/audit", get(audit_log_handler))
         .route("/verify", post(verify_document))
         .route("/verify/batch", post(batch_verify_documents))
         .route("/verify/:hash", get(verify_document_by_hash))
         .route("/verify/:hash/history", get(verify_document_history))
-        .route("/submit", post(submit_document))
+        .route(
+            "/submit",
+            post(submit_document).layer(DefaultBodyLimit::max(MAX_SUBMIT_BODY_BYTES)),
+        )
         .route("/revoke", post(revoke_document))
         .route("/transfer", post(record_transfer))
         .route("/transfer/:document_hash", get(get_transfer_history))
+        .route("/module/chain/:document_hash", get(chain_handler))
+        .route("/module/owner/:document_hash", get(current_owner_handler))
         .layer(
             ServiceBuilder::new()
                 // Honor an inbound X-Request-Id; generate one only when absent.

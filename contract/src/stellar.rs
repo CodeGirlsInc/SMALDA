@@ -48,6 +48,14 @@ pub struct VerificationResult {
 pub struct VerificationRecord {
     pub hash: String,
     pub anchored: bool,
+    /// Whether a `revoked_<hash>` ManageData entry exists for this document.
+    ///
+    /// Without this, "never submitted" and "submitted then revoked" both came
+    /// back as `anchored: false` with an otherwise identical record, so a caller
+    /// could not tell a document that does not exist from one that was
+    /// deliberately withdrawn. Those are different states with different
+    /// remedies, and collapsing them is what #1378 is about.
+    pub revoked: bool,
     pub data_key: String,
     pub transaction_id: Option<String>,
     pub timestamp: Option<i64>,
@@ -283,6 +291,23 @@ impl StellarClient {
 
         let account: HorizonAccount = resp.json().await?;
         let data_key = build_data_key(hash);
+        let revocation_key = build_revocation_key(hash);
+
+        // A revocation entry takes precedence over the anchor entry. Checking the
+        // anchor first would report a revoked document as merely unanchored,
+        // which is the wrong answer to the wrong question.
+        if account.data.contains_key(&revocation_key) {
+            return Ok(VerificationRecord {
+                hash: hash.to_string(),
+                anchored: false,
+                revoked: true,
+                data_key,
+                transaction_id: None,
+                timestamp: None,
+                raw_value_base64: None,
+                decoded_value: None,
+            });
+        }
 
         if let Some(b64_val) = account.data.get(&data_key) {
             let decoded_bytes = base64::engine::general_purpose::STANDARD
@@ -293,6 +318,7 @@ impl StellarClient {
             Ok(VerificationRecord {
                 hash: hash.to_string(),
                 anchored: true,
+                revoked: false,
                 data_key,
                 transaction_id: None,
                 timestamp: None,
@@ -303,6 +329,7 @@ impl StellarClient {
             Ok(VerificationRecord {
                 hash: hash.to_string(),
                 anchored: false,
+                revoked: false,
                 data_key,
                 transaction_id: None,
                 timestamp: None,

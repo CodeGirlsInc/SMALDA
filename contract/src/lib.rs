@@ -67,6 +67,60 @@ async fn enforce_rate_limit(
     next.run(req).await
 }
 
+/// Compare two byte slices without short-circuiting on the first mismatch.
+///
+/// Used for the `/metrics` bearer token check so an attacker cannot recover the
+/// secret one byte at a time from response timing.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (left, right) in a.iter().zip(b.iter()) {
+        diff |= left ^ right;
+    }
+    diff == 0
+}
+
+/// Gate `/metrics` behind a bearer token when one is configured (#1380).
+///
+/// Without this the Prometheus endpoint is readable by anyone who finds the
+/// URL, leaking internal request-pattern data. When `metrics_token` is `None`
+/// the request is allowed through unchanged so local development and the test
+/// suite keep working; production startup requires the token to be set.
+async fn require_metrics_auth(
+    State(state): State<AppState>,
+    req: Request<Body>,
+    next: Next,
+) -> Response {
+    let Some(expected) = state.metrics_token.as_deref() else {
+        return next.run(req).await;
+    };
+
+    let presented = req
+        .headers()
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "));
+
+    let authorized = presented
+        .map(|token| constant_time_eq(token.as_bytes(), expected.as_bytes()))
+        .unwrap_or(false);
+
+    if !authorized {
+        warn!("Rejected unauthenticated request to a protected operational route");
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({
+                "error": "metrics endpoint requires a valid bearer token",
+            })),
+        )
+            .into_response();
+    }
+
+    next.run(req).await
+}
+
 // Application state
 #[derive(Clone)]
 pub struct AppState {
@@ -82,6 +136,9 @@ pub struct AppState {
     pub webhook_urls: Vec<String>,
     /// Shared secret used to sign webhook payloads (CT-38).
     pub webhook_secret: Option<String>,
+    /// Bearer token guarding `/metrics` (#1380). `None` leaves the endpoint
+    /// open, which is only intended for local development.
+    pub metrics_token: Option<String>,
 }
 
 // Request/Response types
@@ -558,7 +615,11 @@ pub async fn verify_document(
         transaction_id: result.transaction_id,
         timestamp: result.timestamp,
         cached: false,
-        revoked: None,
+        // Surface the on-chain revocation state (#1378): a caller must be able
+        // to tell "never submitted" (`revoked: false`) apart from "submitted
+        // then withdrawn" (`revoked: true`). Both come back `verified: false`,
+        // so without this the two are indistinguishable.
+        revoked: Some(result.revoked),
         revoked_at: None,
     };
 
@@ -767,7 +828,10 @@ async fn verify_single_hash(state: &AppState, hash: String) -> BatchVerifyItem {
         transaction_id: result.transaction_id.clone(),
         timestamp: result.timestamp,
         cached: false,
-        revoked: None,
+        // Carry the revocation flag through the batch cache as well; this key
+        // is the same one the single-hash verify path reads, so dropping it
+        // here would let a batch verify erase the distinction (#1378).
+        revoked: Some(result.revoked),
         revoked_at: None,
     };
 
@@ -1384,5 +1448,27 @@ mod tests {
         assert_eq!(item.transaction_id, None);
         assert_eq!(item.timestamp, None);
         assert_eq!(item.error, Some("invalid hash format".to_string()));
+    }
+}
+
+#[cfg(test)]
+mod metrics_auth_tests {
+    use super::constant_time_eq;
+
+    #[test]
+    fn equal_slices_match() {
+        assert!(constant_time_eq(b"super-secret", b"super-secret"));
+    }
+
+    #[test]
+    fn different_values_do_not_match() {
+        assert!(!constant_time_eq(b"super-secret", b"super-secrez"));
+        assert!(!constant_time_eq(b"super-secret", b"different"));
+    }
+
+    #[test]
+    fn different_lengths_do_not_match() {
+        assert!(!constant_time_eq(b"short", b"short-and-longer"));
+        assert!(!constant_time_eq(b"", b"non-empty"));
     }
 }

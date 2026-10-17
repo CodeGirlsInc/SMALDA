@@ -65,7 +65,11 @@ pub async fn verify_document(
         transaction_id: result.transaction_id,
         timestamp: result.timestamp,
         cached: false,
-        revoked: None,
+        // Reported rather than left as None. A caller that cannot tell
+        // "never submitted" from "submitted then revoked" cannot decide
+        // whether to re-submit or to investigate, which is the whole
+        // difference between the two states.
+        revoked: Some(result.revoked),
         revoked_at: None,
     };
 
