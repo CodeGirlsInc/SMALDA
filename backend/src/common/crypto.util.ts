@@ -1,8 +1,7 @@
 import * as crypto from 'crypto';
 
 const ALGORITHM = 'aes-256-cbc';
-const SECRET_KEY =
-  process.env.ENCRYPTION_SECRET || 'smalda-super-secret-key-32chars!';
+const SECRET_KEY = process.env.ENCRYPTION_SECRET ?? (() => { throw new Error('ENCRYPTION_SECRET environment variable is required'); })();
 const IV_LENGTH = 16;
 
 export function encryptBuffer(buffer: Buffer): Buffer {

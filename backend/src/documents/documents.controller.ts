@@ -103,7 +103,7 @@ export class DocumentsController {
     }
 
     const fileHash = createHash('sha256').update(file.buffer).digest('hex');
-    const existing = await this.documentsService.findByFileHash(fileHash);
+    const existing = await this.documentsService.findByFileHash(fileHash, req.user.id);
     if (existing) {
       return res.status(200).send(existing);
     }
@@ -121,7 +121,7 @@ export class DocumentsController {
 
     const document = await this.documentsService.create({
       ownerId: user.id,
-      title: file.originalname,
+      title: req.body.title || file.originalname,
       filePath: targetPath,
       fileHash,
       fileSize: file.size,
@@ -265,18 +265,24 @@ export class DocumentsController {
       req.ip,
     );
 
+    // Pre-check that the file exists on disk before creating the stream.
+    try {
+      await fs.stat(document.filePath);
+    } catch {
+      throw new NotFoundException('File not found on disk');
+    }
+
     const stream = createReadStream(document.filePath);
     const contentType =
       lookup(document.filePath) || document.mimeType || 'application/octet-stream';
 
+    // Sanitize the filename to prevent header injection via the document title.
+    const safeFilename = (document.title || 'document').replace(/[^a-zA-Z0-9._-]/g, '_');
+
     res.set({
       'Content-Type': contentType,
-      'Content-Disposition': `attachment; filename="${document.title}"`,
+      'Content-Disposition': `attachment; filename="${safeFilename}"`,
       'X-Content-Type-Options': 'nosniff',
-    });
-
-    stream.on('error', () => {
-      throw new NotFoundException('File not found on disk');
     });
 
     stream.pipe(res);

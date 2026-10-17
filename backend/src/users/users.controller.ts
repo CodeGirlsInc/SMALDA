@@ -115,6 +115,13 @@ export class UsersController {
     return this.apiKeysService.revoke(req.user!.id, id);
   }
 
+  @Delete('me')
+  @UseGuards(JwtAuthGuard)
+  async deleteAccount(@Req() req: AuthedRequest) {
+    await this.usersService.softDelete(req.user!.id);
+    return { message: 'Account deleted successfully' };
+  }
+
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
