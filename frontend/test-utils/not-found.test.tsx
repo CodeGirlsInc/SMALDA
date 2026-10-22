@@ -2,7 +2,7 @@ import React from "react";
 import { render, screen } from "@testing-library/react";
 import GlobalNotFound from "@/app/not-found";
 import LocaleNotFound from "@/app/[locale]/not-found";
-import DocumentNotFound from "@/app/(protected)/documents/[id]/not-found";
+import DocumentNotFound from "@/app/[locale]/(protected)/documents/[id]/not-found";
 
 jest.mock("next-intl/server", () => ({
   getLocale: async () => "fr",
@@ -11,6 +11,7 @@ jest.mock("next-intl/server", () => ({
       description: "The page you are looking for could not be found.",
       home: "Go back home",
       dashboardHome: "Return to dashboard",
+      docNotFound: "No record anchored",
       docNotFoundDescription: "The requested document was not found.",
     })[key],
   setRequestLocale: jest.fn(),
@@ -73,11 +74,11 @@ describe("not-found boundaries", () => {
     expect(screen.getAllByRole("link")).toHaveLength(1);
   });
 
-  it("renders the document boundary with the same branded structure", () => {
-    render(<DocumentNotFound />);
+  it("renders the document boundary with translated, locale-aware copy", async () => {
+    render(await DocumentNotFound());
 
     expect(screen.getByRole("heading", { name: "404" })).toBeInTheDocument();
     expect(screen.getByText("No record anchored")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Back to home" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Go back home" })).toHaveAttribute("href", "/fr");
   });
 });

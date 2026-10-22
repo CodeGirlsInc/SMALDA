@@ -255,5 +255,192 @@
     "docNotFound": "Aucun enregistrement ancré",
     "docNotFoundDescription": "Si vous accédez à cette page via un lien de vérification, le hash demandé n'a jamais été ancré sur le registre Stellar. Cela diffère d'un échec de vérification, qui signifierait qu'un ancrage existe mais ne correspond pas à ce que vous avez soumis.",
     "dashboardHome": "Retour au tableau de bord"
+  },
+  "documentDetail": {
+    "loading": "Chargement des détails du document",
+    "notFound": "Document introuvable.",
+    "loadError": "Impossible de charger le document.",
+    "verifyError": "La vérification a échoué.",
+    "retry": "Réessayer",
+    "uploaded": "Téléversé le {date}",
+    "timelineTitle": "Chronologie du statut",
+    "timelineLabel": "Chronologie du statut du document",
+    "risk": {
+      "title": "Analyse des risques",
+      "unavailable": "L'analyse des risques n'est pas encore disponible pour ce document.",
+      "gaugeLabel": "Score de risque : {score} sur 100",
+      "outOf": "/ 100",
+      "low": "Risque faible",
+      "medium": "Risque moyen",
+      "high": "Risque élevé",
+      "detected": "Détecté",
+      "notDetected": "Non détecté",
+      "weight": "Poids : {value} %",
+      "contribution": "Contribution : {value}"
+    },
+    "actions": {
+      "title": "Actions",
+      "verify": "Vérifier sur Stellar",
+      "downloadReport": "Télécharger le rapport",
+      "fileDispute": "Déposer un litige",
+      "share": "Partager"
+    },
+    "share": {
+      "label": "Partager le document",
+      "title": "Partager le document",
+      "copy": "Copier",
+      "copied": "Copié !",
+      "close": "Fermer"
+    }
+  },
+  "documentReport": {
+    "title": "Rapport de risque",
+    "sampleData": "Impossible de charger ce document — affichage de données d'exemple.",
+    "notFound": "Document introuvable.",
+    "backToDocuments": "Retour aux documents",
+    "backToDocument": "← Retour au document",
+    "downloadPdf": "Télécharger le PDF",
+    "downloadHint": "Télécharger au format PDF",
+    "downloadDisabledHint": "L'analyse n'est pas encore terminée — un score de risque est requis avant de pouvoir télécharger le rapport.",
+    "analysisIncomplete": "L'analyse de ce document n'est pas encore terminée. Le téléchargement du PDF sera activé dès qu'un score de risque sera disponible.",
+    "status": "Statut : {status}",
+    "noRiskFlags": "Aucun signal de risque détecté.",
+    "fields": {
+      "riskScore": "Score de risque",
+      "stellarTxHash": "Hash de transaction Stellar",
+      "anchoredAt": "Ancré le",
+      "fileHash": "Hash du fichier",
+      "riskFlags": "Signaux de risque"
+    },
+    "pdf": {
+      "title": "Rapport de risque du document",
+      "document": "Document : {title}",
+      "status": "Statut : {status}",
+      "riskScore": "Score de risque : {score}/100",
+      "stellarTxHash": "Hash de transaction Stellar : {hash}",
+      "anchoredAt": "Ancré le : {date}",
+      "riskFlags": "Signaux de risque :"
+    }
+  },
+  "documentVerify": {
+    "loading": "Chargement",
+    "notFound": "Document introuvable.",
+    "loadError": "Impossible de charger le document.",
+    "anchorError": "L'ancrage a échoué.",
+    "submitting": "Envoi au réseau Stellar…",
+    "pendingTxHash": "en attente — consultez l'explorateur Stellar",
+    "copy": "Copier",
+    "copyLabel": "Copier {label}",
+    "backToDocuments": "Retour aux documents",
+    "backToDocument": "Retour au document",
+    "printedCertificate": "Certificat de vérification SMALDA — imprimé le {date}",
+    "titles": {
+      "pre": "Ancrer sur Stellar",
+      "processing": "Ancrage en cours",
+      "post": "Vérification terminée"
+    },
+    "pre": {
+      "explainerTitle": "Qu'est-ce que l'ancrage sur la blockchain ?",
+      "explainerBody": "Ancrer votre document sur la blockchain Stellar crée une preuve permanente et infalsifiable de son existence. Une empreinte cryptographique de votre document est inscrite dans un registre public qui ne peut pas être modifié rétroactivement, ce qui permet à n'importe quel tiers de le vérifier de manière indépendante.",
+      "document": "Document",
+      "hashPreview": "Hash SHA-256 (aperçu)",
+      "estimatedCost": "Coût estimé : les frais d'une transaction Stellar (~0,00001 XLM, moins de 0,01 $)",
+      "anchor": "Ancrer sur Stellar"
+    },
+    "post": {
+      "successTitle": "Ancré avec succès sur Stellar",
+      "successBody": "Votre document a été enregistré de façon permanente sur la blockchain Stellar.",
+      "txHash": "Hash de transaction Stellar",
+      "anchoredAt": "Ancré le",
+      "ledger": "Registre",
+      "qrCode": "Code QR",
+      "qrAlt": "Code QR menant à la transaction Stellar",
+      "qrPlaceholder": "Espace réservé pour le code QR",
+      "qrPending": "Code QR disponible après génération côté serveur (BE-85)",
+      "downloadCertificate": "Télécharger le certificat de vérification",
+      "backToDocument": "Retour au document"
+    }
+  },
+  "map": {
+    "title": "Carte des documents",
+    "subtitle": "Vue géographique des documents fonciers.",
+    "summary": "{count, plural, one {# document cartographié affiché} other {# documents cartographiés affichés}} sur {total} enregistrements au total.",
+    "summaryLimited": "{count, plural, one {# document cartographié affiché} other {# documents cartographiés affichés}}. {loaded} enregistrements chargés sur {total}.",
+    "loading": "Chargement…",
+    "refresh": "Actualiser",
+    "resetView": "Réinitialiser la vue",
+    "retry": "Réessayer",
+    "sessionError": "Impossible de vérifier votre session.",
+    "loadError": "Impossible de charger les documents.",
+    "legend": "Légende :",
+    "capped": "Le chargement de la carte est limité à {count} documents. Affinez la liste des documents pour consulter les enregistrements restants.",
+    "missingLocation": "{count, plural, one {# document} other {# documents}} sans données de localisation (exclus de la carte).",
+    "empty": {
+      "title": "Aucune donnée de localisation",
+      "description": "Les documents disposant de coordonnées GPS apparaîtront sur cette carte. Téléversez un document avec des métadonnées de localisation pour le voir ici."
+    },
+    "tileError": {
+      "title": "Échec du chargement des tuiles de la carte",
+      "description": "Le fournisseur de tuiles est injoignable. Vérifiez votre connexion ou réessayez.",
+      "retry": "Recharger la carte"
+    },
+    "popup": {
+      "risk": "Risque : {score}/100",
+      "viewDetails": "Voir les détails →"
+    }
+  },
+  "adminActivity": {
+    "title": "Chronologie de l'activité des utilisateurs",
+    "subtitle": "Chronologie paginée des actions des utilisateurs, la plus récente en premier.",
+    "sampleData": "Impossible de charger l'activité — affichage de données d'exemple.",
+    "feedTitle": "Flux d'activité",
+    "eventCount": "{count, plural, one {# événement} other {# événements}}",
+    "loading": "Chargement de l'activité…",
+    "empty": "Aucune activité trouvée.",
+    "accessDenied": {
+      "title": "Accès administrateur requis",
+      "description": "Vous devez disposer d'un compte administrateur pour consulter la chronologie d'activité."
+    },
+    "filters": {
+      "label": "Filtres d'activité",
+      "userId": "ID utilisateur",
+      "userIdPlaceholder": "Filtrer par ID utilisateur",
+      "actionType": "Type d'action",
+      "allActionTypes": "Tous les types d'action",
+      "apply": "Appliquer",
+      "reset": "Réinitialiser"
+    },
+    "pagination": {
+      "label": "Pagination",
+      "summary": "Page {page} sur {totalPages}"
+    }
+  },
+  "adminAuditLogs": {
+    "title": "Journaux d'accès HTTP",
+    "subtitle": "Affichage de {pageSize} journaux d'accès au maximum par page.",
+    "loadError": "Impossible de charger les journaux d'audit.",
+    "cardTitle": "Journaux d'audit",
+    "requestCount": "{count, plural, one {# requête trouvée} other {# requêtes trouvées}}",
+    "loading": "Chargement des journaux d'audit…",
+    "empty": "Aucun journal d'audit trouvé.",
+    "filters": {
+      "label": "Filtres des journaux d'audit",
+      "userId": "ID utilisateur",
+      "from": "Du",
+      "to": "Au",
+      "apply": "Appliquer",
+      "reset": "Réinitialiser"
+    },
+    "table": {
+      "ipAddress": "Adresse IP",
+      "timestamp": "Horodatage",
+      "method": "Méthode",
+      "path": "Chemin",
+      "status": "Statut"
+    },
+    "pagination": {
+      "label": "Pagination des journaux d'audit",
+      "summary": "Page {page} sur {totalPages}"
+    }
   }
 }

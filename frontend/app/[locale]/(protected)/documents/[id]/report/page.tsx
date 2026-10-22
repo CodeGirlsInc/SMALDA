@@ -1,9 +1,13 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { jsPDF } from "jspdf";
+import { Link } from "@/i18n/navigation";
+import { useDateFormatting } from "@/i18n/formatting";
+import { request } from "@/lib/api-client";
+import { apiUrl } from "@/lib/api-config";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -23,14 +27,6 @@ interface DocumentReport {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
-
-function getAuthHeaders(): HeadersInit {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
 
 /** Analysis is only considered complete once a risk score exists. */
 function hasCompletedAnalysis(doc: DocumentReport): boolean {
@@ -53,6 +49,9 @@ const MOCK_DOCUMENT: DocumentReport = {
 // ---------------------------------------------------------------------------
 
 export default function DocumentReportPage() {
+  const t = useTranslations("documentReport");
+  const tStatus = useTranslations("documents.status");
+  const { formatDateTime } = useDateFormatting();
   const params = useParams<{ id: string }>();
   const docId = params.id;
 
@@ -62,43 +61,38 @@ export default function DocumentReportPage() {
 
   useEffect(() => {
     if (!docId) return;
-    fetch(`${API_BASE}/api/documents/${docId}`, {
-      headers: getAuthHeaders(),
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error(`Failed to load document (${res.status})`);
-        return res.json() as Promise<DocumentReport>;
-      })
+    request<DocumentReport>(apiUrl(`/documents/${encodeURIComponent(docId)}`))
       .then(setDoc)
-      .catch((err) => {
+      .catch(() => {
         // Backend may be unavailable — fall back to sample data.
         setDoc(MOCK_DOCUMENT);
-        setError(
-          err instanceof Error
-            ? `${err.message} — showing sample data`
-            : "Showing sample data",
-        );
+        setError(t("sampleData"));
       })
       .finally(() => setLoading(false));
-  }, [docId]);
+  }, [docId, t]);
+
+  function statusLabel(status: string): string {
+    const key = status.toLowerCase();
+    return tStatus.has(key) ? tStatus(key) : status;
+  }
 
   function handleDownloadPdf() {
     if (!doc || !hasCompletedAnalysis(doc)) return;
     const pdf = new jsPDF();
     pdf.setFontSize(18);
-    pdf.text("Document Risk Report", 14, 20);
+    pdf.text(t("pdf.title"), 14, 20);
     pdf.setFontSize(11);
-    pdf.text(`Document: ${doc.title}`, 14, 32);
-    pdf.text(`Status: ${doc.status}`, 14, 38);
-    pdf.text(`Risk score: ${doc.riskScore}/100`, 14, 44);
+    pdf.text(t("pdf.document", { title: doc.title }), 14, 32);
+    pdf.text(t("pdf.status", { status: statusLabel(doc.status) }), 14, 38);
+    pdf.text(t("pdf.riskScore", { score: doc.riskScore ?? 0 }), 14, 44);
     if (doc.stellarTxHash) {
-      pdf.text(`Stellar tx hash: ${doc.stellarTxHash}`, 14, 50);
+      pdf.text(t("pdf.stellarTxHash", { hash: doc.stellarTxHash }), 14, 50);
     }
     if (doc.anchoredAt) {
-      pdf.text(`Anchored at: ${new Date(doc.anchoredAt).toLocaleString()}`, 14, 56);
+      pdf.text(t("pdf.anchoredAt", { date: formatDateTime(doc.anchoredAt) }), 14, 56);
     }
     if (doc.riskFlags && doc.riskFlags.length > 0) {
-      pdf.text("Risk flags:", 14, 66);
+      pdf.text(t("pdf.riskFlags"), 14, 66);
       doc.riskFlags.forEach((flag, i) => {
         pdf.text(`- ${flag}`, 16, 72 + i * 6);
       });
@@ -119,10 +113,10 @@ export default function DocumentReportPage() {
     return (
       <main className="mx-auto max-w-2xl px-4 py-8">
         <p className="text-sm text-red-600">
-          {error ?? "Document not found."}
+          {error ?? t("notFound")}
         </p>
         <Link href="/documents" className="mt-3 block text-sm text-blue-600 underline">
-          Back to documents
+          {t("backToDocuments")}
         </Link>
       </main>
     );
@@ -136,7 +130,7 @@ export default function DocumentReportPage() {
         href={`/documents/${doc.id}`}
         className="mb-4 inline-block text-sm text-gray-500 hover:text-gray-700 print:hidden"
       >
-        ← Back to document
+        {t("backToDocument")}
       </Link>
 
       {error && (
@@ -146,13 +140,11 @@ export default function DocumentReportPage() {
       )}
 
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Risk report</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{t("title")}</h1>
         {/* Graceful fallback: disabled button while analysis is incomplete */}
         <span
           title={
-            analysisComplete
-              ? "Download as PDF"
-              : "Analysis is not complete yet — a risk score is required before the report can be downloaded."
+            analysisComplete ? t("downloadHint") : t("downloadDisabledHint")
           }
         >
           <button
@@ -160,33 +152,34 @@ export default function DocumentReportPage() {
             disabled={!analysisComplete}
             className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 print:hidden"
           >
-            Download PDF
+            {t("downloadPdf")}
           </button>
         </span>
       </div>
 
       {!analysisComplete && (
         <p className="mt-2 rounded-lg bg-yellow-50 p-3 text-sm text-yellow-800 print:hidden">
-          This document hasn&rsquo;t completed analysis yet. The PDF download
-          will be enabled once a risk score is available.
+          {t("analysisIncomplete")}
         </p>
       )}
 
       {/* Printable summary view */}
       <div className="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-900">{doc.title}</h2>
-        <p className="mt-1 text-sm text-gray-500">Status: {doc.status}</p>
+        <p className="mt-1 text-sm text-gray-500">
+          {t("status", { status: statusLabel(doc.status) })}
+        </p>
 
         <dl className="mt-6 space-y-3 text-sm">
           <div className="flex justify-between border-b border-gray-100 pb-2">
-            <dt className="text-gray-500">Risk score</dt>
+            <dt className="text-gray-500">{t("fields.riskScore")}</dt>
             <dd className="font-semibold text-gray-900">
               {doc.riskScore != null ? `${doc.riskScore}/100` : "—"}
             </dd>
           </div>
           {doc.stellarTxHash && (
             <div className="flex justify-between border-b border-gray-100 pb-2">
-              <dt className="text-gray-500">Stellar transaction hash</dt>
+              <dt className="text-gray-500">{t("fields.stellarTxHash")}</dt>
               <dd className="max-w-[60%] truncate font-mono text-gray-800">
                 {doc.stellarTxHash}
               </dd>
@@ -194,15 +187,15 @@ export default function DocumentReportPage() {
           )}
           {doc.anchoredAt && (
             <div className="flex justify-between border-b border-gray-100 pb-2">
-              <dt className="text-gray-500">Anchored at</dt>
+              <dt className="text-gray-500">{t("fields.anchoredAt")}</dt>
               <dd className="text-gray-800">
-                {new Date(doc.anchoredAt).toLocaleString()}
+                {formatDateTime(doc.anchoredAt)}
               </dd>
             </div>
           )}
           {doc.fileHash && (
             <div className="flex justify-between border-b border-gray-100 pb-2">
-              <dt className="text-gray-500">File hash</dt>
+              <dt className="text-gray-500">{t("fields.fileHash")}</dt>
               <dd className="max-w-[60%] truncate font-mono text-gray-800">
                 {doc.fileHash}
               </dd>
@@ -210,7 +203,9 @@ export default function DocumentReportPage() {
           )}
         </dl>
 
-        <h3 className="mt-6 text-sm font-semibold text-gray-900">Risk flags</h3>
+        <h3 className="mt-6 text-sm font-semibold text-gray-900">
+          {t("fields.riskFlags")}
+        </h3>
         {doc.riskFlags && doc.riskFlags.length > 0 ? (
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-700">
             {doc.riskFlags.map((flag) => (
@@ -218,7 +213,7 @@ export default function DocumentReportPage() {
             ))}
           </ul>
         ) : (
-          <p className="mt-2 text-sm text-gray-500">No risk flags detected.</p>
+          <p className="mt-2 text-sm text-gray-500">{t("noRiskFlags")}</p>
         )}
       </div>
     </main>

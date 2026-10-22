@@ -255,5 +255,192 @@
     "docNotFound": "Sin registro anclado",
     "docNotFoundDescription": "Si llegaste a esta página desde un enlace de verificación, el hash consultado nunca se ancló en el libro de Stellar. Esto es distinto de una verificación fallida, que indicaría que existe un ancla pero no coincide con lo enviado.",
     "dashboardHome": "Volver al panel"
+  },
+  "documentDetail": {
+    "loading": "Cargando los detalles del documento",
+    "notFound": "Documento no encontrado.",
+    "loadError": "No se pudo cargar el documento.",
+    "verifyError": "La verificación falló.",
+    "retry": "Reintentar",
+    "uploaded": "Subido el {date}",
+    "timelineTitle": "Cronología del estado",
+    "timelineLabel": "Cronología del estado del documento",
+    "risk": {
+      "title": "Análisis de riesgo",
+      "unavailable": "El análisis de riesgo aún no está disponible para este documento.",
+      "gaugeLabel": "Puntuación de riesgo: {score} de 100",
+      "outOf": "/ 100",
+      "low": "Riesgo bajo",
+      "medium": "Riesgo medio",
+      "high": "Riesgo alto",
+      "detected": "Detectado",
+      "notDetected": "No detectado",
+      "weight": "Peso: {value} %",
+      "contribution": "Contribución: {value}"
+    },
+    "actions": {
+      "title": "Acciones",
+      "verify": "Verificar en Stellar",
+      "downloadReport": "Descargar informe",
+      "fileDispute": "Presentar disputa",
+      "share": "Compartir"
+    },
+    "share": {
+      "label": "Compartir documento",
+      "title": "Compartir documento",
+      "copy": "Copiar",
+      "copied": "¡Copiado!",
+      "close": "Cerrar"
+    }
+  },
+  "documentReport": {
+    "title": "Informe de riesgo",
+    "sampleData": "No se pudo cargar este documento — se muestran datos de ejemplo.",
+    "notFound": "Documento no encontrado.",
+    "backToDocuments": "Volver a los documentos",
+    "backToDocument": "← Volver al documento",
+    "downloadPdf": "Descargar PDF",
+    "downloadHint": "Descargar como PDF",
+    "downloadDisabledHint": "El análisis aún no ha terminado: se necesita una puntuación de riesgo antes de poder descargar el informe.",
+    "analysisIncomplete": "Este documento aún no ha completado el análisis. La descarga del PDF se habilitará cuando haya una puntuación de riesgo disponible.",
+    "status": "Estado: {status}",
+    "noRiskFlags": "No se detectaron indicadores de riesgo.",
+    "fields": {
+      "riskScore": "Puntuación de riesgo",
+      "stellarTxHash": "Hash de transacción de Stellar",
+      "anchoredAt": "Anclado el",
+      "fileHash": "Hash del archivo",
+      "riskFlags": "Indicadores de riesgo"
+    },
+    "pdf": {
+      "title": "Informe de riesgo del documento",
+      "document": "Documento: {title}",
+      "status": "Estado: {status}",
+      "riskScore": "Puntuación de riesgo: {score}/100",
+      "stellarTxHash": "Hash de transacción de Stellar: {hash}",
+      "anchoredAt": "Anclado el: {date}",
+      "riskFlags": "Indicadores de riesgo:"
+    }
+  },
+  "documentVerify": {
+    "loading": "Cargando",
+    "notFound": "Documento no encontrado.",
+    "loadError": "No se pudo cargar el documento.",
+    "anchorError": "El anclaje falló.",
+    "submitting": "Enviando a la red de Stellar…",
+    "pendingTxHash": "pendiente — consulte el explorador de Stellar",
+    "copy": "Copiar",
+    "copyLabel": "Copiar {label}",
+    "backToDocuments": "Volver a los documentos",
+    "backToDocument": "Volver al documento",
+    "printedCertificate": "Certificado de verificación de SMALDA — impreso el {date}",
+    "titles": {
+      "pre": "Anclar en Stellar",
+      "processing": "Anclaje en curso",
+      "post": "Verificación completada"
+    },
+    "pre": {
+      "explainerTitle": "¿Qué es el anclaje en blockchain?",
+      "explainerBody": "Anclar su documento en la blockchain de Stellar crea un registro permanente e inalterable de su existencia. Un hash criptográfico de su documento se escribe en un libro público que no puede modificarse retroactivamente, lo que permite que cualquier tercero lo verifique de forma independiente.",
+      "document": "Documento",
+      "hashPreview": "Hash SHA-256 (vista previa)",
+      "estimatedCost": "Costo estimado: la comisión de una transacción de Stellar (~0,00001 XLM, menos de 0,01 $)",
+      "anchor": "Anclar en Stellar"
+    },
+    "post": {
+      "successTitle": "Anclado correctamente en Stellar",
+      "successBody": "Su documento ha quedado registrado de forma permanente en la blockchain de Stellar.",
+      "txHash": "Hash de transacción de Stellar",
+      "anchoredAt": "Anclado el",
+      "ledger": "Ledger",
+      "qrCode": "Código QR",
+      "qrAlt": "Código QR que enlaza a la transacción de Stellar",
+      "qrPlaceholder": "Marcador de posición del código QR",
+      "qrPending": "Código QR disponible tras la generación en el servidor (BE-85)",
+      "downloadCertificate": "Descargar certificado de verificación",
+      "backToDocument": "Volver al documento"
+    }
+  },
+  "map": {
+    "title": "Mapa de documentos",
+    "subtitle": "Vista geográfica de los documentos de tierras.",
+    "summary": "Mostrando {count, plural, one {# documento en el mapa} other {# documentos en el mapa}} de {total} registros en total.",
+    "summaryLimited": "Mostrando {count, plural, one {# documento en el mapa} other {# documentos en el mapa}}. Se cargaron {loaded} de {total} registros.",
+    "loading": "Cargando…",
+    "refresh": "Actualizar",
+    "resetView": "Restablecer vista",
+    "retry": "Reintentar",
+    "sessionError": "No se pudo verificar su sesión.",
+    "loadError": "No se pudieron cargar los documentos.",
+    "legend": "Leyenda:",
+    "capped": "La carga del mapa está limitada a {count} documentos. Acote la lista de documentos para revisar los registros restantes.",
+    "missingLocation": "{count, plural, one {# documento} other {# documentos}} sin datos de ubicación (excluidos del mapa).",
+    "empty": {
+      "title": "Sin datos de ubicación",
+      "description": "Los documentos con coordenadas GPS aparecerán en este mapa. Suba un documento con metadatos de ubicación para verlo aquí."
+    },
+    "tileError": {
+      "title": "No se pudieron cargar los mosaicos del mapa",
+      "description": "No se pudo contactar con el proveedor de mosaicos. Compruebe su conexión o inténtelo de nuevo.",
+      "retry": "Recargar mapa"
+    },
+    "popup": {
+      "risk": "Riesgo: {score}/100",
+      "viewDetails": "Ver detalles →"
+    }
+  },
+  "adminActivity": {
+    "title": "Cronología de actividad de usuarios",
+    "subtitle": "Cronología paginada de acciones de usuarios, la más reciente primero.",
+    "sampleData": "No se pudo cargar la actividad — se muestran datos de ejemplo.",
+    "feedTitle": "Registro de actividad",
+    "eventCount": "{count, plural, one {# evento} other {# eventos}}",
+    "loading": "Cargando actividad…",
+    "empty": "No se encontró actividad.",
+    "accessDenied": {
+      "title": "Se requiere acceso de administrador",
+      "description": "Necesita una cuenta de administrador para ver la cronología de actividad."
+    },
+    "filters": {
+      "label": "Filtros de actividad",
+      "userId": "ID de usuario",
+      "userIdPlaceholder": "Filtrar por ID de usuario",
+      "actionType": "Tipo de acción",
+      "allActionTypes": "Todos los tipos de acción",
+      "apply": "Aplicar",
+      "reset": "Restablecer"
+    },
+    "pagination": {
+      "label": "Paginación",
+      "summary": "Página {page} de {totalPages}"
+    }
+  },
+  "adminAuditLogs": {
+    "title": "Registros de acceso HTTP",
+    "subtitle": "Se muestran como máximo {pageSize} registros de acceso por página.",
+    "loadError": "No se pudieron cargar los registros de auditoría.",
+    "cardTitle": "Registros de auditoría",
+    "requestCount": "{count, plural, one {# solicitud encontrada} other {# solicitudes encontradas}}",
+    "loading": "Cargando registros de auditoría…",
+    "empty": "No se encontraron registros de auditoría.",
+    "filters": {
+      "label": "Filtros de registros de auditoría",
+      "userId": "ID de usuario",
+      "from": "Desde",
+      "to": "Hasta",
+      "apply": "Aplicar",
+      "reset": "Restablecer"
+    },
+    "table": {
+      "ipAddress": "Dirección IP",
+      "timestamp": "Fecha y hora",
+      "method": "Método",
+      "path": "Ruta",
+      "status": "Estado"
+    },
+    "pagination": {
+      "label": "Paginación de registros de auditoría",
+      "summary": "Página {page} de {totalPages}"
+    }
   }
 }

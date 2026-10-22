@@ -14,5 +14,6 @@ paginated.
 
 ## Access
 
-The route lives under `(protected)/admin`, so it is only reachable by admins
-(guarded per FE-44).
+The route lives under `[locale]/(protected)/admin`, so it is only reachable by
+admins (guarded per FE-44). Copy is translated under the `adminAuditLogs`
+namespace in `messages/*.json`.

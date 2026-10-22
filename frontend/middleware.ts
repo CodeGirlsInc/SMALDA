@@ -25,6 +25,15 @@ const PROTECTED_ROOTS = [
   "/settings",
 ] as const;
 
+/**
+ * URLs from the retired non-localised route tree whose page now lives at a
+ * different path under app/[locale]. Each entry redirects the prefix and
+ * everything below it (`/document/abc/report` → `/documents/abc/report`).
+ */
+const LEGACY_ROUTE_REDIRECTS: ReadonlyArray<readonly [string, string]> = [
+  ["/document", "/documents"],
+];
+
 type AuthCheck = "authenticated" | "unauthenticated" | "forbidden" | "unavailable";
 
 function isLocale(value: string | undefined): value is Locale {
@@ -94,6 +103,19 @@ function isInfrastructurePath(pathname: string): boolean {
     routePath === "/_vercel" ||
     routePath.startsWith("/_vercel/")
   );
+}
+
+export function getLegacyRedirectPath(pathname: string): string | null {
+  const firstSegment = getFirstSegment(pathname);
+  const localePrefix = isLocale(firstSegment) ? `/${firstSegment}` : "";
+  const routePath = pathname.slice(localePrefix.length) || "/";
+
+  for (const [from, to] of LEGACY_ROUTE_REDIRECTS) {
+    if (routePath === from || routePath.startsWith(`${from}/`)) {
+      return `${localePrefix}${to}${routePath.slice(from.length)}`;
+    }
+  }
+  return null;
 }
 
 function isStaticAssetPath(pathname: string): boolean {
@@ -213,6 +235,13 @@ async function verifyAccessToken(token: string): Promise<AccessTokenVerification
 export default async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   if (isInfrastructurePath(pathname)) return NextResponse.next();
+
+  const legacyRedirectPath = getLegacyRedirectPath(pathname);
+  if (legacyRedirectPath) {
+    const url = request.nextUrl.clone();
+    url.pathname = legacyRedirectPath;
+    return NextResponse.redirect(url, 308);
+  }
 
   const firstSegment = getFirstSegment(pathname);
   const unsupportedLocale = Boolean(

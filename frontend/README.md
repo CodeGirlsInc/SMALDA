@@ -41,3 +41,19 @@ Reusable test setups, mocks, and shared helpers live in `frontend/test-utils/`. 
 
 To add a new shared helper, drop it into `frontend/test-utils/` (same directory as `test-setup.ts`) and reference it from individual tests via relative imports.
 
+## Routing and i18n
+
+Every page lives under `app/[locale]/`. With `localePrefix: "as-needed"`, English URLs stay unprefixed (`/documents/abc`) and other locales are prefixed (`/fr/documents/abc`). Do not add pages outside `app/[locale]/`: they would bypass translations and duplicate a localised route. If a page moves to a new URL, add the old prefix to `LEGACY_ROUTE_REDIRECTS` in `middleware.ts` so existing links keep working.
+
+User-facing copy goes in `messages/{en,fr,es}.json` and is read with `useTranslations` / `getTranslations`. CI enforces two checks:
+
+- `npm run check:locales` fails if the three message files do not have identical key sets.
+- `npm run check:hardcoded` flags JSX text that looks like untranslated copy (test files are skipped).
+
+### Hardcoded-string baseline
+
+Strings that were already hardcoded when the check was added to CI are listed in `scripts/hardcoded-strings-baseline.json`, keyed by file and text (not line number). The check fails only on strings that are **not** in the baseline, so existing debt does not block PRs but new debt cannot be added. The CI step is currently `continue-on-error` while the heuristic beds in.
+
+- **Translated a baselined string?** The check prints a reminder. Run `npm run check:hardcoded -- --update-baseline` and commit the smaller baseline. The goal is to ratchet it down to empty.
+- **Got a new violation?** Move the copy into `messages/*.json`. Do not regenerate the baseline to silence it. If the match is a false positive, adjust the markup or the ignore patterns in `scripts/check-hardcoded-strings.mjs`.
+

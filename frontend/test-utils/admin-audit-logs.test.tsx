@@ -1,6 +1,8 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import AdminAuditLogsPage from "@/app/(protected)/admin/audit-logs/page";
+import { NextIntlClientProvider } from "next-intl";
+import AdminAuditLogsPage from "@/app/[locale]/(protected)/admin/audit-logs/page";
+import messages from "@/messages/en.json";
 
 const mockFetch = jest.fn();
 
@@ -24,7 +26,11 @@ function response(body: unknown): Response {
 }
 
 function renderPage() {
-  return render(<AdminAuditLogsPage />);
+  return render(
+    <NextIntlClientProvider locale="en" messages={messages}>
+      <AdminAuditLogsPage />
+    </NextIntlClientProvider>,
+  );
 }
 
 describe("AdminAuditLogsPage", () => {

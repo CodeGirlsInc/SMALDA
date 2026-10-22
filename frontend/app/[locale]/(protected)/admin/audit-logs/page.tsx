@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import {
   Card,
   CardHeader,
@@ -8,6 +9,7 @@ import {
   CardDescription,
   CardContent,
 } from "@/components/ui/card";
+import { useDateFormatting } from "@/i18n/formatting";
 import { apiUrl } from "@/lib/api-config";
 import { getAccessToken } from "@/lib/session";
 import {
@@ -44,6 +46,9 @@ function getAuthHeaders(): HeadersInit {
 }
 
 export default function AdminAuditLogsPage() {
+  const t = useTranslations("adminAuditLogs");
+  const tCommon = useTranslations("common");
+  const { formatDateTime } = useDateFormatting();
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -84,19 +89,15 @@ export default function AdminAuditLogsPage() {
       setAuditLogs(Array.isArray(result.data) ? result.data : []);
       setTotal(result.total ?? 0);
       setTotalPages(result.totalPages ?? 0);
-    } catch (fetchError) {
+    } catch {
       setAuditLogs([]);
       setTotal(0);
       setTotalPages(0);
-      setError(
-        fetchError instanceof Error
-          ? fetchError.message
-          : "Failed to load audit logs",
-      );
+      setError(t("loadError"));
     } finally {
       setLoading(false);
     }
-  }, [appliedFilters, page]);
+  }, [appliedFilters, page, t]);
 
   useEffect(() => {
     fetchAuditLogs();
@@ -122,19 +123,19 @@ export default function AdminAuditLogsPage() {
   return (
     <main className="space-y-6 p-4 md:p-8">
       <div>
-        <h1 className="text-2xl font-bold">HTTP Access Logs</h1>
+        <h1 className="text-2xl font-bold">{t("title")}</h1>
         <p className="text-sm text-gray-500">
-          Showing at most {PAGE_SIZE} access logs per page.
+          {t("subtitle", { pageSize: PAGE_SIZE })}
         </p>
       </div>
 
       <section
-        aria-label="Audit log filters"
+        aria-label={t("filters.label")}
         className="flex flex-wrap items-end gap-4 rounded-lg border border-gray-200 bg-white p-4"
       >
         <div className="flex flex-col gap-1">
           <label htmlFor="audit-user-id" className="text-sm font-medium text-gray-700">
-            User ID
+            {t("filters.userId")}
           </label>
           <input
             id="audit-user-id"
@@ -145,7 +146,7 @@ export default function AdminAuditLogsPage() {
         </div>
         <div className="flex flex-col gap-1">
           <label htmlFor="audit-start-date" className="text-sm font-medium text-gray-700">
-            From
+            {t("filters.from")}
           </label>
           <input
             id="audit-start-date"
@@ -157,7 +158,7 @@ export default function AdminAuditLogsPage() {
         </div>
         <div className="flex flex-col gap-1">
           <label htmlFor="audit-end-date" className="text-sm font-medium text-gray-700">
-            To
+            {t("filters.to")}
           </label>
           <input
             id="audit-end-date"
@@ -173,14 +174,14 @@ export default function AdminAuditLogsPage() {
             onClick={applyFilters}
             className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
-            Apply
+            {t("filters.apply")}
           </button>
           <button
             type="button"
             onClick={resetFilters}
             className="rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
-            Reset
+            {t("filters.reset")}
           </button>
         </div>
       </section>
@@ -193,37 +194,35 @@ export default function AdminAuditLogsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Audit Logs</CardTitle>
-          <CardDescription>
-            {total} {total === 1 ? "request" : "requests"} found
-          </CardDescription>
+          <CardTitle>{t("cardTitle")}</CardTitle>
+          <CardDescription>{t("requestCount", { count: total })}</CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? (
             <p className="py-6 text-sm text-gray-500" role="status">
-              Loading audit logs…
+              {t("loading")}
             </p>
           ) : auditLogs.length === 0 ? (
             <p className="py-6 text-center text-sm text-gray-500">
-              No audit logs found.
+              {t("empty")}
             </p>
           ) : (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>IP Address</TableHead>
-                    <TableHead>Timestamp</TableHead>
-                    <TableHead>Method</TableHead>
-                    <TableHead>Path</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>{t("table.ipAddress")}</TableHead>
+                    <TableHead>{t("table.timestamp")}</TableHead>
+                    <TableHead>{t("table.method")}</TableHead>
+                    <TableHead>{t("table.path")}</TableHead>
+                    <TableHead>{t("table.status")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {auditLogs.map((log) => (
                     <TableRow key={log.id}>
                       <TableCell>{log.ipAddress}</TableCell>
-                      <TableCell>{new Date(log.createdAt).toLocaleString()}</TableCell>
+                      <TableCell>{formatDateTime(log.createdAt)}</TableCell>
                       <TableCell>{log.httpMethod}</TableCell>
                       <TableCell>{log.routePath}</TableCell>
                       <TableCell>{log.statusCode ?? "—"}</TableCell>
@@ -236,11 +235,11 @@ export default function AdminAuditLogsPage() {
 
           {totalPages > 1 ? (
             <nav
-              aria-label="Audit log pagination"
+              aria-label={t("pagination.label")}
               className="mt-4 flex items-center justify-between border-t border-gray-100 pt-4 text-sm"
             >
               <span className="text-gray-600">
-                Page {page} of {totalPages}
+                {t("pagination.summary", { page, totalPages })}
               </span>
               <div className="flex gap-2">
                 <button
@@ -249,7 +248,7 @@ export default function AdminAuditLogsPage() {
                   disabled={page === 1 || loading}
                   className="rounded border border-gray-300 px-3 py-1 text-gray-700 hover:bg-gray-50 disabled:opacity-40"
                 >
-                  Previous
+                  {tCommon("previous")}
                 </button>
                 <button
                   type="button"
@@ -257,7 +256,7 @@ export default function AdminAuditLogsPage() {
                   disabled={page === totalPages || loading}
                   className="rounded border border-gray-300 px-3 py-1 text-gray-700 hover:bg-gray-50 disabled:opacity-40"
                 >
-                  Next
+                  {tCommon("next")}
                 </button>
               </div>
             </nav>
