@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef } from "react";
 import type { DocumentStatus, ParcelDocument } from "@/types/parcel";
+import { stellarTxUrl } from "@/lib/stellar";
 
 // Re-exported for backward compatibility with any existing imports of
 // these types from this component file; the canonical definitions now
@@ -254,7 +255,7 @@ export default function ParcelSidebar({
                 </a>
                 {document.stellarTxHash && (
                   <a
-                    href={`https://stellar.expert/explorer/public/tx/${document.stellarTxHash}`}
+                    href={stellarTxUrl(document.stellarTxHash)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm font-medium text-blue-600 hover:underline"

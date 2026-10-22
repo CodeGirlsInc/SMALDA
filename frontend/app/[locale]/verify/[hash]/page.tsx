@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { stellarTxUrl } from "@/lib/stellar";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -20,7 +21,6 @@ interface VerificationResult {
 // ---------------------------------------------------------------------------
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
-const STELLAR_EXPLORER = "https://stellar.expert/explorer/testnet/tx";
 
 const HASH_REGEX = /^[a-fA-F0-9]{64}$/;
 
@@ -166,7 +166,7 @@ export default function PublicVerifyPage() {
                       </dt>
                       <dd>
                         <a
-                          href={`${STELLAR_EXPLORER}/${result.stellarTxHash}`}
+                          href={stellarTxUrl(result.stellarTxHash)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="font-mono text-sm text-blue-600 underline break-all hover:text-blue-800"
