@@ -1,10 +1,13 @@
 import { NextRequest } from "next/server";
-import middleware, { isProtectedPath } from "@/middleware";
+import middleware, { getLegacyRedirectPath, isProtectedPath } from "@/middleware";
 
+// createMiddleware(routing) returns the locale middleware itself, so the mock
+// must hand back a function rather than a response.
 jest.mock("next-intl/middleware", () => ({
   __esModule: true,
-  default: jest.fn(() => {
-    const { NextResponse: response } = require("next/server");
+  default: jest.fn(() => () => {
+    const { NextResponse: response } =
+      jest.requireActual<typeof import("next/server")>("next/server");
     return response.next();
   }),
 }));
@@ -151,6 +154,38 @@ describe("protected route middleware", () => {
 
     expect(redirectUrl.pathname).toBe("/en/login");
     expect(redirectUrl.searchParams.get("from")).toBe("callback");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("legacy route redirects", () => {
+  it("maps the retired /document tree onto /documents", () => {
+    expect(getLegacyRedirectPath("/document/abc")).toBe("/documents/abc");
+    expect(getLegacyRedirectPath("/document/abc/report")).toBe(
+      "/documents/abc/report",
+    );
+    expect(getLegacyRedirectPath("/document")).toBe("/documents");
+    expect(getLegacyRedirectPath("/fr/document/abc")).toBe("/fr/documents/abc");
+  });
+
+  it("leaves canonical and look-alike paths alone", () => {
+    expect(getLegacyRedirectPath("/documents/abc")).toBeNull();
+    expect(getLegacyRedirectPath("/fr/documents/abc")).toBeNull();
+    expect(getLegacyRedirectPath("/documentation")).toBeNull();
+    expect(getLegacyRedirectPath("/map")).toBeNull();
+    expect(getLegacyRedirectPath("/register")).toBeNull();
+    expect(getLegacyRedirectPath("/auth/oauth/callback")).toBeNull();
+  });
+
+  it("permanently redirects old URLs before authenticating, keeping the query", async () => {
+    const result = await middleware(
+      new NextRequest("https://smalda.test/es/document/abc?tab=risk"),
+    );
+    const redirectUrl = new URL(result.headers.get("location")!);
+
+    expect(result.status).toBe(308);
+    expect(redirectUrl.pathname).toBe("/es/documents/abc");
+    expect(redirectUrl.searchParams.get("tab")).toBe("risk");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

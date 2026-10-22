@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { CircleUser } from "lucide-react";
+import { useDateFormatting } from "@/i18n/formatting";
 import { apiUrl } from "@/lib/api-config";
 import { getAccessToken } from "@/lib/session";
 
@@ -79,6 +81,9 @@ const ACTION_TYPES = ["login", "upload", "delete", "view", "verify", "dispute"];
 // ---------------------------------------------------------------------------
 
 export default function AdminActivityPage() {
+  const t = useTranslations("adminActivity");
+  const tCommon = useTranslations("common");
+  const { formatDateTime } = useDateFormatting();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -124,7 +129,7 @@ export default function AdminActivityPage() {
       );
       setActivities(sorted);
       setTotal(json?.total ?? sorted.length);
-    } catch (err) {
+    } catch {
       // Backend may be unavailable — fall back to sample data.
       const filtered = MOCK_ACTIVITY.filter(
         (a) =>
@@ -133,15 +138,11 @@ export default function AdminActivityPage() {
       );
       setActivities(filtered);
       setTotal(filtered.length);
-      setError(
-        err instanceof Error
-          ? `${err.message} — showing sample data`
-          : "Showing sample data",
-      );
+      setError(t("sampleData"));
     } finally {
       setLoading(false);
     }
-  }, [page, appliedUserId, appliedActionType]);
+  }, [page, appliedUserId, appliedActionType, t]);
 
   useEffect(() => {
     fetchActivity();
@@ -168,10 +169,10 @@ export default function AdminActivityPage() {
       <main className="p-4 md:p-8">
         <div className="rounded-xl border border-red-200 bg-red-50 p-6">
           <h1 className="text-lg font-semibold text-red-800">
-            Admin access required
+            {t("accessDenied.title")}
           </h1>
           <p className="mt-1 text-sm text-red-700">
-            You need an administrator account to view the activity timeline.
+            {t("accessDenied.description")}
           </p>
         </div>
       </main>
@@ -180,14 +181,12 @@ export default function AdminActivityPage() {
 
   return (
     <main className="p-4 md:p-8">
-      <h1 className="mb-1 text-2xl font-bold">User Activity Timeline</h1>
-      <p className="mb-6 text-sm text-gray-500">
-        Paginated user-action timeline, most recent first.
-      </p>
+      <h1 className="mb-1 text-2xl font-bold">{t("title")}</h1>
+      <p className="mb-6 text-sm text-gray-500">{t("subtitle")}</p>
 
       {/* Filters */}
       <section
-        aria-label="Activity filters"
+        aria-label={t("filters.label")}
         className="mb-6 flex flex-wrap items-end gap-4 rounded-xl border border-gray-200 bg-white p-4"
       >
         <div className="flex flex-col gap-1">
@@ -195,14 +194,14 @@ export default function AdminActivityPage() {
             htmlFor="userId-filter"
             className="text-sm font-medium text-gray-700"
           >
-            User ID
+            {t("filters.userId")}
           </label>
           <input
             id="userId-filter"
             type="text"
             value={userId}
             onChange={(e) => setUserId(e.target.value)}
-            placeholder="Filter by user id"
+            placeholder={t("filters.userIdPlaceholder")}
             className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
@@ -211,7 +210,7 @@ export default function AdminActivityPage() {
             htmlFor="actionType-filter"
             className="text-sm font-medium text-gray-700"
           >
-            Action type
+            {t("filters.actionType")}
           </label>
           <select
             id="actionType-filter"
@@ -219,7 +218,7 @@ export default function AdminActivityPage() {
             onChange={(e) => setActionType(e.target.value)}
             className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="">All action types</option>
+            <option value="">{t("filters.allActionTypes")}</option>
             {ACTION_TYPES.map((type) => (
               <option key={type} value={type}>
                 {type}
@@ -232,13 +231,13 @@ export default function AdminActivityPage() {
             onClick={handleApply}
             className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
-            Apply
+            {t("filters.apply")}
           </button>
           <button
             onClick={handleReset}
             className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
-            Reset
+            {t("filters.reset")}
           </button>
         </div>
       </section>
@@ -251,19 +250,17 @@ export default function AdminActivityPage() {
 
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="border-b border-gray-100 p-4">
-          <h2 className="text-sm font-semibold text-gray-900">Activity feed</h2>
-          <p className="text-xs text-gray-500">
-            {total} {total === 1 ? "event" : "events"}
-          </p>
+          <h2 className="text-sm font-semibold text-gray-900">{t("feedTitle")}</h2>
+          <p className="text-xs text-gray-500">{t("eventCount", { count: total })}</p>
         </div>
 
         {loading ? (
           <p className="p-6 text-sm text-gray-500" role="status">
-            Loading activity…
+            {t("loading")}
           </p>
         ) : activities.length === 0 ? (
           <div className="p-10 text-center">
-            <p className="text-sm text-gray-500">No activity found.</p>
+            <p className="text-sm text-gray-500">{t("empty")}</p>
           </div>
         ) : (
           <div className="relative pl-6">
@@ -282,7 +279,7 @@ export default function AdminActivityPage() {
                 </div>
                 <p className="mt-1 text-sm text-gray-600">{activity.action}</p>
                 <p className="mt-1 text-xs text-gray-400">
-                  {new Date(activity.created_at).toLocaleString()}
+                  {formatDateTime(activity.created_at)}
                 </p>
               </div>
             ))}
@@ -292,11 +289,11 @@ export default function AdminActivityPage() {
         {/* Pagination */}
         {totalPages > 1 && (
           <nav
-            aria-label="Pagination"
+            aria-label={t("pagination.label")}
             className="flex items-center justify-between border-t border-gray-100 px-4 py-3 text-sm"
           >
             <p className="text-gray-600">
-              Page {page} of {totalPages}
+              {t("pagination.summary", { page, totalPages })}
             </p>
             <div className="flex gap-2">
               <button
@@ -304,14 +301,14 @@ export default function AdminActivityPage() {
                 disabled={page === 1}
                 className="rounded border px-3 py-1 text-gray-700 hover:bg-gray-50 disabled:opacity-40"
               >
-                Previous
+                {tCommon("previous")}
               </button>
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
                 className="rounded border px-3 py-1 text-gray-700 hover:bg-gray-50 disabled:opacity-40"
               >
-                Next
+                {tCommon("next")}
               </button>
             </div>
           </nav>

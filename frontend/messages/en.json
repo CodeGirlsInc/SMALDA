@@ -255,5 +255,192 @@
     "docNotFound": "No record anchored",
     "docNotFoundDescription": "If you reached this page from a verification link, the hash you opened has never been anchored on the Stellar ledger. This is distinct from a verification failure, which would mean an anchor exists but did not match what you submitted.",
     "dashboardHome": "Return to dashboard"
+  },
+  "documentDetail": {
+    "loading": "Loading document details",
+    "notFound": "Document not found.",
+    "loadError": "Failed to load document.",
+    "verifyError": "Verification failed.",
+    "retry": "Retry",
+    "uploaded": "Uploaded {date}",
+    "timelineTitle": "Status Timeline",
+    "timelineLabel": "Document status timeline",
+    "risk": {
+      "title": "Risk Analysis",
+      "unavailable": "Risk analysis not yet available for this document.",
+      "gaugeLabel": "Risk score: {score} out of 100",
+      "outOf": "/ 100",
+      "low": "Low Risk",
+      "medium": "Medium Risk",
+      "high": "High Risk",
+      "detected": "Detected",
+      "notDetected": "Not detected",
+      "weight": "Weight: {value}%",
+      "contribution": "Contribution: {value}"
+    },
+    "actions": {
+      "title": "Actions",
+      "verify": "Verify on Stellar",
+      "downloadReport": "Download Report",
+      "fileDispute": "File Dispute",
+      "share": "Share"
+    },
+    "share": {
+      "label": "Share document",
+      "title": "Share Document",
+      "copy": "Copy",
+      "copied": "Copied!",
+      "close": "Close"
+    }
+  },
+  "documentReport": {
+    "title": "Risk report",
+    "sampleData": "Could not load this document — showing sample data.",
+    "notFound": "Document not found.",
+    "backToDocuments": "Back to documents",
+    "backToDocument": "← Back to document",
+    "downloadPdf": "Download PDF",
+    "downloadHint": "Download as PDF",
+    "downloadDisabledHint": "Analysis is not complete yet — a risk score is required before the report can be downloaded.",
+    "analysisIncomplete": "This document hasn’t completed analysis yet. The PDF download will be enabled once a risk score is available.",
+    "status": "Status: {status}",
+    "noRiskFlags": "No risk flags detected.",
+    "fields": {
+      "riskScore": "Risk score",
+      "stellarTxHash": "Stellar transaction hash",
+      "anchoredAt": "Anchored at",
+      "fileHash": "File hash",
+      "riskFlags": "Risk flags"
+    },
+    "pdf": {
+      "title": "Document Risk Report",
+      "document": "Document: {title}",
+      "status": "Status: {status}",
+      "riskScore": "Risk score: {score}/100",
+      "stellarTxHash": "Stellar tx hash: {hash}",
+      "anchoredAt": "Anchored at: {date}",
+      "riskFlags": "Risk flags:"
+    }
+  },
+  "documentVerify": {
+    "loading": "Loading",
+    "notFound": "Document not found.",
+    "loadError": "Failed to load document.",
+    "anchorError": "Anchoring failed.",
+    "submitting": "Submitting to Stellar network…",
+    "pendingTxHash": "pending — check Stellar explorer",
+    "copy": "Copy",
+    "copyLabel": "Copy {label}",
+    "backToDocuments": "Back to Documents",
+    "backToDocument": "Back to document",
+    "printedCertificate": "SMALDA Verification Certificate — printed {date}",
+    "titles": {
+      "pre": "Anchor on Stellar",
+      "processing": "Anchoring in Progress",
+      "post": "Verification Complete"
+    },
+    "pre": {
+      "explainerTitle": "What is blockchain anchoring?",
+      "explainerBody": "Anchoring your document on the Stellar blockchain creates a permanent, tamper-proof record of its existence. A cryptographic hash of your document is written to a public ledger that cannot be altered retroactively, enabling independent verification by any third party.",
+      "document": "Document",
+      "hashPreview": "SHA-256 Hash (preview)",
+      "estimatedCost": "Estimated cost: one Stellar transaction fee (~0.00001 XLM, less than $0.01)",
+      "anchor": "Anchor on Stellar"
+    },
+    "post": {
+      "successTitle": "Successfully Anchored on Stellar",
+      "successBody": "Your document has been permanently recorded on the Stellar blockchain.",
+      "txHash": "Stellar Transaction Hash",
+      "anchoredAt": "Anchored At",
+      "ledger": "Ledger",
+      "qrCode": "QR Code",
+      "qrAlt": "QR code linking to Stellar transaction",
+      "qrPlaceholder": "QR code placeholder",
+      "qrPending": "QR code available after server-side generation (BE-85)",
+      "downloadCertificate": "Download Verification Certificate",
+      "backToDocument": "Back to Document"
+    }
+  },
+  "map": {
+    "title": "Document Map",
+    "subtitle": "Geographic view of land documents.",
+    "summary": "Showing {count, plural, one {# mapped document} other {# mapped documents}} from {total} total records.",
+    "summaryLimited": "Showing {count, plural, one {# mapped document} other {# mapped documents}}. Loaded {loaded} of {total} records.",
+    "loading": "Loading…",
+    "refresh": "Refresh",
+    "resetView": "Reset view",
+    "retry": "Retry",
+    "sessionError": "Unable to verify your session.",
+    "loadError": "Failed to load documents.",
+    "legend": "Legend:",
+    "capped": "Map loading is capped at {count} documents. Narrow the document list to inspect the remaining records.",
+    "missingLocation": "{count, plural, one {# document} other {# documents}} without location data (excluded from the map).",
+    "empty": {
+      "title": "No location data",
+      "description": "Documents with GPS coordinates will appear on this map. Upload a document with location metadata to see it here."
+    },
+    "tileError": {
+      "title": "Map tiles failed to load",
+      "description": "The map tile provider could not be reached. Check your connection or try again.",
+      "retry": "Retry map"
+    },
+    "popup": {
+      "risk": "Risk: {score}/100",
+      "viewDetails": "View details →"
+    }
+  },
+  "adminActivity": {
+    "title": "User Activity Timeline",
+    "subtitle": "Paginated user-action timeline, most recent first.",
+    "sampleData": "Could not load activity — showing sample data.",
+    "feedTitle": "Activity feed",
+    "eventCount": "{count, plural, one {# event} other {# events}}",
+    "loading": "Loading activity…",
+    "empty": "No activity found.",
+    "accessDenied": {
+      "title": "Admin access required",
+      "description": "You need an administrator account to view the activity timeline."
+    },
+    "filters": {
+      "label": "Activity filters",
+      "userId": "User ID",
+      "userIdPlaceholder": "Filter by user id",
+      "actionType": "Action type",
+      "allActionTypes": "All action types",
+      "apply": "Apply",
+      "reset": "Reset"
+    },
+    "pagination": {
+      "label": "Pagination",
+      "summary": "Page {page} of {totalPages}"
+    }
+  },
+  "adminAuditLogs": {
+    "title": "HTTP Access Logs",
+    "subtitle": "Showing at most {pageSize} access logs per page.",
+    "loadError": "Failed to load audit logs.",
+    "cardTitle": "Audit Logs",
+    "requestCount": "{count, plural, one {# request} other {# requests}} found",
+    "loading": "Loading audit logs…",
+    "empty": "No audit logs found.",
+    "filters": {
+      "label": "Audit log filters",
+      "userId": "User ID",
+      "from": "From",
+      "to": "To",
+      "apply": "Apply",
+      "reset": "Reset"
+    },
+    "table": {
+      "ipAddress": "IP Address",
+      "timestamp": "Timestamp",
+      "method": "Method",
+      "path": "Path",
+      "status": "Status"
+    },
+    "pagination": {
+      "label": "Audit log pagination",
+      "summary": "Page {page} of {totalPages}"
+    }
   }
 }

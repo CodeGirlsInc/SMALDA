@@ -1,14 +1,17 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
+import { useParams } from "next/navigation";
+import { useTranslations } from "next-intl";
+import { Link, useRouter } from "@/i18n/navigation";
+import { useDateFormatting } from "@/i18n/formatting";
+import { ApiError, request } from "@/lib/api-client";
+import { apiUrl } from "@/lib/api-config";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
 // ─────────────────────────────────────────────────────────────────────────────
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const WS_BASE = (
   process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:3001"
 ).replace(/^http/, "ws");
@@ -38,17 +41,8 @@ interface VerificationRecord {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function getAuthHeaders(): HeadersInit {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-function formatTimestamp(iso: string): string {
-  return new Date(iso).toLocaleString("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+function documentPath(docId: string, suffix = ""): string {
+  return apiUrl(`/documents/${encodeURIComponent(docId)}${suffix}`);
 }
 
 function truncateHash(hash: string, chars = 10): string {
@@ -88,6 +82,7 @@ function CopyField({
   value: string;
   href?: string;
 }) {
+  const t = useTranslations("documentVerify");
   const [copied, setCopied] = useState(false);
 
   function handleCopy() {
@@ -117,10 +112,10 @@ function CopyField({
         )}
         <button
           onClick={handleCopy}
-          aria-label={`Copy ${label}`}
+          aria-label={t("copyLabel", { label })}
           className="shrink-0 rounded-md bg-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
-          {copied ? "✓" : "Copy"}
+          {copied ? "✓" : t("copy")}
         </button>
       </div>
     </div>
@@ -140,28 +135,24 @@ function PreVerification({
   onAnchor: () => void;
   anchoring: boolean;
 }) {
+  const t = useTranslations("documentVerify.pre");
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-blue-100 bg-blue-50 p-5">
         <h2 className="mb-2 text-sm font-semibold text-blue-800">
-          What is blockchain anchoring?
+          {t("explainerTitle")}
         </h2>
-        <p className="text-sm text-blue-700">
-          Anchoring your document on the Stellar blockchain creates a permanent,
-          tamper-proof record of its existence. A cryptographic hash of your
-          document is written to a public ledger that cannot be altered
-          retroactively, enabling independent verification by any third party.
-        </p>
+        <p className="text-sm text-blue-700">{t("explainerBody")}</p>
       </div>
 
       <div>
-        <p className="mb-1 text-xs font-medium text-gray-500">Document</p>
+        <p className="mb-1 text-xs font-medium text-gray-500">{t("document")}</p>
         <p className="text-sm font-semibold text-gray-900">{doc.title}</p>
       </div>
 
       <div>
         <p className="mb-1 text-xs font-medium text-gray-500">
-          SHA-256 Hash (preview)
+          {t("hashPreview")}
         </p>
         <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-xs text-gray-700 break-all">
           {doc.fileHash}
@@ -170,7 +161,7 @@ function PreVerification({
 
       <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
         <p className="text-xs text-gray-500">
-          Estimated cost: one Stellar transaction fee (~0.00001 XLM ≈ &lt;$0.01)
+          {t("estimatedCost")}
         </p>
       </div>
 
@@ -202,7 +193,7 @@ function PreVerification({
             />
           </svg>
         )}
-        Anchor on Stellar
+        {t("anchor")}
       </button>
     </div>
   );
@@ -267,6 +258,9 @@ function PostVerification({
   docId: string;
   verification: VerificationRecord;
 }) {
+  const t = useTranslations("documentVerify.post");
+  const { formatDateTime } = useDateFormatting();
+
   function handlePrint() {
     window.print();
   }
@@ -294,17 +288,17 @@ function PostVerification({
           </svg>
         </span>
         <h2 className="text-lg font-bold text-gray-900">
-          Successfully Anchored on Stellar
+          {t("successTitle")}
         </h2>
         <p className="text-center text-sm text-gray-500">
-          Your document has been permanently recorded on the Stellar blockchain.
+          {t("successBody")}
         </p>
       </div>
 
       {/* Transaction details */}
       <div className="space-y-4">
         <CopyField
-          label="Stellar Transaction Hash"
+          label={t("txHash")}
           value={verification.transactionHash}
           href={`${STELLAR_EXPLORER}/${verification.transactionHash}`}
         />
@@ -312,14 +306,14 @@ function PostVerification({
         <div className="grid grid-cols-2 gap-4">
           <div>
             <p className="mb-1 text-xs font-medium text-gray-500">
-              Anchored At
+              {t("anchoredAt")}
             </p>
             <p className="text-sm text-gray-800">
-              {formatTimestamp(verification.anchoredAt)}
+              {formatDateTime(verification.anchoredAt)}
             </p>
           </div>
           <div>
-            <p className="mb-1 text-xs font-medium text-gray-500">Ledger</p>
+            <p className="mb-1 text-xs font-medium text-gray-500">{t("ledger")}</p>
             <p className="text-sm text-gray-800">#{verification.ledger}</p>
           </div>
         </div>
@@ -327,22 +321,22 @@ function PostVerification({
         {/* QR code */}
         {verification.qrCodeUrl ? (
           <div className="flex flex-col items-center gap-2">
-            <p className="text-xs font-medium text-gray-500">QR Code</p>
+            <p className="text-xs font-medium text-gray-500">{t("qrCode")}</p>
             <img
               src={verification.qrCodeUrl}
-              alt="QR code linking to Stellar transaction"
+              alt={t("qrAlt")}
               className="h-36 w-36 rounded-lg border border-gray-200 object-contain p-1"
             />
           </div>
         ) : (
           <div className="flex flex-col items-center gap-2">
-            <p className="text-xs font-medium text-gray-500">QR Code</p>
+            <p className="text-xs font-medium text-gray-500">{t("qrCode")}</p>
             {/* Inline SVG placeholder QR when backend QR endpoint not yet available */}
             <div className="flex h-36 w-36 items-center justify-center rounded-lg border border-gray-200 bg-gray-50">
               <svg
                 viewBox="0 0 100 100"
                 className="h-28 w-28"
-                aria-label="QR code placeholder"
+                aria-label={t("qrPlaceholder")}
               >
                 {/* finder pattern top-left */}
                 <rect
@@ -396,7 +390,7 @@ function PostVerification({
               </svg>
             </div>
             <p className="text-xs text-gray-400">
-              QR code available after server-side generation (BE-85)
+              {t("qrPending")}
             </p>
           </div>
         )}
@@ -408,14 +402,14 @@ function PostVerification({
           onClick={handlePrint}
           className="flex-1 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 print:hidden"
         >
-          Download Verification Certificate
+          {t("downloadCertificate")}
         </button>
-        <a
+        <Link
           href={`/documents/${docId}`}
           className="flex-1 rounded-xl bg-blue-600 px-4 py-2.5 text-center text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 print:hidden"
         >
-          Back to Document
-        </a>
+          {t("backToDocument")}
+        </Link>
       </div>
     </div>
   );
@@ -426,6 +420,8 @@ function PostVerification({
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function VerifyPage() {
+  const t = useTranslations("documentVerify");
+  const { formatDateTime } = useDateFormatting();
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const docId = params.id;
@@ -438,7 +434,7 @@ export default function VerifyPage() {
   const [anchoring, setAnchoring] = useState(false);
   const [anchorError, setAnchorError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
-  const [statusMsg, setStatusMsg] = useState("Submitting to Stellar network…");
+  const [statusMsg, setStatusMsg] = useState(() => t("submitting"));
   const [verification, setVerification] = useState<VerificationRecord | null>(
     null,
   );
@@ -448,16 +444,8 @@ export default function VerifyPage() {
   // ── Fetch document metadata ────────────────────────────────────────────
   useEffect(() => {
     if (!docId) return;
-    const headers = getAuthHeaders();
 
-    fetch(`${API_BASE}/api/documents/${docId}`, { headers })
-      .then((res) => {
-        if (!res.ok)
-          throw new Error(
-            res.status === 404 ? "Document not found." : `Error ${res.status}`,
-          );
-        return res.json() as Promise<DocumentSummary>;
-      })
+    request<DocumentSummary>(documentPath(docId))
       .then((data) => {
         // If already verified, redirect back to detail page
         if (data.status === "VERIFIED") {
@@ -468,11 +456,13 @@ export default function VerifyPage() {
       })
       .catch((err) =>
         setLoadError(
-          err instanceof Error ? err.message : "Failed to load document.",
+          err instanceof ApiError && err.status === 404
+            ? t("notFound")
+            : t("loadError"),
         ),
       )
       .finally(() => setPageLoading(false));
-  }, [docId, router]);
+  }, [docId, router, t]);
 
   // ── WebSocket progress handler ─────────────────────────────────────────
   const connectProgressWs = useCallback(() => {
@@ -506,27 +496,21 @@ export default function VerifyPage() {
   const fetchVerification = useCallback(async () => {
     if (!docId) return;
     try {
-      const res = await fetch(
-        `${API_BASE}/api/documents/${docId}/verification`,
-        {
-          headers: getAuthHeaders(),
-        },
+      const data = await request<VerificationRecord>(
+        documentPath(docId, "/verification"),
       );
-      if (!res.ok)
-        throw new Error(`Failed to fetch verification (${res.status})`);
-      const data: VerificationRecord = await res.json();
       setVerification(data);
       setViewState("post");
-    } catch (err) {
+    } catch {
       // Fall back to a minimal record derived from what we know
       setVerification({
-        transactionHash: "pending — check Stellar explorer",
+        transactionHash: t("pendingTxHash"),
         anchoredAt: new Date().toISOString(),
         ledger: 0,
       });
       setViewState("post");
     }
-  }, [docId]);
+  }, [docId, t]);
 
   // ── Anchor handler ─────────────────────────────────────────────────────
   async function handleAnchor() {
@@ -534,15 +518,10 @@ export default function VerifyPage() {
     setAnchoring(true);
     setAnchorError(null);
     setProgress(0);
-    setStatusMsg("Submitting to Stellar network…");
+    setStatusMsg(t("submitting"));
 
     try {
-      const res = await fetch(`${API_BASE}/api/documents/${docId}/verify`, {
-        method: "POST",
-        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-      });
-      if (!res.ok)
-        throw new Error(`Verification request failed (${res.status})`);
+      await request(documentPath(docId, "/verify"), { method: "POST" });
 
       // Switch to processing view and open WS for real-time updates
       setViewState("processing");
@@ -562,20 +541,14 @@ export default function VerifyPage() {
       // Poll for completion (fallback when WS is not available)
       const poll = async () => {
         await new Promise((r) => setTimeout(r, 8000));
-        const verifyRes = await fetch(
-          `${API_BASE}/api/documents/${docId}/verification`,
-          {
-            headers: getAuthHeaders(),
-          },
+        const data = await request<VerificationRecord>(
+          documentPath(docId, "/verification"),
         );
-        if (verifyRes.ok) {
-          clearInterval(interval);
-          const data: VerificationRecord = await verifyRes.json();
-          setProgress(100);
-          setVerification(data);
-          setViewState("post");
-          wsRef.current?.close();
-        }
+        clearInterval(interval);
+        setProgress(100);
+        setVerification(data);
+        setViewState("post");
+        wsRef.current?.close();
       };
 
       poll().catch(() => {
@@ -584,8 +557,8 @@ export default function VerifyPage() {
         setProgress(100);
         fetchVerification();
       });
-    } catch (err) {
-      setAnchorError(err instanceof Error ? err.message : "Anchoring failed.");
+    } catch {
+      setAnchorError(t("anchorError"));
       setAnchoring(false);
     }
   }
@@ -601,7 +574,7 @@ export default function VerifyPage() {
       <main
         className="mx-auto max-w-xl px-4 py-8"
         aria-busy="true"
-        aria-label="Loading"
+        aria-label={t("loading")}
       >
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
@@ -620,13 +593,13 @@ export default function VerifyPage() {
       <main className="mx-auto max-w-xl px-4 py-8">
         <div className="rounded-2xl border border-red-200 bg-red-50 p-6">
           <p className="text-sm text-red-700">
-            {loadError ?? "Document not found."}
+            {loadError ?? t("notFound")}
           </p>
           <Link
             href="/documents"
             className="mt-3 block text-sm underline text-red-700"
           >
-            Back to Documents
+            {t("backToDocuments")}
           </Link>
         </div>
       </main>
@@ -635,16 +608,16 @@ export default function VerifyPage() {
 
   const title =
     viewState === "pre"
-      ? "Anchor on Stellar"
+      ? t("titles.pre")
       : viewState === "processing"
-        ? "Anchoring in Progress"
-        : "Verification Complete";
+        ? t("titles.processing")
+        : t("titles.post");
 
   return (
     <main className="mx-auto max-w-xl px-4 py-8 sm:px-6 print:py-4">
       {/* Page header */}
       <div className="mb-6">
-        <a
+        <Link
           href={`/documents/${docId}`}
           className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 print:hidden"
         >
@@ -661,8 +634,8 @@ export default function VerifyPage() {
               d="M15 19l-7-7 7-7"
             />
           </svg>
-          Back to document
-        </a>
+          {t("backToDocument")}
+        </Link>
         <h1 className="text-xl font-bold text-gray-900">{title}</h1>
         <p className="mt-1 text-sm text-gray-500">{doc.title}</p>
       </div>
@@ -696,8 +669,7 @@ export default function VerifyPage() {
       {/* Print-only header */}
       <div className="hidden print:block mt-4">
         <p className="text-xs text-gray-400">
-          SMALDA Verification Certificate — printed{" "}
-          {new Date().toLocaleString()}
+          {t("printedCertificate", { date: formatDateTime(new Date().toISOString()) })}
         </p>
       </div>
     </main>

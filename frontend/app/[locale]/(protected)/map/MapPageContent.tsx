@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import ParcelSidebar, {
   type ParcelDocument,
 } from "@/components/map/ParcelSidebar";
+import { Link } from "@/i18n/navigation";
 import { apiUrl } from "@/lib/api-config";
 import { getAccessToken } from "@/lib/session";
 import {
@@ -206,7 +208,11 @@ function createColouredIcon(colour: string) {
   });
 }
 
+class MapLoadError extends Error {}
+
 export default function MapPageContent() {
+  const t = useTranslations("map");
+  const tStatus = useTranslations("documents.status");
   const [docs, setDocs] = useState<DocumentWithLocation[]>([]);
   const [missingLocationCount, setMissingLocationCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -229,7 +235,7 @@ export default function MapPageContent() {
     try {
       const userId = await fetchCurrentUserId();
       if (!userId) {
-        throw new Error("Unable to verify your session.");
+        throw new MapLoadError(t("sessionError"));
       }
 
       const previousUserId = mapUserIdRef.current;
@@ -333,13 +339,11 @@ export default function MapPageContent() {
         setSidebarOpen(false);
       }
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to load documents.",
-      );
+      setError(err instanceof MapLoadError ? err.message : t("loadError"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     fetchDocuments();
@@ -408,13 +412,17 @@ export default function MapPageContent() {
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Document Map</h1>
+          <h1 className="text-xl font-bold text-gray-900">{t("title")}</h1>
           <p className="text-sm text-gray-500">
             {mapLimited
-              ? `Showing ${docs.length} mapped document${docs.length !== 1 ? "s" : ""}. Loaded ${mapLoadedCount} of ${mapTotal} records.`
+              ? t("summaryLimited", {
+                  count: docs.length,
+                  loaded: mapLoadedCount,
+                  total: mapTotal,
+                })
               : docs.length > 0 && mapTotal > 0
-                ? `Showing ${docs.length} mapped document${docs.length !== 1 ? "s" : ""} from ${mapTotal} total records.`
-                : "Geographic view of land documents."}
+                ? t("summary", { count: docs.length, total: mapTotal })
+                : t("subtitle")}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -424,14 +432,14 @@ export default function MapPageContent() {
             disabled={loading}
             className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
-            {loading ? "Loading…" : "Refresh"}
+            {loading ? t("loading") : t("refresh")}
           </button>
           <button
             type="button"
             onClick={handleResetView}
             className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
-            Reset view
+            {t("resetView")}
           </button>
         </div>
       </div>
@@ -474,11 +482,10 @@ export default function MapPageContent() {
                     <circle cx="12" cy="10" r="3" />
                   </svg>
                   <h3 className="mt-3 text-sm font-semibold text-gray-900">
-                    No location data
+                    {t("empty.title")}
                   </h3>
                   <p className="mt-1 text-xs text-gray-500">
-                    Documents with GPS coordinates will appear on this map.
-                    Upload a document with location metadata to see it here.
+                    {t("empty.description")}
                   </p>
                 </div>
               </div>
@@ -501,11 +508,10 @@ export default function MapPageContent() {
                     <path d="M12 9v2m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
                   </svg>
                   <h3 className="mt-3 text-sm font-semibold text-gray-900">
-                    Map tiles failed to load
+                    {t("tileError.title")}
                   </h3>
                   <p className="mt-1 text-xs text-gray-500">
-                    The map tile provider could not be reached. Check your
-                    connection or try again.
+                    {t("tileError.description")}
                   </p>
                   <button
                     type="button"
@@ -515,7 +521,7 @@ export default function MapPageContent() {
                     }}
                     className="mt-3 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
                   >
-                    Retry map
+                    {t("tileError.retry")}
                   </button>
                 </div>
               </div>
@@ -543,19 +549,19 @@ export default function MapPageContent() {
                         <span
                           className={`mt-1 inline-block rounded-full border px-2 py-0.5 text-xs font-medium ${LABEL_CLASSES[doc.status] ?? LABEL_CLASSES.PENDING}`}
                         >
-                          {doc.status}
+                          {tStatus(doc.status.toLowerCase())}
                         </span>
                         {doc.riskScore != null && (
                           <p className="mt-1 text-xs text-gray-500">
-                            Risk: {toRiskScore(doc.riskScore)}/100
+                            {t("popup.risk", { score: toRiskScore(doc.riskScore) ?? 0 })}
                           </p>
                         )}
-                        <a
+                        <Link
                           href={`/documents/${doc.id}`}
                           className="mt-2 block text-xs font-medium text-blue-600 hover:underline"
                         >
-                          View details →
-                        </a>
+                          {t("popup.viewDetails")}
+                        </Link>
                       </div>
                     </Popup>
                   </Marker>
@@ -579,54 +585,52 @@ export default function MapPageContent() {
             onClick={fetchDocuments}
             className="mt-2 text-sm font-medium text-red-700 underline hover:no-underline"
           >
-            Retry
+            {t("retry")}
           </button>
         </div>
       )}
 
       {mapLimited && (
         <p className="mt-4 text-xs text-amber-700">
-          Map loading is capped at {mapLoadedCount} documents. Narrow the document list to inspect the remaining records.
+          {t("capped", { count: mapLoadedCount })}
         </p>
       )}
 
       {missingLocationCount > 0 && (
         <p className="mt-4 text-xs text-gray-500">
-          {missingLocationCount} document
-          {missingLocationCount !== 1 ? "s" : ""} without location data
-          (excluded from the map).
+          {t("missingLocation", { count: missingLocationCount })}
         </p>
       )}
 
       <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-gray-500">
-        <span className="font-medium">Legend:</span>
+        <span className="font-medium">{t("legend")}</span>
         <span className="flex items-center gap-1">
           <span
             className="h-3 w-3 rounded-full bg-green-500"
             aria-hidden="true"
           />{" "}
-          Verified
+          {tStatus("verified")}
         </span>
         <span className="flex items-center gap-1">
           <span
             className="h-3 w-3 rounded-full bg-yellow-500"
             aria-hidden="true"
           />{" "}
-          Flagged
+          {tStatus("flagged")}
         </span>
         <span className="flex items-center gap-1">
           <span
             className="h-3 w-3 rounded-full bg-gray-400"
             aria-hidden="true"
           />{" "}
-          Pending
+          {tStatus("pending")}
         </span>
         <span className="flex items-center gap-1">
           <span
             className="h-3 w-3 rounded-full bg-red-500"
             aria-hidden="true"
           />{" "}
-          Rejected
+          {tStatus("rejected")}
         </span>
       </div>
     </div>

@@ -18,6 +18,14 @@ test.describe("Smoke tests", () => {
     ).toBeVisible();
   });
 
+  test("retired /document URLs redirect to the canonical /documents route", async ({ page }) => {
+    const response = await page.goto("/document/abc");
+    // /document/abc → /documents/abc, which then requires sign-in.
+    const finalUrl = new URL(response!.url());
+    expect(finalUrl.pathname).toContain("/login");
+    expect(finalUrl.searchParams.get("redirect")).toBe("/documents/abc");
+  });
+
   test("unsupported locale falls back to default", async ({ page }) => {
     const response = await page.goto("/de/login");
     // Should redirect to the English version

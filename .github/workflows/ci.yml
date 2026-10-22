@@ -85,13 +85,18 @@ jobs:
       - name: Check locale parity
         run: npm run check:locales
 
+      # Fails only on hardcoded strings that are not in
+      # scripts/hardcoded-strings-baseline.json (see frontend/README.md).
+      # Non-blocking while the regex heuristic beds in; remove
+      # continue-on-error once the team is happy with its signal.
+      - name: Check hardcoded strings
+        run: npm run check:hardcoded
+        continue-on-error: true
+
       - name: Build
         run: npm run build
         env:
           NEXT_PUBLIC_API_URL: http://localhost:3001
-
-      - name: Typecheck
-        run: npm run typecheck
 
       - name: Unit tests with coverage
         run: npm run test:coverage

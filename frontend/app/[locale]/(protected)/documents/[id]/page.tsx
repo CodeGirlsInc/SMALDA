@@ -1,13 +1,17 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
+import { useTranslations } from "next-intl";
+import { Link, useRouter } from "@/i18n/navigation";
+import { useDateFormatting } from "@/i18n/formatting";
+import { ApiError, request } from "@/lib/api-client";
+import { apiUrl } from "@/lib/api-config";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
 // ─────────────────────────────────────────────────────────────────────────────
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const WS_BASE = (process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:3001").replace(/^http/, "ws");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -41,21 +45,6 @@ interface RiskData {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function getAuthHeaders(): HeadersInit {
-  const token = typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-GB", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 function truncateHash(hash: string, chars = 12): string {
   if (hash.length <= chars * 2) return hash;
   return `${hash.slice(0, chars)}…${hash.slice(-chars)}`;
@@ -84,15 +73,17 @@ const RISK_COLOUR = (score: number) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: DocumentStatus }) {
+  const t = useTranslations("documents.status");
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_BADGE[status] ?? "bg-gray-100 text-gray-700"}`}>
-      {status}
+      {t.has(status.toLowerCase()) ? t(status.toLowerCase()) : status}
     </span>
   );
 }
 
 /** Circular SVG gauge showing the risk score (0-100). */
 function RiskGauge({ score }: { score: number }) {
+  const t = useTranslations("documentDetail.risk");
   const R = 52;
   const circumference = 2 * Math.PI * R;
   const offset = circumference - (score / 100) * circumference;
@@ -100,7 +91,7 @@ function RiskGauge({ score }: { score: number }) {
 
   return (
     <div className="flex flex-col items-center gap-2">
-      <svg width="128" height="128" viewBox="0 0 128 128" aria-label={`Risk score: ${score} out of 100`} role="img">
+      <svg width="128" height="128" viewBox="0 0 128 128" aria-label={t("gaugeLabel", { score })} role="img">
         <circle cx="64" cy="64" r={R} fill="none" stroke="#e5e7eb" strokeWidth="12" />
         <circle
           cx="64"
@@ -119,11 +110,11 @@ function RiskGauge({ score }: { score: number }) {
           {score}
         </text>
         <text x="64" y="84" textAnchor="middle" dominantBaseline="middle" fill="#6b7280" style={{ fontSize: 11 }}>
-          / 100
+          {t("outOf")}
         </text>
       </svg>
       <p className={`text-sm font-semibold ${text}`}>
-        {score < 30 ? "Low Risk" : score < 60 ? "Medium Risk" : "High Risk"}
+        {score < 30 ? t("low") : score < 60 ? t("medium") : t("high")}
       </p>
     </div>
   );
@@ -131,17 +122,18 @@ function RiskGauge({ score }: { score: number }) {
 
 /** Card for a single risk flag. */
 function FlagCard({ flag }: { flag: RiskFlag }) {
+  const t = useTranslations("documentDetail.risk");
   return (
     <div className={`rounded-xl border p-4 ${flag.detected ? "border-red-200 bg-red-50" : "border-gray-200 bg-white"}`}>
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium text-gray-800">{flag.name}</span>
-        <span className={`text-lg ${flag.detected ? "text-red-500" : "text-green-500"}`} aria-label={flag.detected ? "Detected" : "Not detected"}>
+        <span className={`text-lg ${flag.detected ? "text-red-500" : "text-green-500"}`} aria-label={flag.detected ? t("detected") : t("notDetected")}>
           {flag.detected ? "✗" : "✓"}
         </span>
       </div>
       <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
-        <span>Weight: {(flag.weight * 100).toFixed(0)}%</span>
-        <span>Contribution: {flag.contribution.toFixed(1)}</span>
+        <span>{t("weight", { value: (flag.weight * 100).toFixed(0) })}</span>
+        <span>{t("contribution", { value: flag.contribution.toFixed(1) })}</span>
       </div>
     </div>
   );
@@ -151,11 +143,13 @@ const STATUS_ORDER: DocumentStatus[] = ["PENDING", "ANALYZING", "VERIFIED"];
 
 /** Vertical status timeline. */
 function StatusTimeline({ status }: { status: DocumentStatus }) {
+  const t = useTranslations("documentDetail");
+  const tStatus = useTranslations("documents.status");
   const steps = STATUS_ORDER;
   const currentIdx = steps.indexOf(status === "FLAGGED" || status === "REJECTED" ? "VERIFIED" : status);
 
   return (
-    <ol className="relative ml-3 border-l border-gray-200" aria-label="Document status timeline">
+    <ol className="relative ml-3 border-l border-gray-200" aria-label={t("timelineLabel")}>
       {steps.map((step, i) => {
         const done = i < currentIdx || (status === "VERIFIED" && step === "VERIFIED");
         const active =
@@ -175,7 +169,7 @@ function StatusTimeline({ status }: { status: DocumentStatus }) {
               {done ? "✓" : i + 1}
             </span>
             <p className={`text-sm font-semibold ${active ? "text-blue-700" : done ? "text-gray-700" : "text-gray-400"}`}>
-              {label}
+              {tStatus.has(label.toLowerCase()) ? tStatus(label.toLowerCase()) : label}
             </p>
           </li>
         );
@@ -189,8 +183,9 @@ function StatusTimeline({ status }: { status: DocumentStatus }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function Skeleton() {
+  const t = useTranslations("documentDetail");
   return (
-    <main className="mx-auto max-w-4xl space-y-6 px-4 py-8 sm:px-6" aria-busy="true" aria-label="Loading document details">
+    <main className="mx-auto max-w-4xl space-y-6 px-4 py-8 sm:px-6" aria-busy="true" aria-label={t("loading")}>
       {[1, 2, 3].map((i) => (
         <div key={i} className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
           <div className="space-y-3">
@@ -209,6 +204,7 @@ function Skeleton() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function ShareModal({ docId, onClose }: { docId: string; onClose: () => void }) {
+  const t = useTranslations("documentDetail.share");
   const shareUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/documents/${docId}`;
   const [copied, setCopied] = useState(false);
 
@@ -223,7 +219,7 @@ function ShareModal({ docId, onClose }: { docId: string; onClose: () => void }) 
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Share document"
+      aria-label={t("label")}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       onClick={onClose}
     >
@@ -231,21 +227,21 @@ function ShareModal({ docId, onClose }: { docId: string; onClose: () => void }) 
         className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="mb-3 text-base font-semibold text-gray-900">Share Document</h2>
+        <h2 className="mb-3 text-base font-semibold text-gray-900">{t("title")}</h2>
         <div className="flex items-center gap-2 rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm">
           <span className="flex-1 truncate text-gray-600">{shareUrl}</span>
           <button
             onClick={handleCopy}
             className="shrink-0 rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            {copied ? "Copied!" : "Copy"}
+            {copied ? t("copied") : t("copy")}
           </button>
         </div>
         <button
           onClick={onClose}
           className="mt-4 w-full rounded-lg border border-gray-200 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
         >
-          Close
+          {t("close")}
         </button>
       </div>
     </div>
@@ -257,6 +253,8 @@ function ShareModal({ docId, onClose }: { docId: string; onClose: () => void }) 
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function DocumentDetailPage() {
+  const t = useTranslations("documentDetail");
+  const { formatDateTime } = useDateFormatting();
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const docId = params.id;
@@ -302,29 +300,24 @@ export default function DocumentDetailPage() {
     setLoading(true);
     setError(null);
     try {
-      const headers = getAuthHeaders();
-      const [docRes, riskRes] = await Promise.all([
-        fetch(`${API_BASE}/api/documents/${docId}`, { headers }),
-        fetch(`${API_BASE}/api/documents/${docId}/risk`, { headers }),
+      const path = `/documents/${encodeURIComponent(docId)}`;
+      const [docData, riskData] = await Promise.all([
+        request<DocumentDetail>(apiUrl(path)),
+        // Risk data is optional; a missing endpoint must not fail the page.
+        request<RiskData>(apiUrl(`${path}/risk`)).catch(() => null),
       ]);
-
-      if (!docRes.ok) {
-        throw new Error(docRes.status === 404 ? "Document not found." : `Failed to load document (${docRes.status})`);
-      }
-
-      const docData: DocumentDetail = await docRes.json();
       setDoc(docData);
-
-      if (riskRes.ok) {
-        const riskData: RiskData = await riskRes.json();
-        setRisk(riskData);
-      }
+      setRisk(riskData);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load document.");
+      setError(
+        err instanceof ApiError && err.status === 404
+          ? t("notFound")
+          : t("loadError"),
+      );
     } finally {
       setLoading(false);
     }
-  }, [docId]);
+  }, [docId, t]);
 
   useEffect(() => {
     fetchData();
@@ -343,15 +336,13 @@ export default function DocumentDetailPage() {
     if (!docId) return;
     setVerifying(true);
     try {
-      const res = await fetch(`${API_BASE}/api/documents/${docId}/verify`, {
+      await request(apiUrl(`/documents/${encodeURIComponent(docId)}/verify`), {
         method: "POST",
-        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
       });
-      if (!res.ok) throw new Error(`Verification failed (${res.status})`);
       // Navigate to verify page to show progress + result
       router.push(`/documents/${docId}/verify`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Verification failed.");
+    } catch {
+      setError(t("verifyError"));
     } finally {
       setVerifying(false);
     }
@@ -364,12 +355,12 @@ export default function DocumentDetailPage() {
     return (
       <main className="mx-auto max-w-4xl px-4 py-8">
         <div className="rounded-2xl border border-red-200 bg-red-50 p-6">
-          <p className="text-sm text-red-700">{error ?? "Document not found."}</p>
+          <p className="text-sm text-red-700">{error ?? t("notFound")}</p>
           <button
             onClick={fetchData}
             className="mt-3 text-sm underline text-red-700 hover:no-underline"
           >
-            Retry
+            {t("retry")}
           </button>
         </div>
       </main>
@@ -388,7 +379,7 @@ export default function DocumentDetailPage() {
             <p className="mt-1 font-mono text-xs text-gray-500" title={doc.fileHash}>
               {truncateHash(doc.fileHash)}
             </p>
-            <p className="mt-1 text-xs text-gray-500">Uploaded {formatDate(doc.uploadedAt)}</p>
+            <p className="mt-1 text-xs text-gray-500">{t("uploaded", { date: formatDateTime(doc.uploadedAt) })}</p>
           </div>
           <StatusBadge status={doc.status} />
         </div>
@@ -397,7 +388,7 @@ export default function DocumentDetailPage() {
       {/* ── Risk panel ── */}
       {risk ? (
         <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="mb-4 text-base font-semibold text-gray-900">Risk Analysis</h2>
+          <h2 className="mb-4 text-base font-semibold text-gray-900">{t("risk.title")}</h2>
           <div className="flex flex-wrap items-start gap-8">
             <RiskGauge score={risk.score} />
             <div className="flex-1 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -409,19 +400,19 @@ export default function DocumentDetailPage() {
         </div>
       ) : (
         <div className="rounded-2xl border border-gray-100 bg-gray-50 p-6">
-          <p className="text-sm text-gray-500">Risk analysis not yet available for this document.</p>
+          <p className="text-sm text-gray-500">{t("risk.unavailable")}</p>
         </div>
       )}
 
       {/* ── Status timeline + Actions ── */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
         <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="mb-4 text-base font-semibold text-gray-900">Status Timeline</h2>
+          <h2 className="mb-4 text-base font-semibold text-gray-900">{t("timelineTitle")}</h2>
           <StatusTimeline status={doc.status} />
         </div>
 
         <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="mb-4 text-base font-semibold text-gray-900">Actions</h2>
+          <h2 className="mb-4 text-base font-semibold text-gray-900">{t("actions.title")}</h2>
           <div className="flex flex-col gap-3">
             {canVerify && (
               <button
@@ -436,31 +427,31 @@ export default function DocumentDetailPage() {
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                   </svg>
                 )}
-                Verify on Stellar
+                {t("actions.verify")}
               </button>
             )}
 
             <a
-              href={`${API_BASE}/api/documents/${docId}/report`}
+              href={apiUrl(`/documents/${encodeURIComponent(docId)}/report`)}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              Download Report
+              {t("actions.downloadReport")}
             </a>
 
-            <a
+            <Link
               href={`/documents/${docId}/dispute`}
               className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              File Dispute
-            </a>
+              {t("actions.fileDispute")}
+            </Link>
 
             <button
               onClick={() => setShareOpen(true)}
               className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              Share
+              {t("actions.share")}
             </button>
           </div>
         </div>
