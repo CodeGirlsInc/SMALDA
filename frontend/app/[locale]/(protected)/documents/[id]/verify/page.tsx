@@ -1,12 +1,18 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+<<<<<<< HEAD:frontend/app/[locale]/(protected)/documents/[id]/verify/page.tsx
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Link, useRouter } from "@/i18n/navigation";
 import { useDateFormatting } from "@/i18n/formatting";
 import { ApiError, request } from "@/lib/api-client";
 import { apiUrl } from "@/lib/api-config";
+=======
+import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import { stellarTxUrl } from "@/lib/stellar";
+>>>>>>> c4aa8fa (feat: persist failed webhooks for replay; unify Stellar explorer links):frontend/app/(protected)/documents/[id]/verify/page.tsx
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
@@ -15,7 +21,6 @@ import { apiUrl } from "@/lib/api-config";
 const WS_BASE = (
   process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:3001"
 ).replace(/^http/, "ws");
-const STELLAR_EXPLORER = "https://stellar.expert/explorer/testnet/tx";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -300,7 +305,7 @@ function PostVerification({
         <CopyField
           label={t("txHash")}
           value={verification.transactionHash}
-          href={`${STELLAR_EXPLORER}/${verification.transactionHash}`}
+          href={stellarTxUrl(verification.transactionHash)}
         />
 
         <div className="grid grid-cols-2 gap-4">
