@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   ConflictException,
   Controller,
   ForbiddenException,
@@ -15,7 +16,6 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
-  UsePipes,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
@@ -35,6 +35,7 @@ import { VerificationService } from '../verification/verification.service';
 import { AccessLogsService } from '../access-logs/access-logs.service';
 import { FileValidationPipe } from './pipes/file-validation.pipe';
 import { ListDocumentsDto } from './dto/list-documents.dto';
+import { UploadDocumentDto } from './dto/upload-document.dto';
 import { DocumentResponseDto } from './dto/document-response.dto';
 import {
   DOCUMENT_ALLOWED_MIME_TYPES,
@@ -78,9 +79,9 @@ export class DocumentsController {
       limits: { fileSize: MAX_FILE_SIZE_BYTES },
     }),
   )
-  @UsePipes(FileValidationPipe)
   async uploadDocument(
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile(FileValidationPipe) file: Express.Multer.File,
+    @Body() dto: UploadDocumentDto,
     @Req() req: Request & { user?: User },
     @Res() res: Response,
   ) {
@@ -95,12 +96,6 @@ export class DocumentsController {
 
     const userQuota =
       this.configService.get<number>('USER_DOCUMENT_QUOTA') ?? DEFAULT_USER_QUOTA;
-    const existingDocs = await this.documentsService.findByOwner(user.id);
-    if (existingDocs.length >= userQuota) {
-      throw new BadRequestException(
-        `Upload quota exceeded. Each user may store at most ${userQuota} documents.`,
-      );
-    }
 
     const fileHash = createHash('sha256').update(file.buffer).digest('hex');
     const existing = await this.documentsService.findByFileHash(fileHash, req.user.id);
@@ -119,15 +114,24 @@ export class DocumentsController {
     const targetPath = join(uploadDir, filename);
     await fs.writeFile(targetPath, file.buffer);
 
-    const document = await this.documentsService.create({
-      ownerId: user.id,
-      title: req.body.title || file.originalname,
-      filePath: targetPath,
-      fileHash,
-      fileSize: file.size,
-      mimeType: file.mimetype,
-      status: DocumentStatus.PENDING,
-    });
+    let document: Document;
+    try {
+      document = await this.documentsService.createWithinQuota(
+        {
+          ownerId: user.id,
+          title: dto?.title || file.originalname,
+          filePath: targetPath,
+          fileHash,
+          fileSize: file.size,
+          mimeType: file.mimetype,
+          status: DocumentStatus.PENDING,
+        },
+        userQuota,
+      );
+    } catch (error) {
+      await fs.unlink(targetPath).catch(() => undefined);
+      throw error;
+    }
 
     await this.queueService.enqueueAnalyze(document.id, (req as any).requestId);
     return res.status(202).send(document);
@@ -253,16 +257,18 @@ export class DocumentsController {
     }
 
     const user = req.user;
-    if (!user || document.ownerId !== user.id) {
-      throw new NotFoundException('Document not found');
-    }
+    this.assertOwnerOrAdmin(document, user);
 
+    const isAdminDownload = document.ownerId !== user!.id;
     // BE audit — every download is recorded in the access-log trail.
     await this.accessLogsService.logDocumentAccess(
       document.id,
-      'download',
-      user.id,
+      isAdminDownload ? 'admin-download' : 'download',
+      user!.id,
       req.ip,
+      typeof req.headers['user-agent'] === 'string'
+        ? req.headers['user-agent']
+        : undefined,
     );
 
     // Pre-check that the file exists on disk before creating the stream.
@@ -274,10 +280,9 @@ export class DocumentsController {
 
     const stream = createReadStream(document.filePath);
     const contentType =
-      lookup(document.filePath) || document.mimeType || 'application/octet-stream';
+      document.mimeType || lookup(document.filePath) || 'application/octet-stream';
 
-    // Sanitize the filename to prevent header injection via the document title.
-    const safeFilename = (document.title || 'document').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const safeFilename = this.downloadFilename(document);
 
     res.set({
       'Content-Type': contentType,
@@ -297,6 +302,13 @@ export class DocumentsController {
     }
   }
 
+  private downloadFilename(document: Document): string {
+    const base = (document.title || 'document')
+      .replace(/[^a-zA-Z0-9._-]/g, '_')
+      .replace(/\.(pdf|png|jpe?g|svg|bin)$/i, '');
+    return `${base || 'document'}${this.safeExtension(document.mimeType)}`;
+  }
+
   private safeExtension(mimeType: string): string {
     switch (mimeType) {
       case 'application/pdf':
@@ -305,6 +317,8 @@ export class DocumentsController {
         return '.png';
       case 'image/jpeg':
         return '.jpg';
+      case 'image/svg+xml':
+        return '.svg';
       default:
         return '.bin';
     }

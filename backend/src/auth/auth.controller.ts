@@ -8,6 +8,7 @@
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Req,
   Res,
   UseGuards,
@@ -31,6 +32,7 @@ import {
   TwoFactorChallengeDto,
   TwoFactorCodeDto,
 } from './dto/two-factor.dto';
+import { SetPasswordDto } from './dto/set-password.dto';
 import {
   getFrontendUrl,
   isAllowedFrontendOrigin,
@@ -183,6 +185,22 @@ export class AuthController {
     );
   }
 
+  @Post('set-password')
+  @UseGuards(JwtAuthGuard)
+  setPassword(
+    @Req() request: Request & { user?: User },
+    @Body() dto: SetPasswordDto,
+  ) {
+    const accessToken =
+      this.getBearerToken(request.headers.authorization) ??
+      getCookieValue(request.headers.cookie, ACCESS_COOKIE_NAME);
+    return this.authService.setPassword(
+      request.user!.id,
+      dto.newPassword,
+      accessToken,
+    );
+  }
+
   @Post('2fa/setup')
   @UseGuards(JwtAuthGuard)
   setupTwoFactor(@Req() request: Request & { user?: User }) {
@@ -220,7 +238,11 @@ export class AuthController {
     @Req() request: Request & { user?: User },
     @Body() dto: DisableTwoFactorDto,
   ) {
-    return this.twoFactorService.disable(request.user!.id, dto.password);
+    return this.twoFactorService.disable(
+      request.user!.id,
+      dto.password,
+      dto.code,
+    );
   }
 
   @Get('google')

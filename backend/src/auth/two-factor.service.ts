@@ -77,15 +77,42 @@ export class TwoFactorService {
     throw new UnauthorizedException('Invalid two-factor code');
   }
 
-  async disable(userId: string, password: string) {
+  async disable(userId: string, password?: string, code?: string) {
     const user = await this.usersService.findById(userId);
-    if (!user?.passwordHash) {
-      throw new BadRequestException('Password is not set for this account');
+    if (!user) {
+      throw new BadRequestException('Authenticated user is required');
     }
 
-    const passwordMatches = await bcrypt.compare(password, user.passwordHash);
-    if (!passwordMatches) {
-      throw new UnauthorizedException('Invalid password');
+    if (user.passwordHash) {
+      if (!password) {
+        throw new BadRequestException(
+          'Password is required to disable two-factor authentication',
+        );
+      }
+
+      const passwordMatches = await bcrypt.compare(password, user.passwordHash);
+      if (!passwordMatches) {
+        throw new UnauthorizedException('Invalid password');
+      }
+    } else {
+      if (!code) {
+        throw new BadRequestException(
+          'A current two-factor code is required to disable two-factor authentication',
+        );
+      }
+
+      const userWithSecret = await this.getUserWithSecret(userId);
+      this.assertNotRateLimited(userId);
+
+      if (
+        !this.verifyTotp(userWithSecret, code) &&
+        !(await this.consumeBackupCode(userWithSecret, code))
+      ) {
+        this.recordFailure(userId);
+        throw new UnauthorizedException('Invalid two-factor code');
+      }
+
+      this.clearFailures(userId);
     }
 
     await this.usersService.update(userId, {

@@ -16,6 +16,7 @@ import { DocumentsService } from './documents.service';
 import { Document, DocumentStatus } from './entities/document.entity';
 import { QueueService } from '../queue/queue.service';
 import { VerificationService } from '../verification/verification.service';
+import { AccessLogsService } from '../access-logs/access-logs.service';
 
 jest.mock('crypto', () => ({
   ...jest.requireActual('crypto'),
@@ -28,6 +29,8 @@ jest.mock('fs', () => ({
   promises: {
     mkdir: jest.fn().mockResolvedValue(undefined),
     writeFile: jest.fn().mockResolvedValue(undefined),
+    stat: jest.fn().mockResolvedValue({}),
+    unlink: jest.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -50,6 +53,12 @@ const mockRepository = {
   findAndCount: jest.fn().mockResolvedValue([[mockDocument], 1]),
   update: jest.fn().mockResolvedValue({ affected: 1 }),
   delete: jest.fn().mockResolvedValue({ affected: 1 }),
+  count: jest.fn().mockResolvedValue(0),
+  manager: {
+    transaction: jest.fn(async (callback: (manager: unknown) => unknown) =>
+      callback({ getRepository: () => mockRepository }),
+    ),
+  },
 };
 
 describe('DocumentsController', () => {
@@ -57,6 +66,7 @@ describe('DocumentsController', () => {
   let documentsService: DocumentsService;
   let queueService: QueueService;
   let verificationService: VerificationService;
+  let accessLogsService: AccessLogsService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -84,6 +94,12 @@ describe('DocumentsController', () => {
             findLatestByDocument: jest.fn().mockResolvedValue(null),
           },
         },
+        {
+          provide: AccessLogsService,
+          useValue: {
+            logDocumentAccess: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
 
@@ -91,6 +107,7 @@ describe('DocumentsController', () => {
     documentsService = module.get<DocumentsService>(DocumentsService);
     queueService = module.get<QueueService>(QueueService);
     verificationService = module.get<VerificationService>(VerificationService);
+    accessLogsService = module.get<AccessLogsService>(AccessLogsService);
   });
 
   afterEach(() => {
@@ -116,7 +133,12 @@ describe('DocumentsController', () => {
 
       mockRepository.findOne.mockResolvedValueOnce(null);
 
-      await controller.uploadDocument(file, req, res);
+      await controller.uploadDocument(
+        file,
+        { title: 'My Deed' } as any,
+        req,
+        res,
+      );
 
       const { writeFile } = jest.requireMock('fs').promises;
       expect(writeFile).toHaveBeenCalled();
@@ -124,7 +146,51 @@ describe('DocumentsController', () => {
       expect(savedPath).toContain('random-storage-key.pdf');
       expect(savedPath).not.toContain('passwd');
       expect(savedPath).not.toContain('..');
+      expect(mockRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'My Deed' }),
+      );
       expect(queueService.enqueueAnalyze).toHaveBeenCalledWith('doc-123', 'req-1');
+    });
+
+    it('should store SVG uploads with an .svg extension', async () => {
+      const file = {
+        fieldname: 'file',
+        originalname: 'parcel.svg',
+        mimetype: 'image/svg+xml',
+        size: 100,
+        buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>'),
+      } as Express.Multer.File;
+
+      const req = { user: { id: 'user-456' }, requestId: 'req-2' } as any;
+      const res = { status: jest.fn().mockReturnThis(), send: jest.fn() } as any;
+      mockRepository.findOne.mockResolvedValueOnce(null);
+
+      await controller.uploadDocument(file, {} as any, req, res);
+
+      const { writeFile } = jest.requireMock('fs').promises;
+      expect(writeFile.mock.calls[0][0]).toContain('random-storage-key.svg');
+    });
+  });
+
+  describe('upload quota', () => {
+    it('rejects an upload when the user already has the maximum number of documents', async () => {
+      const file = {
+        fieldname: 'file',
+        originalname: 'deed.pdf',
+        mimetype: 'application/pdf',
+        size: 100,
+        buffer: Buffer.from('%PDF-1.4\n'),
+      } as Express.Multer.File;
+      const req = { user: { id: 'user-456' }, requestId: 'req-3' } as any;
+      const res = { status: jest.fn().mockReturnThis(), send: jest.fn() } as any;
+
+      mockRepository.findOne.mockResolvedValueOnce(null);
+      mockRepository.count.mockResolvedValueOnce(20);
+
+      await expect(
+        controller.uploadDocument(file, {} as any, req, res),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockRepository.save).not.toHaveBeenCalled();
     });
   });
 
@@ -146,7 +212,8 @@ describe('DocumentsController', () => {
       expect(res.set).toHaveBeenCalledWith(
         expect.objectContaining({
           'Content-Type': 'application/pdf',
-          'Content-Disposition': `attachment; filename="${mockDocument.title}"`,
+          'Content-Disposition':
+            'attachment; filename=".._.._etc_passwd.pdf"',
           'X-Content-Type-Options': 'nosniff',
         }),
       );
@@ -191,7 +258,7 @@ describe('DocumentsController', () => {
       const req = { user: { id: 'user-456' }, requestId: 'req-1' } as any;
       const res = { status: jest.fn().mockReturnThis(), send: jest.fn() } as any;
 
-      await controller.uploadDocument(file, req, res);
+      await controller.uploadDocument(file, {} as any, req, res);
 
       // Should return 200 with existing doc, not create a new one
       expect(res.status).toHaveBeenCalledWith(200);
@@ -272,6 +339,62 @@ describe('DocumentsController', () => {
   });
 
   describe('downloadDocument — access control', () => {
+    it('should allow an admin to download any document and log the access', async () => {
+      const stream = { pipe: jest.fn(), on: jest.fn() } as unknown as ReadStream;
+      (createReadStream as jest.Mock).mockReturnValue(stream);
+
+      const req = {
+        user: { id: 'admin-user', role: 'admin' },
+        ip: '127.0.0.1',
+        headers: { 'user-agent': 'jest' },
+      } as any;
+      const res = {
+        set: jest.fn().mockReturnThis(),
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+      } as unknown as Response;
+
+      await controller.downloadDocument('doc-123', req, res);
+
+      expect(res.set).toHaveBeenCalled();
+      expect(accessLogsService.logDocumentAccess).toHaveBeenCalledWith(
+        'doc-123',
+        'admin-download',
+        'admin-user',
+        '127.0.0.1',
+        'jest',
+      );
+    });
+
+    it('should serve SVG documents as image/svg+xml with nosniff', async () => {
+      const stream = { pipe: jest.fn(), on: jest.fn() } as unknown as ReadStream;
+      (createReadStream as jest.Mock).mockReturnValue(stream);
+      mockRepository.findOne.mockResolvedValueOnce({
+        ...mockDocument,
+        title: 'Parcel Plan',
+        filePath: '/uploads/random-storage-key.svg',
+        mimeType: 'image/svg+xml',
+      });
+
+      const req = { user: { id: 'user-456' } } as any;
+      const res = {
+        set: jest.fn().mockReturnThis(),
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+      } as unknown as Response;
+
+      await controller.downloadDocument('doc-123', req, res);
+
+      expect(res.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          'Content-Type': 'image/svg+xml',
+          'Content-Disposition':
+            'attachment; filename="Parcel_Plan.svg"',
+          'X-Content-Type-Options': 'nosniff',
+        }),
+      );
+    });
+
     it('should deny download to a non-owner', async () => {
       const stream = { pipe: jest.fn(), on: jest.fn() } as unknown as ReadStream;
       (createReadStream as jest.Mock).mockReturnValue(stream);
@@ -285,7 +408,7 @@ describe('DocumentsController', () => {
 
       await expect(
         controller.downloadDocument('doc-123', req, res),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('should deny download when user is not authenticated', async () => {
@@ -298,7 +421,7 @@ describe('DocumentsController', () => {
 
       await expect(
         controller.downloadDocument('doc-123', req, res),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 
@@ -386,7 +509,7 @@ describe('DocumentsController', () => {
       const res = { status: jest.fn().mockReturnThis(), send: jest.fn() } as any;
 
       await expect(
-        controller.uploadDocument(undefined as any, req, res),
+        controller.uploadDocument(undefined as any, {} as any, req, res),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -405,7 +528,7 @@ describe('DocumentsController', () => {
       const req = { user: { id: 'user-456' }, requestId: 'req-1' } as any;
       const res = { status: jest.fn().mockReturnThis(), send: jest.fn() } as any;
 
-      await controller.uploadDocument(file, req, res);
+      await controller.uploadDocument(file, {} as any, req, res);
 
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.send).toHaveBeenCalledWith(existingDoc);

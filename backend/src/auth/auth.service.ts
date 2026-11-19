@@ -22,6 +22,8 @@ import { RefreshSession } from './entities/refresh-session.entity';
 import { TwoFactorService } from './two-factor.service';
 import { TokenRevocationService } from './token-revocation.service';
 
+const RECENT_LOGIN_WINDOW_SECONDS = 15 * 60;
+
 export interface SessionContext {
   userAgent?: string;
   ipAddress?: string;
@@ -254,6 +256,55 @@ export class AuthService {
     return { message: 'Password changed. Please sign in again.' };
   }
 
+  async setPassword(
+    userId: string,
+    newPassword: string,
+    accessToken?: string,
+  ): Promise<{ message: string }> {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException('Authenticated user is required');
+    }
+    if (user.passwordHash) {
+      throw new ConflictException('Password is already set for this account');
+    }
+    if (!accessToken) {
+      throw new UnauthorizedException(
+        'A recent login is required to set a password',
+      );
+    }
+
+    let payload: JwtPayload;
+    try {
+      payload = await this.jwtService.verifyAsync<JwtPayload>(accessToken);
+    } catch {
+      throw new UnauthorizedException(
+        'A recent login is required to set a password',
+      );
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    if (
+      payload.sub !== userId ||
+      !payload.iat ||
+      payload.iat > now + 60 ||
+      now - payload.iat > RECENT_LOGIN_WINDOW_SECONDS
+    ) {
+      throw new UnauthorizedException(
+        'A recent login is required to set a password',
+      );
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await this.usersService.update(userId, { passwordHash });
+    await this.sessionsRepository.update(
+      { userId },
+      { revokedAt: new Date() },
+    );
+
+    return { message: 'Password set. Please sign in again.' };
+  }
+
   private async issueTokens(user: User, context?: SessionContext) {
     const session = await this.sessionsRepository.save(
       this.sessionsRepository.create({
@@ -403,6 +454,6 @@ export class AuthService {
     const user = await this.usersService.findByEmail(email);
     if (!user) throw new NotFoundException('Invalid token');
     const hashed = await bcrypt.hash(password, 10);
-    await this.usersService.update(user.id, { password: hashed });
+    await this.usersService.update(user.id, { passwordHash: hashed });
   }
 }

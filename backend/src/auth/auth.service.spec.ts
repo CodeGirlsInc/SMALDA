@@ -218,4 +218,53 @@ describe('AuthService', () => {
       );
     });
   });
+
+  describe('setPassword()', () => {
+    const oauthUser = { ...mockUser, passwordHash: null };
+
+    it('sets a password for an OAuth-only user after a recent login', async () => {
+      mockUsersService.findById.mockResolvedValue(oauthUser);
+      mockJwtService.verifyAsync.mockResolvedValueOnce({
+        sub: oauthUser.id,
+        iat: Math.floor(Date.now() / 1000) - 60,
+      });
+
+      await expect(
+        service.setPassword(oauthUser.id, 'NewPassword123!', 'recent-token'),
+      ).resolves.toEqual({ message: 'Password set. Please sign in again.' });
+      expect(mockUsersService.update).toHaveBeenCalledWith(oauthUser.id, {
+        passwordHash: expect.any(String),
+      });
+      expect(mockSessionsRepository.update).toHaveBeenCalledWith(
+        { userId: oauthUser.id },
+        { revokedAt: expect.any(Date) },
+      );
+    });
+
+    it('rejects a stale login token', async () => {
+      mockUsersService.findById.mockResolvedValue(oauthUser);
+      mockJwtService.verifyAsync.mockResolvedValueOnce({
+        sub: oauthUser.id,
+        iat: Math.floor(Date.now() / 1000) - 3600,
+      });
+
+      await expect(
+        service.setPassword(oauthUser.id, 'NewPassword123!', 'stale-token'),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(mockUsersService.update).not.toHaveBeenCalled();
+    });
+
+    it('does not overwrite an existing password', async () => {
+      mockUsersService.findById.mockResolvedValue(mockUser);
+      mockJwtService.verifyAsync.mockResolvedValueOnce({
+        sub: mockUser.id,
+        iat: Math.floor(Date.now() / 1000),
+      });
+
+      await expect(
+        service.setPassword(mockUser.id, 'NewPassword123!', 'recent-token'),
+      ).rejects.toThrow(ConflictException);
+      expect(mockUsersService.update).not.toHaveBeenCalled();
+    });
+  });
 });

@@ -532,7 +532,7 @@ export class FileValidationPipe implements PipeTransform<
     this.assertSafeSvg(source);
 
     try {
-      const sanitized = await sharp(file.buffer, {
+      const rasterized = await sharp(file.buffer, {
         limitInputPixels: 40_000_000,
         timeout: 5_000,
       })
@@ -545,6 +545,13 @@ export class FileValidationPipe implements PipeTransform<
         .png()
         .toBuffer();
 
+      if (rasterized.length > MAX_FILE_SIZE_BYTES) {
+        throw new BadRequestException(
+          `File exceeds maximum size of ${MAX_FILE_SIZE_BYTES} bytes`,
+        );
+      }
+
+      const sanitized = Buffer.from(source, 'utf8');
       if (sanitized.length > MAX_FILE_SIZE_BYTES) {
         throw new BadRequestException(
           `File exceeds maximum size of ${MAX_FILE_SIZE_BYTES} bytes`,
@@ -553,7 +560,6 @@ export class FileValidationPipe implements PipeTransform<
 
       file.buffer = sanitized;
       file.size = sanitized.length;
-      file.mimetype = 'image/png';
     } catch (error) {
       if (error instanceof BadRequestException) throw error;
       throw new BadRequestException('Invalid or unsafe SVG file');
