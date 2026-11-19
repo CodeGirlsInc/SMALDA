@@ -17,6 +17,12 @@ export enum DisputeStatus {
   DISMISSED = 'dismissed',
 }
 
+export enum DisputeResolution {
+  UPHELD = 'UPHELD',
+  REJECTED = 'REJECTED',
+  WITHDRAWN = 'WITHDRAWN',
+}
+
 const backendStatuses = new Set<string>(Object.values(DisputeStatus));
 const contractStatuses = new Set<string>(DISPUTE_STATUS_VALUES);
 if (
@@ -58,6 +64,19 @@ export class Dispute {
     default: DisputeStatus.OPEN,
   })
   status: DisputeStatus;
+
+  @Column({ type: 'uuid', nullable: true })
+  reviewerId: string | null;
+
+  @Column({
+    type: 'enum',
+    enum: DisputeResolution,
+    nullable: true,
+  })
+  resolution: DisputeResolution | null;
+
+  @Column({ type: 'text', nullable: true })
+  resolutionNote: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

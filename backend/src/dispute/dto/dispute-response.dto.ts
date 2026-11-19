@@ -1,5 +1,8 @@
 import { DisputeReason } from '../entities/dispute-reason.entity';
-import { DisputeStatus } from '../entities/dispute.entity';
+import {
+  DisputeResolution,
+  DisputeStatus,
+} from '../entities/dispute.entity';
 
 export class DisputeResponseDto {
   id: string;
@@ -8,5 +11,8 @@ export class DisputeResponseDto {
   reason: DisputeReason | null;
   filedBy: string;
   status: DisputeStatus;
+  reviewerId: string | null;
+  resolution: DisputeResolution | null;
+  resolutionNote: string | null;
   createdAt: Date;
 }

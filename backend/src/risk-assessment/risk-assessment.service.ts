@@ -1,10 +1,10 @@
 ﻿import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PDFDocument } from 'pdf-lib';
 import { promises as fs } from 'fs';
 
 import { DocumentsService } from '../documents/documents.service';
 import { Document } from '../documents/entities/document.entity';
+import { extractTextFromPdfBuffer } from './pdf-text-extractor';
 
 export enum RiskFlag {
   MISSING_PARCEL_ID = 'MISSING_PARCEL_ID',
@@ -103,7 +103,7 @@ export class RiskAssessmentService {
       throw new NotFoundException('Document not found');
     }
 
-    const flags = await this.detectFlags(document);
+    const { flags, contentAnalysisPossible } = await this.detectFlags(document);
     const score = this.calculateScore(flags);
 
     await this.documentsService.updateRisk(documentId, score, flags);
@@ -117,7 +117,7 @@ export class RiskAssessmentService {
     return {
       score,
       flags: flagResults,
-      contentAnalysisPossible: document.mimeType === 'application/pdf',
+      contentAnalysisPossible,
     };
   }
 
@@ -132,6 +132,12 @@ export class RiskAssessmentService {
 
     const locale = lang || 'en';
     const flags = (document.riskFlags ?? []) as unknown as RiskFlag[];
+    let contentAnalysisPossible = false;
+    if (document.mimeType === 'application/pdf') {
+      const extractedText = await this.extractTextFromPdf(document.filePath);
+      contentAnalysisPossible =
+        extractedText !== null && extractedText.trim().length > 0;
+    }
 
     return {
       score: document.riskScore ?? 0,
@@ -142,21 +148,26 @@ export class RiskAssessmentService {
           RISK_FLAG_DESCRIPTIONS[flag]?.['en'] ||
           flag,
       })),
-      contentAnalysisPossible: document.mimeType === 'application/pdf',
+      contentAnalysisPossible,
     };
   }
 
-  private async detectFlags(document: Document): Promise<RiskFlag[]> {
+  private async detectFlags(
+    document: Document,
+  ): Promise<{ flags: RiskFlag[]; contentAnalysisPossible: boolean }> {
     const flags: RiskFlag[] = [];
+    const isPdf = document.mimeType === 'application/pdf';
 
-    // Extract text from PDF if possible
     let extractedText: string | null = null;
-    if (document.mimeType === 'application/pdf') {
+    if (isPdf) {
       extractedText = await this.extractTextFromPdf(document.filePath);
     }
+    const textAvailable =
+      extractedText !== null && extractedText.trim().length > 0;
 
-    // MISSING_PARCEL_ID: Check extracted text for parcel number pattern
-    if (extractedText) {
+    // MISSING_PARCEL_ID: only judge on text when a real text layer was found.
+    // Scanned PDFs have no text layer, so text-based rules must be skipped.
+    if (textAvailable) {
       // Parcel number patterns: various formats like "123-456-789", "APN: 12345", "Parcel ID: 123456"
       const parcelPatterns = [
         /\b(?:parcel|apn|pin|account)\s*(?:number|id|#)?[:\s]*\d+[-\s]?\d+[-\s]?\d+\b/i,
@@ -164,12 +175,12 @@ export class RiskAssessmentService {
         /\b(?:lot|block)\s+\d+\b/i,
       ];
       const hasParcelId = parcelPatterns.some((pattern) =>
-        pattern.test(extractedText),
+        pattern.test(extractedText!),
       );
       if (!hasParcelId) {
         flags.push(RiskFlag.MISSING_PARCEL_ID);
       }
-    } else {
+    } else if (!isPdf) {
       // Fallback to metadata check for non-PDF files
       if (!document.title || !/\d/.test(document.title)) {
         flags.push(RiskFlag.MISSING_PARCEL_ID);
@@ -193,28 +204,27 @@ export class RiskAssessmentService {
     // FORGED_SIGNATURE_INDICATOR: File size as one signal among others
     // Note: This remains heuristic, not cryptographic, verification
     const fileSizeSuspicious =
-      document.mimeType === 'application/pdf' &&
+      isPdf &&
       document.fileSize !== undefined &&
       document.fileSize < 50_000;
 
-    // Additional heuristic: very small number of pages for a PDF
-    let pageCountSuspicious = false;
-    if (extractedText !== null && document.fileSize !== undefined) {
-      // Estimate: if file is small and text content is minimal
-      pageCountSuspicious = extractedText.trim().length < 100;
+    // Text-derived heuristic: a PDF with only a trivial amount of text.
+    let minimalTextSuspicious = false;
+    if (textAvailable && document.fileSize !== undefined) {
+      minimalTextSuspicious = extractedText!.trim().length < 100;
     }
 
-    if (fileSizeSuspicious || pageCountSuspicious) {
+    if (fileSizeSuspicious || minimalTextSuspicious) {
       flags.push(RiskFlag.FORGED_SIGNATURE_INDICATOR);
     }
 
     // EXPIRED_DOCUMENT: Parse date/expiry field from extracted text
-    if (extractedText) {
-      const isExpired = this.checkExpiryFromText(extractedText);
+    if (textAvailable) {
+      const isExpired = this.checkExpiryFromText(extractedText!);
       if (isExpired) {
         flags.push(RiskFlag.EXPIRED_DOCUMENT);
       }
-    } else if (document.title?.toLowerCase().includes('expired')) {
+    } else if (!isPdf && document.title?.toLowerCase().includes('expired')) {
       // Fallback to title check for non-PDF files
       flags.push(RiskFlag.EXPIRED_DOCUMENT);
     }
@@ -225,56 +235,28 @@ export class RiskAssessmentService {
     }
 
     // UNKNOWN_ISSUER: Match extracted text against known issuers
-    if (extractedText) {
+    if (textAvailable) {
       const issuerFound = this.knownIssuers.some((issuer) =>
-        extractedText.toLowerCase().includes(issuer),
+        extractedText!.toLowerCase().includes(issuer),
       );
       if (!issuerFound) {
         flags.push(RiskFlag.UNKNOWN_ISSUER);
       }
-    } else if (!document.title?.toLowerCase().includes('issued')) {
+    } else if (!isPdf && !document.title?.toLowerCase().includes('issued')) {
       // Fallback to title check for non-PDF files
       flags.push(RiskFlag.UNKNOWN_ISSUER);
     }
 
-    return Array.from(new Set(flags));
+    return {
+      flags: Array.from(new Set(flags)),
+      contentAnalysisPossible: isPdf && textAvailable,
+    };
   }
 
   private async extractTextFromPdf(filePath: string): Promise<string | null> {
     try {
       const pdfBuffer = await fs.readFile(filePath);
-      const pdfDoc = await PDFDocument.load(pdfBuffer, {
-        ignoreEncryption: true,
-      });
-      const pages = pdfDoc.getPages();
-
-      // pdf-lib doesn't have built-in text extraction, but we can check for text content
-      // by examining the PDF structure. For full text extraction, we'd need pdf-parse or similar.
-      // Since pdf-lib's text support is limited, we'll use a heuristic approach.
-      // Note: For production, consider using pdf-parse or pdfjs-dist for full text extraction.
-
-      // Attempt to extract text using pdf-lib's limited capabilities
-      // This is a workaround - pdf-lib is primarily for creation/modification
-      let fullText = '';
-
-      // Check if document has any content streams (indicates it has text)
-      for (const page of pages) {
-        try {
-          // Try to get the text content from the page
-          const pageNode = page.node;
-          const contents = pageNode.get(page.node.context.obj('Contents'));
-          if (contents) {
-            // Page has content, but we can't easily extract readable text with pdf-lib
-            // Mark that content exists but we can't parse it
-            fullText += '[PDF content detected] ';
-          }
-        } catch {
-          // Ignore extraction errors for individual pages
-        }
-      }
-
-      // If we couldn't extract meaningful text, return null to trigger fallback
-      return fullText.trim().length > 0 ? fullText : null;
+      return extractTextFromPdfBuffer(pdfBuffer);
     } catch (error) {
       this.logger.warn(
         `Failed to extract text from PDF at ${filePath}: ${error.message}`,

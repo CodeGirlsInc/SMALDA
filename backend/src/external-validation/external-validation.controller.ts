@@ -5,6 +5,7 @@ import {
   Get,
   NotFoundException,
   Param,
+  ParseUUIDPipe,
   Post,
   Req,
   UseGuards,
@@ -27,7 +28,7 @@ export class ExternalValidationController {
 
   @Post()
   async createValidation(
-    @Param('id') documentId: string,
+    @Param('id', ParseUUIDPipe) documentId: string,
     @Body()
     body: {
       validationType: ValidationType;
@@ -59,7 +60,7 @@ export class ExternalValidationController {
 
   @Get()
   async getLatestValidation(
-    @Param('id') documentId: string,
+    @Param('id', ParseUUIDPipe) documentId: string,
     @Req() req: Request & { user?: User },
   ) {
     const document = await this.documentsService.findById(documentId);
