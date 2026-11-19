@@ -1,9 +1,11 @@
-import { Controller, Get, Header } from '@nestjs/common';
+import { Controller, Get, Header, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { register, Counter, Gauge } from 'prom-client';
 import { QueueService } from '../queue/queue.service';
+import { MetricsAuthGuard } from './metrics-auth.guard';
 
 @ApiTags('metrics')
+@UseGuards(MetricsAuthGuard)
 @Controller('metrics')
 export class MetricsController {
   private readonly documentsSubmitted: Counter;

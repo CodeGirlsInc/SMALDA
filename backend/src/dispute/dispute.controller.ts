@@ -18,6 +18,7 @@ import { CreateDisputeDto } from './dto/create-dispute.dto';
 import { DisputeResponseDto } from './dto/dispute-response.dto';
 import { UpdateDisputeStatusDto } from './dto/update-dispute-status.dto';
 import { DisputeService } from './dispute.service';
+import { PaginateDisputesDto } from './dto/paginate-disputes.dto';
 
 @Controller('disputes')
 @UseGuards(JwtAuthGuard)
@@ -51,13 +52,12 @@ export class DisputeController {
   @Get()
   async getMyDisputes(
     @Req() req: Request & { user?: User },
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
+    @Query() query: PaginateDisputesDto,
   ): Promise<{ data: DisputeResponseDto[]; total: number }> {
     return this.disputeService.findByUser(
       req.user!.id,
-      limit ? parseInt(limit, 10) : 20,
-      offset ? parseInt(offset, 10) : 0,
+      query.limit,
+      query.offset,
     );
   }
 

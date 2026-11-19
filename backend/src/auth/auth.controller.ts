@@ -8,6 +8,7 @@
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Req,
   Res,
   UseGuards,

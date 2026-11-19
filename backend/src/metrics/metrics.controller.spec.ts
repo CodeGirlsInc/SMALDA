@@ -1,4 +1,5 @@
 import { MetricsController } from './metrics.controller';
+import { QueueService } from '../queue/queue.service';
 import { register } from 'prom-client';
 
 describe('MetricsController', () => {
@@ -6,7 +7,9 @@ describe('MetricsController', () => {
 
   beforeEach(() => {
     register.clear();
-    controller = new MetricsController();
+    controller = new MetricsController({
+      getQueue: () => ({ getJobCounts: jest.fn().mockResolvedValue({}) }),
+    } as unknown as QueueService);
   });
 
   it('should be defined', () => {

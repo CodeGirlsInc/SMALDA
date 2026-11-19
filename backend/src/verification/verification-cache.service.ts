@@ -1,12 +1,15 @@
 import { Injectable } from '@nestjs/common';
+import { TtlCache } from './verification-cache';
 
-/**
- * Caches verification results by document hash so identical documents
- * are not re-verified from scratch on every request.
- */
+const CACHE_TTL_MS = 5 * 60_000;
+const CACHE_MAX_ENTRIES = 1000;
+
 @Injectable()
 export class VerificationCacheService {
-  private readonly cache = new Map<string, unknown>();
+  private readonly cache = new TtlCache<unknown>(
+    CACHE_TTL_MS,
+    CACHE_MAX_ENTRIES,
+  );
 
   get(documentHash: string): unknown | undefined {
     return this.cache.get(documentHash);
@@ -16,8 +19,12 @@ export class VerificationCacheService {
     this.cache.set(documentHash, result);
   }
 
+  invalidate(documentHash: string): void {
+    this.cache.invalidate(documentHash);
+  }
+
   has(documentHash: string): boolean {
-    return this.cache.has(documentHash);
+    return this.get(documentHash) !== undefined;
   }
 
   clear(): void {

@@ -17,7 +17,7 @@ import { Request } from 'express';
 import { UsersService } from './users.service';
 import { ApiKeysService } from './api-keys.service';
 import { DocumentsService } from '../documents/documents.service';
-import { AccessLogsService } from '../access-logs/access-logs.service';
+import { RoleChangeLoggerService } from '../access-logs/role-change-logger.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -68,7 +68,7 @@ export class UsersController {
     private readonly usersService: UsersService,
     private readonly documentsService: DocumentsService,
     private readonly apiKeysService: ApiKeysService,
-    private readonly accessLogsService: AccessLogsService,
+    private readonly roleChangeLogger: RoleChangeLoggerService,
   ) {}
 
   @Get('me')
@@ -205,13 +205,12 @@ export class UsersController {
 
     const updated = await this.usersService.updateRole(id, dto.role);
 
-    await this.accessLogsService.create({
-      userId: req.user!.id,
-      routePath: `admin/users/${id}/role`,
-      httpMethod: 'PATCH',
-      ipAddress: req.ip ?? 'unknown',
-      statusCode: 200,
-    });
+    await this.roleChangeLogger.logRoleChange(
+      id,
+      target.role,
+      dto.role,
+      req.user!.id,
+    );
 
     return updated ? toPublicUser(updated) : null;
   }

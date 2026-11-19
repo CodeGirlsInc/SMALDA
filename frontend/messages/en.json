@@ -138,6 +138,50 @@
       "errorGeneric": "Something went wrong. Please try again.",
       "requestNewLink": "Request a new link",
       "backToLogin": "Back to sign in"
+    },
+    "twoFactor": {
+      "setup": {
+        "title": "Set up two-factor authentication",
+        "loading": "Preparing your 2FA credentials…",
+        "retry": "Try again",
+        "missingSecret": "We couldn't get a setup secret from the server. Please try again.",
+        "initError": "Could not start 2FA setup. Please try again.",
+        "scanInstructions": "Scan this QR code with your authenticator app, then enter the 6-digit code it shows.",
+        "qrAlt": "QR code for two-factor authentication setup",
+        "qrUnavailable": "The QR code is too large to display. Enter the secret manually.",
+        "manualSecret": "Manual entry secret",
+        "codeLabel": "6-digit code from your app",
+        "codePlaceholder": "123456",
+        "invalidCode": "Enter a valid 6-digit code.",
+        "confirm": "Confirm and enable 2FA",
+        "confirming": "Confirming…",
+        "verifyError": "That code wasn't accepted. Check your authenticator app and try again.",
+        "successTitle": "Two-factor authentication enabled",
+        "saveCodes": "Save these backup codes in a safe place. They are shown only once.",
+        "noBackupCodes": "No backup codes were returned.",
+        "copy": "Copy codes",
+        "copied": "Codes copied",
+        "copyError": "Could not copy the codes. Select them manually.",
+        "download": "Download (.txt)",
+        "done": "Done — return to security settings"
+      },
+      "verify": {
+        "title": "Two-factor verification",
+        "description": "Enter the code from your authenticator app or use a backup code to sign in.",
+        "codeLabel": "6-digit authenticator code",
+        "backupCodeLabel": "Backup code",
+        "codePlaceholder": "123456",
+        "backupPlaceholder": "CODE-1234-5678",
+        "codeRequired": "Enter your verification code.",
+        "submit": "Verify and continue",
+        "submitting": "Verifying…",
+        "useBackup": "Use an emergency backup code",
+        "useAuthenticator": "Use authenticator app code",
+        "expired": "Your verification request has expired. Sign in again.",
+        "rateLimited": "Too many attempts. Please wait before trying again.",
+        "generic": "Verification failed. Please try again.",
+        "signIn": "Back to sign in"
+      }
     }
   },
   "dashboard": {

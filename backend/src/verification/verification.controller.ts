@@ -4,6 +4,7 @@ import { Throttle } from '@nestjs/throttler';
 import { DocumentsService } from '../documents/documents.service';
 import { VerificationService } from './verification.service';
 import { VerificationCacheService } from './verification-cache.service';
+import { toPublicResult } from './verify-result';
 
 // Stricter rate limiting for public endpoint (10 requests per minute)
 @Throttle({ default: { ttl: 60000, limit: 10 } })
@@ -55,8 +56,10 @@ export class VerificationController {
         documentStatus: document.status,
       };
     } else {
+      const result = toPublicResult(record.status);
       response = {
-        verified: true,
+        verified: result.verified,
+        status: result.status,
         stellarTxHash: record.stellarTxHash,
         stellarLedger: record.stellarLedger,
         anchoredAt: record.anchoredAt,

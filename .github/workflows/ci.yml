@@ -38,6 +38,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Check removed helpers stay removed
+        run: npm run check:dead-helpers
+
       - name: Build (TypeScript check)
         run: npm run build
 

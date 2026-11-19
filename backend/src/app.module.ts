@@ -26,8 +26,6 @@ import { ConfigValidationSchema } from './config/config.validation';
 
 import { MetricsModule } from './metrics/metrics.module';
 import { QueueObservabilityModule } from './queue/queue-observability.module';
-import { NetworkModule } from './network/network.module';
-import { TransferModule } from './transfer/transfer.module';
 
 @Module({
   imports: [
@@ -66,8 +64,6 @@ import { TransferModule } from './transfer/transfer.module';
     AccessLogsModule,
     MetricsModule,
     QueueObservabilityModule,
-    NetworkModule,
-    TransferModule,
   ],
   controllers: [AppController],
   providers: [

@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Queue, ConnectionOptions as RedisConnectionOptions } from 'bullmq';
+import { documentProcessorJobOptions } from './document-processor-retry.config';
 
 export interface DocumentJobData {
   documentId: string;
@@ -18,11 +19,7 @@ export class QueueService implements OnModuleDestroy {
     this.connection = this.buildConnection();
     this.queue = new Queue(this.queueName, {
       connection: this.connection,
-      defaultJobOptions: {
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 1000 },
-        removeOnComplete: true,
-      },
+      defaultJobOptions: documentProcessorJobOptions,
     });
   }
 

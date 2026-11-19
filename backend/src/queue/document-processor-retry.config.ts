@@ -1,8 +1,6 @@
-/**
- * Exponential backoff retry configuration for document processor jobs,
- * replacing the previous default (no backoff) job options.
- */
-export const documentProcessorJobOptions = {
+import { JobsOptions } from 'bullmq';
+
+export const documentProcessorJobOptions: JobsOptions = {
   attempts: 5,
   backoff: {
     type: 'exponential',

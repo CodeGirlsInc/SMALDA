@@ -4,6 +4,7 @@ import { BadRequestException } from '@nestjs/common';
 import { VerificationController } from './verification.controller';
 import { DocumentsService } from '../documents/documents.service';
 import { VerificationService } from './verification.service';
+import { VerificationCacheService } from './verification-cache.service';
 import {
   VerificationStatus,
 } from './entities/verification-record.entity';
@@ -26,6 +27,10 @@ describe('VerificationController', () => {
       providers: [
         { provide: DocumentsService, useValue: mockDocumentsService },
         { provide: VerificationService, useValue: mockVerificationService },
+        {
+          provide: VerificationCacheService,
+          useValue: { get: jest.fn(), set: jest.fn(), clear: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -136,10 +141,7 @@ describe('VerificationController', () => {
       expect(result.anchoredAt).toEqual(new Date('2025-06-01T00:00:00Z'));
     });
 
-    it('should report verified: true for a failed verification record that is the latest', async () => {
-      // A failed record is still a valid verification attempt — the caller
-      // should see the result. The controller returns verified: true because
-      // a Stellar record exists; the status of the record is returned as-is.
+    it('should report verified: false for a failed verification record', async () => {
       const doc = { id: 'doc-1', fileHash: 'e'.repeat(64) };
       const record = {
         id: 'vr-2',
@@ -155,9 +157,8 @@ describe('VerificationController', () => {
 
       const result = await controller.verifyByHash('e'.repeat(64));
 
-      // The controller returns verified: true when a record exists,
-      // but the caller should check the stellarTxHash for details.
-      expect(result.verified).toBe(true);
+      expect(result.verified).toBe(false);
+      expect(result.status).toBe(VerificationStatus.FAILED);
       expect(result.stellarTxHash).toBe('tx-hash-failed');
     });
   });
