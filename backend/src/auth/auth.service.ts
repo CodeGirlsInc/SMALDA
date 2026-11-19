@@ -270,7 +270,7 @@ export class AuthService {
 
   private async generateTwoFactorToken(user: User) {
     return this.jwtService.signAsync(
-      { sub: user.id, purpose: '2fa' },
+      { sub: user.id, typ: '2fa', purpose: '2fa' },
       { expiresIn: '5m' },
     );
   }
@@ -346,6 +346,7 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: user.role,
+      typ: 'access',
       jti: randomUUID(),
     };
 
@@ -357,6 +358,7 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: user.role,
+      typ: 'refresh',
       sid: sessionId,
       jti: randomUUID(),
     };

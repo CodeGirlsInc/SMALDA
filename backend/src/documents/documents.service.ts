@@ -40,6 +40,15 @@ export class DocumentsService {
     return this.findById(id);
   }
 
+  async updateLocation(
+    id: string,
+    latitude: number,
+    longitude: number,
+  ): Promise<Document | null> {
+    await this.documentRepository.update(id, { latitude, longitude });
+    return this.findById(id);
+  }
+
   async revokeAccess(id: string): Promise<Document | null> {
     await this.documentRepository.update(id, {
       status: DocumentStatus.REJECTED,

@@ -14,6 +14,9 @@ import { JwtService } from '@nestjs/jwt';
 import { DocumentsService } from './documents.service';
 import { DocumentStatus } from './entities/document.entity';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
+import { ACCESS_COOKIE_NAME, getCookieValue } from '../auth/auth-cookie';
+import { AuthService } from '../auth/auth.service';
+import { UsersService } from '../users/users.service';
 
 /*
  * ─────────────────────────────────────────────────────────────────────
@@ -53,13 +56,7 @@ interface AuthenticatedSocket extends Socket {
   userRole?: string;
 }
 
-@WebSocketGateway({
-  namespace: 'documents',
-  cors: {
-    origin: (process.env.FRONTEND_URL ?? 'http://localhost:3001').split(','),
-    credentials: true,
-  },
-})
+@WebSocketGateway({ namespace: 'documents' })
 @Injectable()
 export class DocumentsGateway
   implements OnGatewayConnection, OnGatewayDisconnect
@@ -73,29 +70,44 @@ export class DocumentsGateway
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly documentsService: DocumentsService,
+    private readonly authService: AuthService,
+    private readonly usersService: UsersService,
   ) {}
 
   async handleConnection(client: AuthenticatedSocket): Promise<void> {
+    const token =
+      getCookieValue(client.handshake.headers?.cookie, ACCESS_COOKIE_NAME) ??
+      client.handshake.auth?.token;
+
+    if (!token || typeof token !== 'string') {
+      client.emit('error', { message: 'Authentication required' });
+      client.disconnect();
+      return;
+    }
+
     try {
-      const token =
-        client.handshake.auth?.token ??
-        (client.handshake.query?.token as string);
-
-      if (!token) {
-        client.emit('error', { message: 'Authentication required' });
-        client.disconnect();
-        return;
-      }
-
       const secret = this.configService.get<string>('JWT_SECRET');
       const payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
         secret,
       });
 
-      client.userId = payload.sub;
-      client.userRole = payload.role;
+      if (payload.typ !== 'access' || payload.purpose === '2fa') {
+        throw new Error('Invalid token type');
+      }
 
-      client.join(`user:${payload.sub}`);
+      if (await this.authService.isTokenBlacklisted(payload.jti)) {
+        throw new Error('Token has been revoked');
+      }
+
+      const user = await this.usersService.findById(payload.sub);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      client.userId = user.id;
+      client.userRole = user.role;
+
+      client.join(`user:${user.id}`);
     } catch {
       client.emit('error', { message: 'Invalid authentication token' });
       client.disconnect();

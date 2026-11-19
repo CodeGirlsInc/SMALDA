@@ -278,6 +278,17 @@
       "weight": "Weight: {value}%",
       "contribution": "Contribution: {value}"
     },
+    "location": {
+      "title": "Parcel location",
+      "current": "Latitude: {latitude}, Longitude: {longitude}",
+      "missing": "No location set yet.",
+      "latitude": "Latitude",
+      "longitude": "Longitude",
+      "save": "Set location",
+      "saving": "Saving...",
+      "invalid": "Enter a latitude between -90 and 90 and a longitude between -180 and 180.",
+      "error": "Could not save location."
+    },
     "actions": {
       "title": "Actions",
       "verify": "Verify on Stellar",

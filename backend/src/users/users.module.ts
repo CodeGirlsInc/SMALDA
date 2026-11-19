@@ -1,4 +1,4 @@
-﻿import { Module } from '@nestjs/common';
+﻿import { forwardRef, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -22,7 +22,7 @@ import { AccessLogsModule } from '../access-logs/access-logs.module';
         secret: config.get<string>('JWT_SECRET'),
       }),
     }),
-    DocumentsModule,
+    forwardRef(() => DocumentsModule),
     AccessLogsModule,
   ],
   controllers: [UsersController],
