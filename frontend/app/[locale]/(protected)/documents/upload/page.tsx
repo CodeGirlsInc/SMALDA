@@ -2,14 +2,14 @@
 
 import React, { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { API_PREFIX } from "@/lib/api-contracts";
+import { request } from "@/lib/api-client";
+import { apiUrl } from "@/lib/api-config";
 import {
   documentUploadConstraints,
   documentUploadSchema,
 } from "@/lib/schemas/document";
 import { sanitizeSvg } from "@/lib/document-sanitizer";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const MAX_SIZE_MB = Math.round(
   documentUploadConstraints.fileSize.max / (1024 * 1024),
 );
@@ -105,42 +105,32 @@ export default function DocumentUploadPage() {
     setProgress(10);
     setError("");
 
+    const formData = new FormData();
+    formData.append("file", selectedFile);
+    formData.append("title", title || selectedFile.name);
+
+    // Simulated upload progress
+    const interval = setInterval(() => {
+      setProgress((prev) => (prev >= 90 ? prev : prev + 20));
+    }, 200);
+
     try {
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-      formData.append("title", title || selectedFile.name);
-
-      // Simulated upload progress
-      const interval = setInterval(() => {
-        setProgress((prev) => (prev >= 90 ? prev : prev + 20));
-      }, 200);
-
-      const token = window.localStorage.getItem("auth-token");
-      const response = await fetch(
-        `${API_BASE}${API_PREFIX}/documents/upload`,
+      const data = await request<{ id?: string; documentId?: string }>(
+        apiUrl("/documents/upload"),
         {
           method: "POST",
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
           body: formData,
         },
       );
-
-      clearInterval(interval);
       setProgress(100);
-
-      if (response.status === 202 || response.ok) {
-        const data = await response.json().catch(() => ({ id: "new-doc-id" }));
-        const docId = data.id || data.documentId || "new-doc-id";
-        setTimeout(() => {
-          router.push(`/documents/${docId}`);
-        }, 500);
-      } else {
-        const data = await response.json().catch(() => ({}));
-        setError(data.message || "Failed to upload document. Please try again.");
-      }
+      const docId = data.id ?? data.documentId ?? "new-doc-id";
+      setTimeout(() => {
+        router.push(`/documents/${docId}`);
+      }, 500);
     } catch {
-      setError("Network error uploading document.");
+      setError("Failed to upload document. Please try again.");
     } finally {
+      clearInterval(interval);
       setUploading(false);
     }
   }

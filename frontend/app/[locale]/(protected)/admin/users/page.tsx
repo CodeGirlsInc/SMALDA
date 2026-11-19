@@ -2,6 +2,8 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ApiError, request } from "@/lib/api-client";
+import { apiUrl } from "@/lib/api-config";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -30,17 +32,6 @@ interface PaginatedUsers {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
-
-function getAuthHeaders(): HeadersInit {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
-  return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
 
 function getCurrentUserId(): string | null {
   if (typeof window === "undefined") return null;
@@ -169,28 +160,26 @@ export default function AdminUsersPage() {
     setError(null);
     const params = new URLSearchParams({
       page: String(page),
-      pageSize: String(PAGE_SIZE),
+      limit: String(PAGE_SIZE),
     });
     if (roleFilter) params.set("role", roleFilter);
-    if (statusFilter) params.set("status", statusFilter);
     if (appliedSearch) params.set("search", appliedSearch);
 
     try {
-      const res = await fetch(`${API_BASE}/api/users?${params}`, {
-        headers: getAuthHeaders(),
-      });
-      if (res.status === 403) { router.replace("/"); return; }
-      if (!res.ok) throw new Error(`Failed to load users: ${res.status}`);
-      const json: PaginatedUsers = await res.json();
+      const json = await request<PaginatedUsers>(apiUrl("/users", params));
       setUsers(json.data);
       setTotal(json.total);
       setSelected(new Set());
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to load users");
+      if (err instanceof ApiError && err.status === 403) {
+        router.replace("/");
+        return;
+      }
+      setError("Failed to load users. Please try again.");
     } finally {
       setLoading(false);
     }
-  }, [page, roleFilter, statusFilter, appliedSearch, router]);
+  }, [page, roleFilter, appliedSearch, router]);
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
@@ -202,12 +191,10 @@ export default function AdminUsersPage() {
     }
     setActionLoading((prev) => ({ ...prev, [`role_${user.id}`]: true }));
     try {
-      const res = await fetch(`${API_BASE}/api/users/${user.id}`, {
+      await request(apiUrl(`/users/${user.id}`), {
         method: "PATCH",
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ role: newRole }),
+        body: { role: newRole },
       });
-      if (!res.ok) throw new Error("Role update failed");
       setUsers((prev) => prev.map((u) => u.id === user.id ? { ...u, role: newRole } : u));
     } catch {
       // show inline error or toast — kept simple here
@@ -222,12 +209,10 @@ export default function AdminUsersPage() {
     const newStatus: UserStatus = user.status === "active" ? "suspended" : "active";
     setActionLoading((prev) => ({ ...prev, [`status_${user.id}`]: true }));
     try {
-      const res = await fetch(`${API_BASE}/api/users/${user.id}`, {
+      await request(apiUrl(`/users/${user.id}`), {
         method: "PATCH",
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ status: newStatus }),
+        body: { status: newStatus },
       });
-      if (!res.ok) throw new Error("Status update failed");
       setUsers((prev) => prev.map((u) => u.id === user.id ? { ...u, status: newStatus } : u));
     } catch {
       // silent — real app would toast
@@ -243,11 +228,7 @@ export default function AdminUsersPage() {
     setDeleteLoading(true);
     setDeleteError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/users/${deleteTarget.id}`, {
-        method: "DELETE",
-        headers: getAuthHeaders(),
-      });
-      if (!res.ok) throw new Error("Delete failed");
+      await request(apiUrl(`/users/${deleteTarget.id}`), { method: "DELETE" });
       setUsers((prev) => prev.filter((u) => u.id !== deleteTarget.id));
       setDeleteTarget(null);
     } catch (err: unknown) {
@@ -265,10 +246,7 @@ export default function AdminUsersPage() {
     try {
       await Promise.all(
         Array.from(selected).map((id) =>
-          fetch(`${API_BASE}/api/users/${id}`, {
-            method: "DELETE",
-            headers: getAuthHeaders(),
-          })
+          request(apiUrl(`/users/${id}`), { method: "DELETE" })
         )
       );
       setUsers((prev) => prev.filter((u) => !selected.has(u.id)));

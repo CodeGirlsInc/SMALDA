@@ -6,9 +6,9 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { ApiKeysService } from './api-keys.service';
-import { User } from './entities/user.entity';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { ApiKeysService } from '../api-keys.service';
+import { User } from '../entities/user.entity';
 
 /**
  * Authenticates a request with an `x-api-key` header, falling back to the

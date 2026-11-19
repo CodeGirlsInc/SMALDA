@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Link, useRouter } from "@/i18n/navigation";
 import { ApiError, request } from "@/lib/api-client";
+import { apiUrl } from "@/lib/api-config";
 
 export default function VerifyEmailPage() {
   const searchParams = useSearchParams();
@@ -24,10 +25,10 @@ export default function VerifyEmailPage() {
 
     async function verify() {
       try {
-        await request(
-          `/api/v1/auth/verify-email?token=${encodeURIComponent(token)}`,
-          { method: "GET", anonymous: true },
-        );
+        await request(apiUrl("/auth/verify-email", { token }), {
+          method: "GET",
+          anonymous: true,
+        });
         setStatus("success");
         setTimeout(() => {
           router.push("/login");

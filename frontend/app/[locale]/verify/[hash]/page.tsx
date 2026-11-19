@@ -2,6 +2,8 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { request } from "@/lib/api-client";
+import { apiUrl } from "@/lib/api-config";
 import { stellarTxUrl } from "@/lib/stellar";
 
 // ---------------------------------------------------------------------------
@@ -19,8 +21,6 @@ interface VerificationResult {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 const HASH_REGEX = /^[a-fA-F0-9]{64}$/;
 
@@ -59,9 +59,10 @@ export default function PublicVerifyPage() {
 
     try {
       // Public endpoint — no authentication required (BE-107).
-      const res = await fetch(`${API_BASE}/api/verify/${trimmed}`);
-      if (!res.ok) throw new Error(`Verification failed (${res.status})`);
-      const data: VerificationResult = await res.json();
+      const data = await request<VerificationResult>(
+        apiUrl(`/verify/${trimmed}`),
+        { anonymous: true },
+      );
       setResult(data);
     } catch (err) {
       setError(

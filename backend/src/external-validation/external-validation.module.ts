@@ -6,11 +6,20 @@ import { LandRegistryProvider } from './providers/land-registry.provider';
 import { GovernmentIdProvider } from './providers/government-id.provider';
 import { BusinessRegistrationProvider } from './providers/business-registration.provider';
 import { ExternalValidationController } from './external-validation.controller';
+import { AdminExternalValidationController } from './admin-external-validation.controller';
 import { DocumentsModule } from '../documents/documents.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([ValidationRequest]), DocumentsModule],
-  controllers: [ExternalValidationController],
+  imports: [
+    TypeOrmModule.forFeature([ValidationRequest]),
+    DocumentsModule,
+    AuthModule,
+  ],
+  controllers: [
+    ExternalValidationController,
+    AdminExternalValidationController,
+  ],
   providers: [
     ExternalValidationService,
     LandRegistryProvider,

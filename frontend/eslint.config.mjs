@@ -11,6 +11,31 @@ const compat = new FlatCompat({
 
 const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
+  {
+    files: [
+      "app/**/*.{ts,tsx}",
+      "components/**/*.{ts,tsx}",
+      "hooks/**/*.{ts,tsx}",
+      "src/components/**/*.{ts,tsx}",
+      "src/hooks/**/*.{ts,tsx}",
+    ],
+    ignores: [
+      "**/*.test.{ts,tsx}",
+      "**/__tests__/**",
+      "e2e/**",
+      "test-utils/**",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "TemplateLiteral > TemplateElement[value.raw=/\\/api\\//]",
+          message:
+            "Do not build /api/ URLs outside lib/; use apiUrl() from lib/api-config.",
+        },
+      ],
+    },
+  },
 ];
 
 export default eslintConfig;

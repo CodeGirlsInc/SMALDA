@@ -22,9 +22,16 @@ export interface ValidationResponse {
   errorMessage: string | null;
 }
 
+export interface ProviderCircuitState {
+  open: boolean;
+  openUntil: Date | null;
+  failureCount: number;
+}
+
 export interface IValidationProvider {
   validateDocument(
     params: ValidationDocumentParams,
   ): Promise<ValidationResponse>;
   healthCheck(): Promise<boolean>;
+  getCircuitState(): ProviderCircuitState;
 }

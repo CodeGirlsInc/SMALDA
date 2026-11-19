@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { request } from "@/lib/api-client";
+import { apiUrl } from "@/lib/api-config";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -54,17 +56,6 @@ const NOTIFICATION_TYPES: Pick<NotificationPreference, "key" | "label" | "descri
       "Platform announcements, scheduled maintenance, and policy updates.",
   },
 ];
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
-
-function getAuthHeaders(): HeadersInit {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
-  return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Custom debounce hook
@@ -155,11 +146,9 @@ export default function NotificationsSettingsPage() {
   useEffect(() => {
     async function fetchPrefs() {
       try {
-        const res = await fetch(`${API_BASE}/api/users/me/notification-preferences`, {
-          headers: getAuthHeaders(),
-        });
-        if (!res.ok) throw new Error(`Failed to load preferences: ${res.status}`);
-        const json = await res.json();
+        const json = await request<{
+          data?: PreferencesPayload;
+        }>(apiUrl("/users/me/notification-preferences"));
 
         // Map API response to local state — default unset keys to true
         const mapped: NotificationPreference[] = NOTIFICATION_TYPES.map((t) => ({
@@ -168,10 +157,8 @@ export default function NotificationsSettingsPage() {
           inApp: json?.data?.[t.key]?.inApp ?? true,
         }));
         setPrefs(mapped);
-      } catch (err: unknown) {
-        setLoadError(
-          err instanceof Error ? err.message : "Failed to load preferences"
-        );
+      } catch {
+        setLoadError("Failed to load preferences. Please try again.");
       }
     }
     fetchPrefs();
@@ -212,13 +199,10 @@ export default function NotificationsSettingsPage() {
       });
 
       try {
-        const res = await fetch(`${API_BASE}/api/users/me/notification-preferences`, {
+        await request(apiUrl("/users/me/notification-preferences"), {
           method: "PATCH",
-          headers: getAuthHeaders(),
-          body: JSON.stringify(payload),
+          body: payload,
         });
-
-        if (!res.ok) throw new Error(`Save failed: ${res.status}`);
 
         // Clear pending for saved keys
         setPendingChanges((prev) => {

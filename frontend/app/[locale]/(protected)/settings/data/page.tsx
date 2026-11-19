@@ -1,20 +1,12 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { useRouter } from "@/i18n/navigation";
-import {
-  clearSession,
-  request,
-  requestBlob,
-} from "@/lib/api-client";
+import { requestBlob } from "@/lib/api-client";
+import { apiUrl } from "@/lib/api-config";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function logout(): boolean {
-  return clearSession().ok;
-}
 
 const COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
 const STORAGE_KEY = "last_data_export_ts";
@@ -67,7 +59,7 @@ function DeleteConfirmationModal({
   }, []);
 
   const canSubmit =
-    confirmText === "DELETE" && password.length > 0 && !isLoading;
+    confirmText === "DELETE" && password.length > 0 && !isLoading && !error;
 
   return (
     <div
@@ -158,8 +150,6 @@ function DeleteConfirmationModal({
 // ---------------------------------------------------------------------------
 
 export default function SettingsDataPage() {
-  const router = useRouter();
-
   // ── Export state ───────────────────────────────────────────────────────────
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -180,7 +170,7 @@ export default function SettingsDataPage() {
     setIsExporting(true);
     setExportError(null);
     try {
-      const blob = await requestBlob("/api/v1/users/me/export");
+      const blob = await requestBlob(apiUrl("/users/me/export"));
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -200,42 +190,15 @@ export default function SettingsDataPage() {
 
   // ── Deletion state ─────────────────────────────────────────────────────────
   const [showModal, setShowModal] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-
-  const handleDeleteConfirm = async (password: string) => {
-    setIsDeleting(true);
-    setDeleteError(null);
-    try {
-      await request("/api/v1/users/me/data", {
-        method: "DELETE",
-        body: { password },
-      });
-
-      if (!logout()) {
-        throw new Error("Sign out failed. Please try again.");
-      }
-      router.push("/?deleted=true");
-    } catch (err: unknown) {
-      setDeleteError(
-        err instanceof Error ? err.message : "Deletion failed. Please try again."
-      );
-    } finally {
-      setIsDeleting(false);
-    }
-  };
 
   return (
     <>
       {showModal && (
         <DeleteConfirmationModal
-          onConfirm={handleDeleteConfirm}
-          onCancel={() => {
-            setShowModal(false);
-            setDeleteError(null);
-          }}
-          isLoading={isDeleting}
-          error={deleteError}
+          onConfirm={() => {}}
+          onCancel={() => setShowModal(false)}
+          isLoading={false}
+          error="Account deletion is temporarily unavailable. Please try again later."
         />
       )}
 
@@ -319,11 +282,15 @@ export default function SettingsDataPage() {
             </ul>
           </div>
 
+          <p className="text-sm text-gray-700" role="status">
+            Account deletion is temporarily unavailable. No data will be deleted.
+          </p>
+
           <button
             onClick={() => setShowModal(true)}
             className="bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
           >
-            Request account deletion
+            Review deletion request
           </button>
         </section>
       </main>

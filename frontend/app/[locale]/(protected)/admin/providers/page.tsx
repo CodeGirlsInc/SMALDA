@@ -12,6 +12,8 @@ import {
   XCircle,
   type LucideIcon,
 } from "lucide-react";
+import { ApiError, request } from "@/lib/api-client";
+import { apiUrl } from "@/lib/api-config";
 
 // ---------------------------------------------------------------------------
 // Types matching the backend ValidationType enum + provider health/stats
@@ -25,6 +27,9 @@ interface ProviderStat {
   lastCheckedAt: string | null;
   successRate: number | null; // percentage, last 24h
   avgResponseTimeMs: number | null;
+  circuitOpen: boolean;
+  circuitOpenUntil: string | null;
+  failureCount: number | null;
 }
 
 type StatsMap = Partial<Record<ProviderId, ProviderStat>>;
@@ -41,15 +46,10 @@ const REFRESH_INTERVAL_SECONDS = 60;
 // Helpers
 // ---------------------------------------------------------------------------
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+const PROVIDERS_ENDPOINT = "/admin/external-validation/providers";
 
-function getAuthHeaders(): HeadersInit {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
-  return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
+async function loadProviders(): Promise<unknown[]> {
+  return request<unknown[]>(apiUrl(PROVIDERS_ENDPOINT));
 }
 
 function parseStatus(raw: unknown): ProviderStatus {
@@ -63,8 +63,19 @@ function parseStatus(raw: unknown): ProviderStatus {
 }
 
 function normalizeStatsEntry(raw: Record<string, unknown>): ProviderStat {
+  const circuitOpen = raw.circuitOpen === true;
   return {
-    status: parseStatus(raw.status ?? raw.healthy ?? raw.isHealthy),
+    status: parseStatus(
+      raw.status ??
+        raw.healthy ??
+        raw.isHealthy ??
+        (circuitOpen ? "degraded" : undefined),
+    ),
+    circuitOpen,
+    circuitOpenUntil:
+      typeof raw.circuitOpenUntil === "string" ? raw.circuitOpenUntil : null,
+    failureCount:
+      typeof raw.failureCount === "number" ? raw.failureCount : null,
     lastCheckedAt:
       typeof raw.lastCheckedAt === "string"
         ? raw.lastCheckedAt
@@ -208,6 +219,16 @@ function ProviderCard({
 
       <p className="text-xs text-gray-500">{formatRelativeTime(stat?.lastCheckedAt ?? null)}</p>
 
+      {stat?.circuitOpen && (
+        <p className="text-xs text-yellow-700">
+          Circuit breaker open
+          {stat.circuitOpenUntil
+            ? ` until ${new Date(stat.circuitOpenUntil).toLocaleTimeString()}`
+            : ""}
+          {stat.failureCount != null ? ` (${stat.failureCount} recent failures)` : ""}
+        </p>
+      )}
+
       {checkError && (
         <p className="text-xs text-red-600" role="alert">
           {checkError}
@@ -284,17 +305,7 @@ export default function AdminProvidersPage() {
   const fetchStats = useCallback(async () => {
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/external-validation/stats`, {
-        headers: getAuthHeaders(),
-      });
-      if (res.status === 403) {
-        router.replace("/");
-        return;
-      }
-      if (!res.ok) throw new Error(`Failed to load provider stats: ${res.status}`);
-
-      const json: unknown = await res.json();
-      const entries = Array.isArray(json) ? json : [];
+      const entries = await loadProviders();
 
       setStatsMap((prev) => {
         const next: StatsMap = { ...prev };
@@ -308,7 +319,11 @@ export default function AdminProvidersPage() {
         return next;
       });
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to load provider stats");
+      if (err instanceof ApiError && err.status === 403) {
+        router.replace("/");
+        return;
+      }
+      setError("Failed to load provider stats. Please try again.");
     } finally {
       setInitialLoading(false);
     }
@@ -342,53 +357,23 @@ export default function AdminProvidersPage() {
     setCheckErrors((prev) => ({ ...prev, [id]: null }));
 
     try {
-      const res = await fetch(`${API_BASE}/api/external-validation/health`, {
-        headers: getAuthHeaders(),
-      });
-      if (!res.ok) throw new Error(`Health check failed: ${res.status}`);
-
-      const json: unknown = await res.json();
-      const checkedAt = new Date().toISOString();
+      const entries = await loadProviders();
 
       setStatsMap((prev) => {
         const next: StatsMap = { ...prev };
-
-        if (json && typeof json === "object" && !Array.isArray(json)) {
-          // Record<providerId, boolean> shape returned by the shared health check
-          for (const [key, value] of Object.entries(json as Record<string, unknown>)) {
-            if (!PROVIDERS.some((p) => p.id === key)) continue;
-            const providerId = key as ProviderId;
-            next[providerId] = {
-              ...(next[providerId] ?? {
-                successRate: null,
-                avgResponseTimeMs: null,
-                lastCheckedAt: null,
-                status: "offline",
-              }),
-              status: parseStatus(value),
-              lastCheckedAt: checkedAt,
-            };
-          }
-        } else {
-          // Fallback: assume the response reflects only the requested provider
-          next[id] = {
-            ...(next[id] ?? {
-              successRate: null,
-              avgResponseTimeMs: null,
-              lastCheckedAt: null,
-              status: "offline",
-            }),
-            status: parseStatus(json),
-            lastCheckedAt: checkedAt,
-          };
+        for (const entry of entries) {
+          if (!entry || typeof entry !== "object") continue;
+          const raw = entry as Record<string, unknown>;
+          const providerId = providerIdFromEntry(raw);
+          if (!providerId) continue;
+          next[providerId] = normalizeStatsEntry(raw);
         }
-
         return next;
       });
-    } catch (err: unknown) {
+    } catch {
       setCheckErrors((prev) => ({
         ...prev,
-        [id]: err instanceof Error ? err.message : "Health check failed",
+        [id]: "Health check failed. Please try again.",
       }));
     } finally {
       setChecking((prev) => ({ ...prev, [id]: false }));
