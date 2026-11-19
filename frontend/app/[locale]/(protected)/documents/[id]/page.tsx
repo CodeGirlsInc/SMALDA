@@ -7,6 +7,14 @@ import { Link, useRouter } from "@/i18n/navigation";
 import { useDateFormatting } from "@/i18n/formatting";
 import { ApiError, request } from "@/lib/api-client";
 import { apiUrl } from "@/lib/api-config";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
@@ -203,8 +211,9 @@ function Skeleton() {
 // Share modal
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ShareModal({ docId, onClose }: { docId: string; onClose: () => void }) {
-  const t = useTranslations("documentDetail.share");
+function ShareModal({ docId }: { docId: string }) {
+  const t = useTranslations("documentDetail");
+  const tShare = useTranslations("documentDetail.share");
   const shareUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/documents/${docId}`;
   const [copied, setCopied] = useState(false);
 
@@ -216,35 +225,32 @@ function ShareModal({ docId, onClose }: { docId: string; onClose: () => void }) 
   }
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={t("label")}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="mb-3 text-base font-semibold text-gray-900">{t("title")}</h2>
+    <Dialog>
+      <DialogTrigger asChild>
+        <button className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          {t("actions.share")}
+        </button>
+      </DialogTrigger>
+      <DialogContent size="sm" aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle>{tShare("title")}</DialogTitle>
+        </DialogHeader>
         <div className="flex items-center gap-2 rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm">
           <span className="flex-1 truncate text-gray-600">{shareUrl}</span>
           <button
             onClick={handleCopy}
             className="shrink-0 rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            {copied ? t("copied") : t("copy")}
+            {copied ? tShare("copied") : tShare("copy")}
           </button>
         </div>
-        <button
-          onClick={onClose}
-          className="mt-4 w-full rounded-lg border border-gray-200 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-        >
-          {t("close")}
-        </button>
-      </div>
-    </div>
+        <DialogClose asChild>
+          <button className="mt-4 w-full rounded-lg border border-gray-200 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            {tShare("close")}
+          </button>
+        </DialogClose>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -264,7 +270,6 @@ export default function DocumentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
-  const [shareOpen, setShareOpen] = useState(false);
 
   // ── WebSocket for real-time status updates (FE-06) ──────────────────────
   const wsRef = useRef<WebSocket | null>(null);
@@ -431,14 +436,12 @@ export default function DocumentDetailPage() {
               </button>
             )}
 
-            <a
-              href={apiUrl(`/documents/${encodeURIComponent(docId)}/report`)}
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              href={`/documents/${docId}/report`}
               className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               {t("actions.downloadReport")}
-            </a>
+            </Link>
 
             <Link
               href={`/documents/${docId}/dispute`}
@@ -447,17 +450,10 @@ export default function DocumentDetailPage() {
               {t("actions.fileDispute")}
             </Link>
 
-            <button
-              onClick={() => setShareOpen(true)}
-              className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {t("actions.share")}
-            </button>
+            <ShareModal docId={docId} />
           </div>
         </div>
       </div>
-
-      {shareOpen && <ShareModal docId={docId} onClose={() => setShareOpen(false)} />}
     </main>
   );
 }
