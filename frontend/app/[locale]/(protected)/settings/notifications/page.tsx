@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { ApiError, request } from "@/lib/api-client";
+import { apiUrl } from "@/lib/api-config";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -55,15 +57,10 @@ const NOTIFICATION_TYPES: Pick<NotificationPreference, "key" | "label" | "descri
   },
 ];
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+const PREFERENCES_URL = apiUrl("/users/me/notification-preferences");
 
-function getAuthHeaders(): HeadersInit {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
-  return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
+function isNotFound(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404;
 }
 
 // ---------------------------------------------------------------------------
@@ -89,19 +86,30 @@ interface ToggleProps {
   onChange: (checked: boolean) => void;
   isSaving: boolean;
   hasError: boolean;
+  disabled: boolean;
   label: string;
 }
 
-function Toggle({ id, checked, onChange, isSaving, hasError, label }: ToggleProps) {
+function Toggle({
+  id,
+  checked,
+  onChange,
+  isSaving,
+  hasError,
+  disabled,
+  label,
+}: ToggleProps) {
   return (
     <div className="flex items-center gap-2">
       <button
+        type="button"
         role="switch"
         aria-checked={checked}
         aria-label={label}
         id={id}
+        disabled={disabled}
         onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${
+        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 ${
           checked ? "bg-blue-600" : "bg-gray-300"
         } ${hasError ? "ring-2 ring-red-400" : ""}`}
       >
@@ -133,6 +141,7 @@ function Toggle({ id, checked, onChange, isSaving, hasError, label }: ToggleProp
 export default function NotificationsSettingsPage() {
   const [prefs, setPrefs] = useState<NotificationPreference[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
 
   // Track which keys are currently saving or have an error
   const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set());
@@ -155,11 +164,9 @@ export default function NotificationsSettingsPage() {
   useEffect(() => {
     async function fetchPrefs() {
       try {
-        const res = await fetch(`${API_BASE}/api/users/me/notification-preferences`, {
-          headers: getAuthHeaders(),
-        });
-        if (!res.ok) throw new Error(`Failed to load preferences: ${res.status}`);
-        const json = await res.json();
+        const json = await request<{
+          data?: Record<string, { email?: boolean; inApp?: boolean }>;
+        }>(PREFERENCES_URL);
 
         // Map API response to local state — default unset keys to true
         const mapped: NotificationPreference[] = NOTIFICATION_TYPES.map((t) => ({
@@ -169,6 +176,10 @@ export default function NotificationsSettingsPage() {
         }));
         setPrefs(mapped);
       } catch (err: unknown) {
+        if (isNotFound(err)) {
+          setUnavailable(true);
+          return;
+        }
         setLoadError(
           err instanceof Error ? err.message : "Failed to load preferences"
         );
@@ -212,13 +223,10 @@ export default function NotificationsSettingsPage() {
       });
 
       try {
-        const res = await fetch(`${API_BASE}/api/users/me/notification-preferences`, {
+        await request(PREFERENCES_URL, {
           method: "PATCH",
-          headers: getAuthHeaders(),
-          body: JSON.stringify(payload),
+          body: payload,
         });
-
-        if (!res.ok) throw new Error(`Save failed: ${res.status}`);
 
         // Clear pending for saved keys
         setPendingChanges((prev) => {
@@ -226,7 +234,9 @@ export default function NotificationsSettingsPage() {
           keysToSave.forEach((k) => next.delete(k));
           return next;
         });
-      } catch {
+      } catch (error) {
+        if (isNotFound(error)) setUnavailable(true);
+
         // Rollback affected keys
         setPrefs((currentPrefs) => {
           if (!currentPrefs) return currentPrefs;
@@ -290,6 +300,20 @@ export default function NotificationsSettingsPage() {
   }
 
   // ── Render ──────────────────────────────────────────────────────────────
+
+  if (unavailable) {
+    return (
+      <main className="max-w-2xl mx-auto p-6 space-y-2">
+        <h1 className="text-2xl font-bold text-gray-900">
+          Notification Preferences
+        </h1>
+        <p className="text-sm text-gray-600" role="status">
+          Notification preferences are currently unavailable. Please try again
+          later.
+        </p>
+      </main>
+    );
+  }
 
   if (loadError) {
     return (
@@ -363,6 +387,7 @@ export default function NotificationsSettingsPage() {
                       onChange={(v) => handleToggle(pref.key, "email", v)}
                       isSaving={savingKeys.has(pref.key)}
                       hasError={errorKeys.has(pref.key)}
+                      disabled={unavailable}
                       label={`${pref.label} email notifications`}
                     />
                   </div>
@@ -375,6 +400,7 @@ export default function NotificationsSettingsPage() {
                       onChange={(v) => handleToggle(pref.key, "inApp", v)}
                       isSaving={savingKeys.has(pref.key)}
                       hasError={errorKeys.has(pref.key)}
+                      disabled={unavailable}
                       label={`${pref.label} in-app notifications`}
                     />
                   </div>

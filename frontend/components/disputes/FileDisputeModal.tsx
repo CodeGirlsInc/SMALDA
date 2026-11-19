@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { request } from "@/lib/api-client";
-import { API_PREFIX } from "@/lib/api-contracts";
+import { apiUrl } from "@/lib/api-config";
 import {
   createDisputeSchema,
   disputeResponseSchema,
@@ -66,7 +66,7 @@ export function FileDisputeModal({
 
     try {
       const newDispute = disputeResponseSchema.parse(
-        await request<unknown>(`${API_PREFIX}/disputes`, {
+        await request<unknown>(apiUrl("/disputes"), {
           method: "POST",
           body: validation.data,
         }),

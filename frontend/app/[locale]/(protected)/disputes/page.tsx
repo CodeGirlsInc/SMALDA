@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { request } from "@/lib/api-client";
-import { API_PREFIX } from "@/lib/api-contracts";
+import { apiUrl } from "@/lib/api-config";
 import {
   disputeListResponseSchema,
   disputeStatusValues,
@@ -52,7 +52,7 @@ export default function DisputesPage() {
     setError(null);
     try {
       const disputesData = disputeListResponseSchema.parse(
-        await request<unknown>(`${API_PREFIX}/disputes`),
+        await request<unknown>(apiUrl("/disputes")),
       );
       setDisputes(disputesData.data);
     } catch (err) {
@@ -65,7 +65,7 @@ export default function DisputesPage() {
   const fetchDocuments = useCallback(async () => {
     try {
       const documentsData = await request<DocumentListResponse>(
-        `${API_PREFIX}/documents`,
+        apiUrl("/documents"),
       );
       setDocuments(
         documentsData.data.map(({ id, title }) => ({ id, title })),

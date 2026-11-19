@@ -7,7 +7,7 @@
  * result and never substitute fake data — callers are expected to render an
  * empty/error state instead.
  */
-import { apiUrl } from "./api-version";
+import { apiUrl } from "@/lib/api-config";
 
 export interface UserProfile {
   id: string;

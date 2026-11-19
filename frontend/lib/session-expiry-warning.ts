@@ -1,10 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { clearSession } from "@/lib/api-client";
-import { clearLastViewedParcel } from "@/lib/map-state";
+import {
+  getAccessToken,
+  getTokenExpiryMs,
+  initCrossTabLogoutSync,
+} from "@/lib/session";
 
-const ACCESS_TOKEN_KEY = "auth-token";
+export { getTokenExpiryMs, initCrossTabLogoutSync } from "@/lib/session";
+
 const WARNING_BEFORE_MS = 5 * 60 * 1000;
 const ACTIVITY_GRACE_MS = 60 * 1000;
 const ACTIVITY_DEBOUNCE_MS = 250;
@@ -18,53 +22,6 @@ const ACTIVITY_EVENTS = [
   "click",
 ] as const;
 
-function decodeBase64Url(value: string): string | null {
-  try {
-    const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
-    const padding = (4 - (normalized.length % 4)) % 4;
-    const binary = atob(normalized + "=".repeat(padding));
-    if (typeof TextDecoder === "undefined") return binary;
-    const bytes = Uint8Array.from(binary, (character) =>
-      character.charCodeAt(0),
-    );
-    return new TextDecoder().decode(bytes);
-  } catch {
-    return null;
-  }
-}
-
-export function getTokenExpiryMs(token: string): number | null {
-  const payloadPart = token.split(".")[1];
-  if (!payloadPart) return null;
-  const decoded = decodeBase64Url(payloadPart);
-  if (!decoded) return null;
-
-  try {
-    const payload: unknown = JSON.parse(decoded);
-    if (
-      typeof payload !== "object" ||
-      payload === null ||
-      !("exp" in payload) ||
-      typeof payload.exp !== "number" ||
-      !Number.isFinite(payload.exp)
-    ) {
-      return null;
-    }
-    return payload.exp * 1000 - Date.now();
-  } catch {
-    return null;
-  }
-}
-
-function readAccessToken(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage.getItem(ACCESS_TOKEN_KEY);
-  } catch {
-    return null;
-  }
-}
-
 function isEditingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return (
@@ -74,21 +31,6 @@ function isEditingTarget(target: EventTarget | null): boolean {
     target instanceof HTMLSelectElement ||
     target.getAttribute("role") === "textbox"
   );
-}
-
-export function initCrossTabLogoutSync(): () => void {
-  if (typeof window === "undefined") return () => {};
-
-  function handler(event: StorageEvent) {
-    if (event.key === "logout-event" && event.newValue) {
-      clearSession({ notify: false });
-      clearLastViewedParcel();
-      window.location.href = "/login";
-    }
-  }
-
-  window.addEventListener("storage", handler);
-  return () => window.removeEventListener("storage", handler);
 }
 
 export interface UseSessionExpiryWarningOptions {
@@ -137,7 +79,7 @@ export function useSessionExpiryWarning({
       }
       if (disposed) return;
 
-      const token = readAccessToken();
+      const token = getAccessToken();
       if (!token) return;
       if (warningTokenRef.current !== token) {
         warningTokenRef.current = token;
@@ -169,7 +111,7 @@ export function useSessionExpiryWarning({
         promptRef.current = null;
         if (disposed) return;
 
-        const currentToken = readAccessToken();
+        const currentToken = getAccessToken();
         if (currentToken !== token) {
           warningTokenRef.current = null;
           warningShownRef.current = false;

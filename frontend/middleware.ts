@@ -2,15 +2,11 @@ import createMiddleware from "next-intl/middleware";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { ACCESS_COOKIE_NAME, REFRESH_COOKIE_NAME } from "./lib/auth-cookie";
+import { apiUrl, getApiOrigin } from "./lib/api-config";
+import { buildContentSecurityPolicy } from "./src/lib/security-headers";
 import { LOCALE_COOKIE_NAME, routing, type Locale } from "./i18n/routing";
 
 const intlMiddleware = createMiddleware(routing);
-const configuredApiBase = process.env.NEXT_PUBLIC_API_URL;
-const API_BASE = (
-  configuredApiBase ??
-  (process.env.NODE_ENV === "production" ? "" : "http://localhost:3001")
-).replace(/\/+$/, "");
-const AUTH_ME_PATH = "/api/v1/auth/me";
 const AUTH_CHECK_TIMEOUT_MS = 2000;
 const PROTECTED_ROOTS = [
   "/",
@@ -194,14 +190,13 @@ interface AccessTokenVerification {
 }
 
 async function verifyAccessToken(token: string): Promise<AccessTokenVerification> {
-  if (!API_BASE) return { check: "unavailable" };
   if (hasControlCharacter(token)) return { check: "unauthenticated" };
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), AUTH_CHECK_TIMEOUT_MS);
 
   try {
-    const response = await fetch(`${API_BASE}${AUTH_ME_PATH}`, {
+    const response = await fetch(apiUrl("/auth/me"), {
       method: "GET",
       headers: {
         Accept: "application/json",
@@ -232,7 +227,7 @@ async function verifyAccessToken(token: string): Promise<AccessTokenVerification
   }
 }
 
-export default async function middleware(request: NextRequest) {
+async function handleRequest(request: NextRequest): Promise<NextResponse> {
   const pathname = request.nextUrl.pathname;
   if (isInfrastructurePath(pathname)) return NextResponse.next();
 
@@ -305,7 +300,58 @@ export default async function middleware(request: NextRequest) {
 
   if (isStaticAssetPath(pathname)) return NextResponse.next();
 
-  return intlMiddleware(request);
+  return intlMiddleware(request) as NextResponse;
+}
+
+function createCspNonce(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
+  }
+  return btoa(`${Date.now()}-${Math.random()}`);
+}
+
+function websocketOrigin(origin: string): string | null {
+  if (origin.startsWith("https://")) {
+    return `wss://${origin.slice("https://".length)}`;
+  }
+  if (origin.startsWith("http://")) {
+    return `ws://${origin.slice("http://".length)}`;
+  }
+  return null;
+}
+
+function forwardNonceToRender(response: NextResponse, nonce: string): void {
+  const existing = response.headers.get("x-middleware-override-headers");
+  const names = new Set(existing?.split(",").filter(Boolean) ?? []);
+  names.add("x-nonce");
+  response.headers.set("x-middleware-override-headers", [...names].join(","));
+  response.headers.set("x-middleware-request-x-nonce", nonce);
+}
+
+export default async function middleware(
+  request: NextRequest,
+): Promise<NextResponse> {
+  const nonce = createCspNonce();
+
+  const response = await handleRequest(request);
+  if (!response.headers.has("location")) forwardNonceToRender(response, nonce);
+  const apiOrigin = getApiOrigin();
+  const connectSources = [apiOrigin, apiOrigin ? websocketOrigin(apiOrigin) : null]
+    .filter((source): source is string => Boolean(source));
+
+  response.headers.set(
+    "Content-Security-Policy",
+    buildContentSecurityPolicy({
+      nonce,
+      isDevelopment: process.env.NODE_ENV !== "production",
+      connectSources,
+      imageSources: apiOrigin ? [apiOrigin] : [],
+      allowInlineStyles: true,
+    }),
+  );
+  return response;
 }
 
 export const config = {

@@ -1,5 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
-import { API_PREFIX } from "../lib/api-contracts";
+import { apiUrl } from "../lib/api-config";
 import type {
   DisputeListResponse,
   DisputeResponse,
@@ -7,6 +7,8 @@ import type {
 import type { DocumentListResponse } from "../lib/schemas/document";
 
 const API_BASE = "http://localhost:3001";
+const DISPUTES_PATH = new URL(apiUrl("/disputes")).pathname;
+const DOCUMENTS_PATH = new URL(apiUrl("/documents")).pathname;
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "http://localhost:3000",
   "Access-Control-Allow-Headers": "Authorization, Content-Type",
@@ -87,7 +89,7 @@ async function mockDisputeApi(page: Page) {
 
     if (
       request.method() === "GET" &&
-      pathname === `${API_PREFIX}/disputes`
+      pathname === DISPUTES_PATH
     ) {
       await fulfillJson(route, 200, emptyDisputes);
       return;
@@ -95,7 +97,7 @@ async function mockDisputeApi(page: Page) {
 
     if (
       request.method() === "GET" &&
-      pathname === `${API_PREFIX}/documents`
+      pathname === DOCUMENTS_PATH
     ) {
       await fulfillJson(route, 200, documents);
       return;
@@ -119,7 +121,7 @@ async function mockDisputeApi(page: Page) {
 
     if (
       request.method() === "POST" &&
-      pathname === `${API_PREFIX}/disputes`
+      pathname === DISPUTES_PATH
     ) {
       filedRequest = {
         payload: request.postDataJSON() as DisputePayload,

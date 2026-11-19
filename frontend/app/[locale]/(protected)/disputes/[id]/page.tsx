@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { request } from "@/lib/api-client";
-import { API_PREFIX } from "@/lib/api-contracts";
+import { apiUrl } from "@/lib/api-config";
 import {
   disputeStatusValues,
   type DisputeResponse,
@@ -64,12 +64,12 @@ export default function DisputeDetailPage() {
     setLoading(true);
     try {
       const disputeData = await request<Dispute>(
-        `${API_PREFIX}/disputes/${disputeId}`,
+        apiUrl(`/disputes/${disputeId}`),
       );
       setDispute(disputeData);
       setAdminStatus(disputeData.status);
       // In a real app, user data would come from a context or hook
-      const userData = await request<User>(`${API_PREFIX}/users/me`);
+      const userData = await request<User>(apiUrl("/users/me"));
       setUser(userData);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load dispute.");
@@ -85,7 +85,7 @@ export default function DisputeDetailPage() {
   const handleWithdrawDispute = async () => {
     if (!disputeId) return;
     try {
-      await request(`${API_PREFIX}/disputes/${disputeId}`, {
+      await request(apiUrl(`/disputes/${disputeId}`), {
         method: "DELETE",
       });
       toast({
@@ -105,7 +105,7 @@ export default function DisputeDetailPage() {
   const handleAdminUpdate = async () => {
     if (!disputeId) return;
     try {
-      await request(`${API_PREFIX}/disputes/${disputeId}/status`, {
+      await request(apiUrl(`/disputes/${disputeId}/status`), {
         method: "PATCH",
         body: { status: adminStatus },
       });
