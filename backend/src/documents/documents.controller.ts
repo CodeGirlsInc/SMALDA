@@ -32,7 +32,9 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User, UserRole } from '../users/entities/user.entity';
 import { QueueService } from '../queue/queue.service';
 import { VerificationService } from '../verification/verification.service';
+import { VerificationCacheService } from '../verification/verification-cache.service';
 import { AccessLogsService } from '../access-logs/access-logs.service';
+import { MetricsService } from '../metrics/metrics.service';
 import { FileValidationPipe } from './pipes/file-validation.pipe';
 import { ListDocumentsDto } from './dto/list-documents.dto';
 import { DocumentResponseDto } from './dto/document-response.dto';
@@ -66,7 +68,9 @@ export class DocumentsController {
     private readonly configService: ConfigService,
     private readonly queueService: QueueService,
     private readonly verificationService: VerificationService,
+    private readonly verificationCache: VerificationCacheService,
     private readonly accessLogsService: AccessLogsService,
+    private readonly metricsService: MetricsService,
   ) {}
 
   @Post('upload')
@@ -129,6 +133,7 @@ export class DocumentsController {
       status: DocumentStatus.PENDING,
     });
 
+    this.metricsService.incDocumentsSubmitted();
     await this.queueService.enqueueAnalyze(document.id, (req as any).requestId);
     return res.status(202).send(document);
   }
@@ -237,6 +242,7 @@ export class DocumentsController {
     this.assertOwnerOrAdmin(document, req.user);
 
     const updated = await this.documentsService.revokeAccess(id);
+    this.verificationCache.invalidateByDocument(id);
     return { message: 'Access revoked', documentId: updated?.id, status: updated?.status };
   }
 

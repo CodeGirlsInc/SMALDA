@@ -15,6 +15,7 @@ export enum DocumentStatus {
   VERIFIED = 'verified',
   FLAGGED = 'flagged',
   REJECTED = 'rejected',
+  FAILED_ANALYSIS = 'failed_analysis',
 }
 
 @Entity('documents')

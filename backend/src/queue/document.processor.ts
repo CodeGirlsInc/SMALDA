@@ -15,6 +15,8 @@ import { VerificationStatus } from '../verification/entities/verification-record
 import { RiskAssessmentService } from '../risk-assessment/risk-assessment.service';
 import { getRiskThresholds } from '../risk-assessment/risk-thresholds.config';
 import { StellarService } from '../stellar/stellar.service';
+import { MetricsService } from '../metrics/metrics.service';
+import { DeadLetterQueueService } from './dead-letter-queue.service';
 import { QueueService, DocumentJobData } from './queue.service';
 import {
   generateCorrelationId,
@@ -34,6 +36,8 @@ export class DocumentProcessor implements OnModuleDestroy {
     private readonly verificationService: VerificationService,
     @Inject(forwardRef(() => DocumentsGateway))
     private readonly documentsGateway: DocumentsGateway,
+    private readonly deadLetterQueue: DeadLetterQueueService,
+    private readonly metricsService: MetricsService,
   ) {
     const connection = this.queueService.getConnectionOptions();
     this.worker = new Worker(
@@ -66,7 +70,45 @@ export class DocumentProcessor implements OnModuleDestroy {
         `Job ${job?.id} (${job?.name}) failed (request ${requestId}): ${err?.message}`,
         err?.stack,
       );
+
+      const attempts = job?.opts.attempts ?? 1;
+      const attemptsMade = job?.attemptsMade ?? attempts;
+      if (!job || attemptsMade < attempts) return;
+
+      // Exhausted all retries: move the job aside for inspection so it is
+      // not silently lost, and make sure the document leaves ANALYZING.
+      this.deadLetterQueue.moveToDeadLetter(
+        String(job.id),
+        err?.message ?? 'Unknown error',
+      );
+      if (job.name === 'analyze') {
+        void this.markAnalysisFailed(data.documentId);
+      }
     });
+  }
+
+  private async markAnalysisFailed(documentId: string): Promise<void> {
+    if (!documentId || documentId === 'unknown') return;
+    try {
+      const document = await this.documentsService.findById(documentId);
+      const previousStatus = document?.status ?? DocumentStatus.ANALYZING;
+      await this.documentsService.updateStatus(
+        documentId,
+        DocumentStatus.FAILED_ANALYSIS,
+      );
+      this.documentsGateway.notifyStatusChanged(
+        documentId,
+        DocumentStatus.FAILED_ANALYSIS,
+        previousStatus,
+      );
+      this.logger.warn(
+        `Document ${documentId} moved to a terminal failed-analysis state after exhausting all attempts`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Could not mark document ${documentId} as failed analysis: ${(error as Error).message}`,
+      );
+    }
   }
 
   private async handleAnalyze(documentId: string) {
@@ -130,6 +172,7 @@ export class DocumentProcessor implements OnModuleDestroy {
         anchoredAt: new Date(),
         status: VerificationStatus.FAILED,
       });
+      this.metricsService.incVerificationsTotal();
       return;
     }
 
@@ -140,6 +183,8 @@ export class DocumentProcessor implements OnModuleDestroy {
       anchoredAt: new Date(),
       status: VerificationStatus.CONFIRMED,
     });
+
+    this.metricsService.incVerificationsTotal();
 
     const prevStatus = document.status;
     await this.documentsService.updateStatus(

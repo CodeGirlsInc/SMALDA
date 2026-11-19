@@ -16,6 +16,8 @@ import { DocumentsService } from './documents.service';
 import { Document, DocumentStatus } from './entities/document.entity';
 import { QueueService } from '../queue/queue.service';
 import { VerificationService } from '../verification/verification.service';
+import { VerificationCacheService } from '../verification/verification-cache.service';
+import { MetricsService } from '../metrics/metrics.service';
 
 jest.mock('crypto', () => ({
   ...jest.requireActual('crypto'),
@@ -57,6 +59,7 @@ describe('DocumentsController', () => {
   let documentsService: DocumentsService;
   let queueService: QueueService;
   let verificationService: VerificationService;
+  let metricsService: MetricsService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -84,6 +87,18 @@ describe('DocumentsController', () => {
             findLatestByDocument: jest.fn().mockResolvedValue(null),
           },
         },
+        {
+          provide: VerificationCacheService,
+          useValue: {
+            invalidateByDocument: jest.fn(),
+          },
+        },
+        {
+          provide: MetricsService,
+          useValue: {
+            incDocumentsSubmitted: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -91,6 +106,7 @@ describe('DocumentsController', () => {
     documentsService = module.get<DocumentsService>(DocumentsService);
     queueService = module.get<QueueService>(QueueService);
     verificationService = module.get<VerificationService>(VerificationService);
+    metricsService = module.get<MetricsService>(MetricsService);
   });
 
   afterEach(() => {
@@ -125,6 +141,7 @@ describe('DocumentsController', () => {
       expect(savedPath).not.toContain('passwd');
       expect(savedPath).not.toContain('..');
       expect(queueService.enqueueAnalyze).toHaveBeenCalledWith('doc-123', 'req-1');
+      expect(metricsService.incDocumentsSubmitted).toHaveBeenCalled();
     });
   });
 

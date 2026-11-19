@@ -4,6 +4,7 @@ import { DocumentsModule } from '../documents/documents.module';
 import { VerificationService } from './verification.service';
 import { VerificationController } from './verification.controller';
 import { VerificationRecord } from './entities/verification-record.entity';
+import { VerificationCacheService } from './verification-cache.service';
 
 @Module({
   imports: [
@@ -11,7 +12,7 @@ import { VerificationRecord } from './entities/verification-record.entity';
     forwardRef(() => DocumentsModule),
   ],
   controllers: [VerificationController],
-  providers: [VerificationService],
-  exports: [VerificationService],
+  providers: [VerificationService, VerificationCacheService],
+  exports: [VerificationService, VerificationCacheService],
 })
 export class VerificationModule {}
