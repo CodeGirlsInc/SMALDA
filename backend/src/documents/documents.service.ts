@@ -1,6 +1,6 @@
 ﻿import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, ILike } from 'typeorm';
+import { Repository, ILike, FindOptionsWhere } from 'typeorm';
 import { promises as fs } from 'fs';
 import { Document, DocumentStatus } from './entities/document.entity';
 
@@ -17,7 +17,38 @@ export class DocumentsService {
   }
 
   findById(id: string): Promise<Document | null> {
-    return this.documentRepository.findOne({ where: Object.assign({ fileHash }, ownerId ? { ownerId } : {}) });
+    return this.documentRepository.findOne({ where: { id } });
+  }
+
+  findByOwner(ownerId: string): Promise<Document[]> {
+    return this.documentRepository.find({ where: { ownerId } });
+  }
+
+  findByFileHash(fileHash: string, ownerId?: string): Promise<Document | null> {
+    return this.documentRepository.findOne({
+      where: ownerId ? { fileHash, ownerId } : { fileHash },
+    });
+  }
+
+  async findByOwnerPaginated(
+    ownerId: string,
+    page: number,
+    limit: number,
+    status?: DocumentStatus,
+    search?: string,
+  ): Promise<{ data: Document[]; total: number; page: number; limit: number }> {
+    const where: FindOptionsWhere<Document> = { ownerId };
+    if (status) where.status = status;
+    if (search) where.title = ILike(`%${search}%`);
+
+    const [data, total] = await this.documentRepository.findAndCount({
+      where,
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+
+    return { data, total, page, limit };
   }
 
   async updateStatus(

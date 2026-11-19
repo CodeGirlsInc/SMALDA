@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   Get,
   NotFoundException,
+  Optional,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -33,6 +34,7 @@ import { User, UserRole } from '../users/entities/user.entity';
 import { QueueService } from '../queue/queue.service';
 import { VerificationService } from '../verification/verification.service';
 import { AccessLogsService } from '../access-logs/access-logs.service';
+import { StellarService } from '../stellar/stellar.service';
 import { FileValidationPipe } from './pipes/file-validation.pipe';
 import { ListDocumentsDto } from './dto/list-documents.dto';
 import { DocumentResponseDto } from './dto/document-response.dto';
@@ -67,6 +69,7 @@ export class DocumentsController {
     private readonly queueService: QueueService,
     private readonly verificationService: VerificationService,
     private readonly accessLogsService: AccessLogsService,
+    @Optional() private readonly stellarService?: StellarService,
   ) {}
 
   @Post('upload')
@@ -235,6 +238,17 @@ export class DocumentsController {
     }
 
     this.assertOwnerOrAdmin(document, req.user);
+
+    // Propagate the revocation to the verifier/chain before marking the record
+    // revoked in the database, so a failed chain write never leaves the two
+    // disagreeing about the document's status.
+    if (this.stellarService) {
+      await this.stellarService.revokeHash(
+        document.fileHash,
+        'Access revoked by document owner',
+        req.user?.id,
+      );
+    }
 
     const updated = await this.documentsService.revokeAccess(id);
     return { message: 'Access revoked', documentId: updated?.id, status: updated?.status };

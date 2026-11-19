@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
+  Optional,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
@@ -11,14 +13,19 @@ import { DisputeReasonClassifierService } from './dispute-reason-classifier.serv
 import { CreateDisputeDto } from './dto/create-dispute.dto';
 import { DisputeResponseDto } from './dto/dispute-response.dto';
 import { AccessLogsService } from '../access-logs/access-logs.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/entities/notification.entity';
 
 @Injectable()
 export class DisputeService {
+  private readonly logger = new Logger(DisputeService.name);
+
   constructor(
     @InjectRepository(Dispute)
     private readonly disputeRepo: Repository<Dispute>,
     private readonly classifier: DisputeReasonClassifierService,
     private readonly accessLogsService: AccessLogsService,
+    @Optional() private readonly notificationsService?: NotificationsService,
   ) {}
 
   async fileDispute(
@@ -41,6 +48,13 @@ export class DisputeService {
       dto.documentId,
       `dispute_filed:${DisputeStatus.OPEN}`,
       userId,
+    );
+
+    await this.notify(
+      userId,
+      'Dispute filed',
+      `Your dispute for document ${dto.documentId} was filed.`,
+      dto.documentId,
     );
 
     return this.toResponseDto(saved);
@@ -71,6 +85,13 @@ export class DisputeService {
       dispute.documentId,
       `dispute_status_changed:${oldStatus}->${newStatus}`,
       userId,
+    );
+
+    await this.notify(
+      dispute.filedBy,
+      `Dispute ${newStatus}`,
+      `Your dispute for document ${dispute.documentId} is now ${newStatus}.`,
+      dispute.documentId,
     );
 
     return this.toResponseDto(dispute);
@@ -107,6 +128,28 @@ export class DisputeService {
       throw new ForbiddenException('Forbidden access');
     }
     return this.toResponseDto(dispute);
+  }
+
+  private async notify(
+    userId: string,
+    title: string,
+    body: string,
+    documentId: string,
+  ): Promise<void> {
+    if (!this.notificationsService || !userId) return;
+    try {
+      await this.notificationsService.create(
+        userId,
+        NotificationType.DISPUTE_UPDATE,
+        title,
+        body,
+        documentId,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Could not persist dispute notification for ${documentId}: ${error?.message}`,
+      );
+    }
   }
 
   private toResponseDto(dispute: Dispute): DisputeResponseDto {

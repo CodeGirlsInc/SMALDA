@@ -1,6 +1,7 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import {
   IValidationProvider,
+  PROVIDER_NOT_CONFIGURED,
   ValidationResponse,
 } from '../interfaces/validation-provider.interface';
 import { ValidationResult } from '../entities/validation-request.entity';
@@ -63,16 +64,18 @@ export class GovernmentIdProvider implements IValidationProvider {
   }
 
   private async doValidate(): Promise<ValidationResponse> {
+    // No upstream integration exists yet. Never claim a document is VALID
+    // without an actual check; force manual review instead.
     return {
-      result: ValidationResult.VALID,
-      data: {},
+      result: ValidationResult.UNSURE,
+      data: { configured: false },
       confidenceScore: null,
       externalReferenceId: null,
-      validatedAt: new Date(),
+      validatedAt: null,
       expiresAt: null,
       metadata: null,
-      success: true,
-      errorMessage: null,
+      success: false,
+      errorMessage: PROVIDER_NOT_CONFIGURED,
     };
   }
 

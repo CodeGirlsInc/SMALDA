@@ -5,6 +5,7 @@ import { DocumentsModule } from '../documents/documents.module';
 import { RiskAssessmentModule } from '../risk-assessment/risk-assessment.module';
 import { StellarModule } from '../stellar/stellar.module';
 import { VerificationModule } from '../verification/verification.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { DocumentProcessor } from './document.processor';
 import { QueueService } from './queue.service';
 
@@ -15,6 +16,7 @@ import { QueueService } from './queue.service';
     RiskAssessmentModule,
     StellarModule,
     VerificationModule,
+    NotificationsModule,
   ],
   providers: [QueueService, DocumentProcessor],
   exports: [QueueService],

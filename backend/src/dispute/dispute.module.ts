@@ -5,9 +5,13 @@ import { DisputeReason } from './entities/dispute-reason.entity';
 import { DisputeReasonClassifierService } from './dispute-reason-classifier.service';
 import { DisputeService } from './dispute.service';
 import { DisputeController } from './dispute.controller';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Dispute, DisputeReason])],
+  imports: [
+    TypeOrmModule.forFeature([Dispute, DisputeReason]),
+    NotificationsModule,
+  ],
   controllers: [DisputeController],
   providers: [DisputeService, DisputeReasonClassifierService],
   exports: [DisputeService],
