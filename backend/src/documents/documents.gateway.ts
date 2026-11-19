@@ -13,12 +13,22 @@ import { JwtService } from '@nestjs/jwt';
 
 import { DocumentsService } from './documents.service';
 import { DocumentStatus } from './entities/document.entity';
+import { VerificationStatus } from '../verification/entities/verification-record.entity';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 
 /*
  * ─────────────────────────────────────────────────────────────────────
  * WebSocket Events — Frontend Consumer Documentation
  * ─────────────────────────────────────────────────────────────────────
+ *
+ * Connection:
+ *   Namespace: "/documents"
+ *   Auth: a valid JWT is required, passed as handshake.auth.token or
+ *         handshake.query.token. Unauthenticated clients are disconnected.
+ *
+ * Clients must emit "subscribe:document" for a document before they will
+ * receive status events for it. Only the document owner (or an admin) may
+ * subscribe; other clients receive an error.
  *
  * Client → Server (subscribe to a document's status channel):
  *   Event:  "subscribe:document"
@@ -32,8 +42,8 @@ import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
  *   Event:  "document:status-changed"
  *   Payload: {
  *     documentId: string,
- *     status: "PENDING" | "ANALYZING" | "VERIFIED" | "FLAGGED" | "REJECTED",
- *     previousStatus: "PENDING" | "ANALYZING" | "VERIFIED" | "FLAGGED" | "REJECTED" | null,
+ *     status: "pending" | "analyzing" | "verified" | "flagged" | "rejected",
+ *     previousStatus: "pending" | "analyzing" | "verified" | "flagged" | "rejected" | null,
  *     timestamp: string (ISO 8601)
  *   }
  *
@@ -41,8 +51,8 @@ import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
  *   Event:  "verification:status-changed"
  *   Payload: {
  *     documentId: string,
- *     status: "PENDING" | "CONFIRMED" | ... (VerificationStatus),
- *     previousStatus: VerificationStatus | null,
+ *     status: "pending" | "confirmed" | "failed",
+ *     previousStatus: "pending" | "confirmed" | "failed" | null,
  *     timestamp: string (ISO 8601)
  *   }
  * ─────────────────────────────────────────────────────────────────────
@@ -152,8 +162,8 @@ export class DocumentsGateway
 
   notifyVerificationStatusChanged(
     documentId: string,
-    status: string,
-    previousStatus: string | null,
+    status: VerificationStatus,
+    previousStatus: VerificationStatus | null,
   ): void {
     this.server
       .to(`document:${documentId}`)
