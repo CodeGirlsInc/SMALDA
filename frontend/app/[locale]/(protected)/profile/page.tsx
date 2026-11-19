@@ -1,6 +1,16 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
+import { usePathname, useRouter } from "@/i18n/navigation";
+import {
+  LOCALE_COOKIE_MAX_AGE,
+  LOCALE_COOKIE_NAME,
+  routing,
+  type Locale,
+} from "@/i18n/routing";
+import { ApiError, request } from "@/lib/api-client";
+import { apiUrl } from "@/lib/api-config";
 
 // ─────────────────────────────────────────────
 // Types
@@ -9,9 +19,9 @@ interface UserProfile {
   fullName: string;
   email: string;
   preferredLanguage: string;
-  profilePictureUrl: string;
 }
 
+type ProfileChanges = Pick<UserProfile, "fullName" | "preferredLanguage">;
 type ProfileForm = UserProfile;
 
 const SUPPORTED_LANGUAGES = [
@@ -24,31 +34,40 @@ const SUPPORTED_LANGUAGES = [
 // Helpers
 // ─────────────────────────────────────────────
 async function fetchCurrentUser(): Promise<UserProfile> {
-  // Replace with real fetch: const res = await fetch('/api/users/me')
-  return {
-    fullName: "Jane Doe",
-    email: "jane@example.com",
-    preferredLanguage: "en",
-    profilePictureUrl: "",
-  };
+  return request<UserProfile>(apiUrl("/users/me"));
 }
 
-async function patchUser(changes: Partial<ProfileForm>): Promise<void> {
-  await new Promise((r) => setTimeout(r, 700));
-  void changes;
+async function patchUser(changes: Partial<ProfileChanges>): Promise<UserProfile> {
+  return request<UserProfile>(apiUrl("/users/me"), {
+    method: "PATCH",
+    credentials: "include",
+    body: changes,
+  });
 }
 
 function getChangedFields(
   original: ProfileForm,
   current: ProfileForm
-): Partial<ProfileForm> {
-  const changes: Partial<ProfileForm> = {};
-  for (const key of Object.keys(original) as (keyof ProfileForm)[]) {
-    if (current[key] !== original[key]) {
-      (changes as Record<string, string>)[key] = current[key];
-    }
+): Partial<ProfileChanges> {
+  const changes: Partial<ProfileChanges> = {};
+  if (current.fullName !== original.fullName) {
+    changes.fullName = current.fullName;
+  }
+  if (current.preferredLanguage !== original.preferredLanguage) {
+    changes.preferredLanguage = current.preferredLanguage;
   }
   return changes;
+}
+
+function persistLocalePreference(locale: Locale): void {
+  if (typeof document === "undefined") return;
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${LOCALE_COOKIE_NAME}=${encodeURIComponent(locale)}; Path=/; Max-Age=${LOCALE_COOKIE_MAX_AGE}; SameSite=Lax${secure}`;
+}
+
+function describeError(err: unknown, fallback: string): string {
+  if (err instanceof ApiError) return err.backendMessage ?? fallback;
+  return fallback;
 }
 
 // ─────────────────────────────────────────────
@@ -74,12 +93,14 @@ function Toast({ message, onClose }: { message: string; onClose: () => void }) {
 // Page
 // ─────────────────────────────────────────────
 export default function ProfilePage() {
+  const t = useTranslations();
+  const router = useRouter();
+  const pathname = usePathname();
   const [original, setOriginal] = useState<ProfileForm | null>(null);
   const [form, setForm] = useState<ProfileForm | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [emailWarning, setEmailWarning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -88,7 +109,9 @@ export default function ProfilePage() {
         setOriginal(user);
         setForm(user);
       })
-      .catch(() => setError("Failed to load profile. Please refresh."))
+      .catch((err: unknown) =>
+        setError(describeError(err, "Failed to load profile. Please refresh."))
+      )
       .finally(() => setLoading(false));
   }, []);
 
@@ -98,19 +121,27 @@ export default function ProfilePage() {
     const { name, value } = e.target;
     setForm((prev) => (prev ? { ...prev, [name]: value } : prev));
     setError(null);
-
-    if (name === "email" && original && value !== original.email) {
-      setEmailWarning(true);
-    } else if (name === "email") {
-      setEmailWarning(false);
-    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form || !original) return;
 
-    const changes = getChangedFields(original, form);
+    const fullName = form.fullName.trim();
+    if (fullName.length < 2) {
+      setError(t("auth.register.errors.fullNameMin"));
+      return;
+    }
+    if (fullName.length > 120) {
+      setError("Full name must be 120 characters or fewer.");
+      return;
+    }
+    if (!routing.locales.includes(form.preferredLanguage as Locale)) {
+      setError(t("errors.status.validation"));
+      return;
+    }
+
+    const changes = getChangedFields(original, { ...form, fullName });
     if (Object.keys(changes).length === 0) {
       setToast("No changes to save.");
       return;
@@ -119,12 +150,20 @@ export default function ProfilePage() {
     setSaving(true);
     setError(null);
     try {
-      await patchUser(changes);
-      setOriginal(form);
-      setEmailWarning(false);
+      const updated = await patchUser(changes);
+      setOriginal(updated);
+      setForm(updated);
       setToast("Profile updated successfully.");
-    } catch {
-      setError("Failed to save changes. Please try again.");
+      if (
+        changes.preferredLanguage &&
+        changes.preferredLanguage !== original.preferredLanguage
+      ) {
+        const locale = changes.preferredLanguage as Locale;
+        persistLocalePreference(locale);
+        router.replace(pathname, { locale });
+      }
+    } catch (err) {
+      setError(describeError(err, t("errors.status.unknown")));
     } finally {
       setSaving(false);
     }
@@ -145,7 +184,7 @@ export default function ProfilePage() {
   if (!form) {
     return (
       <main className="mx-auto max-w-lg px-4 py-10">
-        <p className="text-sm text-red-600">{error ?? "Unable to load profile."}</p>
+        <p className="text-sm text-red-600">{error ?? t("errors.status.unknown")}</p>
       </main>
     );
   }
@@ -176,23 +215,17 @@ export default function ProfilePage() {
         {/* Email */}
         <div className="flex flex-col gap-1">
           <label htmlFor="email" className="text-sm font-medium text-gray-700">
-            Email <span aria-hidden="true" className="text-red-500">*</span>
+            Email
           </label>
           <input
             id="email"
             name="email"
             type="email"
             value={form.email}
-            onChange={handleChange}
-            required
+            readOnly
             autoComplete="email"
-            className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-          {emailWarning && (
-            <p role="alert" className="rounded-lg bg-yellow-50 p-2 text-xs text-yellow-800">
-              You will receive a verification email to confirm your new address.
-            </p>
-          )}
         </div>
 
         {/* Preferred language */}
@@ -216,31 +249,6 @@ export default function ProfilePage() {
           <p className="text-xs text-gray-500">
             Language preference applies to emails and API messages.
           </p>
-        </div>
-
-        {/* Profile picture URL */}
-        <div className="flex flex-col gap-1">
-          <label htmlFor="profilePictureUrl" className="text-sm font-medium text-gray-700">
-            Profile picture URL
-          </label>
-          <input
-            id="profilePictureUrl"
-            name="profilePictureUrl"
-            type="url"
-            value={form.profilePictureUrl}
-            onChange={handleChange}
-            autoComplete="photo"
-            placeholder="https://example.com/avatar.jpg"
-            className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          {form.profilePictureUrl && (
-            <img
-              src={form.profilePictureUrl}
-              alt="Profile picture preview"
-              className="mt-2 h-16 w-16 rounded-full object-cover ring-2 ring-gray-200"
-              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-            />
-          )}
         </div>
 
         {error && (

@@ -4,43 +4,95 @@ import { clearLastViewedParcel } from "@/lib/map-state";
 export const ACCESS_TOKEN_KEY = "auth-token";
 export const REFRESH_TOKEN_KEY = "auth-refresh-token";
 export const LEGACY_REFRESH_TOKEN_KEY = "refresh-token";
+export const SESSION_EXPIRES_AT_KEY = "session-expires-at";
+
+export const LEGACY_TOKEN_KEYS = [
+  ACCESS_TOKEN_KEY,
+  REFRESH_TOKEN_KEY,
+  LEGACY_REFRESH_TOKEN_KEY,
+] as const;
+
+export function clearLegacyTokens(): void {
+  if (typeof window === "undefined") return;
+  try {
+    for (const key of LEGACY_TOKEN_KEYS) {
+      window.localStorage.removeItem(key);
+    }
+  } catch {
+    return;
+  }
+}
 
 export function getAccessToken(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage.getItem(ACCESS_TOKEN_KEY);
-  } catch {
-    return null;
-  }
+  clearLegacyTokens();
+  return null;
 }
 
 export function getRefreshToken(): string | null {
+  clearLegacyTokens();
+  return null;
+}
+
+export function readSessionExpiresAt(): number | null {
   if (typeof window === "undefined") return null;
   try {
-    return (
-      window.localStorage.getItem(REFRESH_TOKEN_KEY) ??
-      window.localStorage.getItem(LEGACY_REFRESH_TOKEN_KEY)
-    );
+    const raw = window.localStorage.getItem(SESSION_EXPIRES_AT_KEY);
+    if (!raw) return null;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : null;
   } catch {
     return null;
   }
 }
 
-export function setAccessToken(token: string): void {
+export function writeSessionExpiresAt(expiresAt: number | null): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(ACCESS_TOKEN_KEY, token);
+    if (expiresAt === null || !Number.isFinite(expiresAt)) {
+      window.localStorage.removeItem(SESSION_EXPIRES_AT_KEY);
+    } else {
+      window.localStorage.setItem(SESSION_EXPIRES_AT_KEY, String(expiresAt));
+    }
   } catch {
     return;
   }
 }
 
-export function setRefreshToken(token: string): void {
-  if (typeof window === "undefined") return;
+function decodeBase64Url(value: string): string | null {
   try {
-    window.localStorage.setItem(REFRESH_TOKEN_KEY, token);
+    const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+    const padding = (4 - (normalized.length % 4)) % 4;
+    const binary = atob(normalized + "=".repeat(padding));
+    if (typeof TextDecoder === "undefined") return binary;
+    const bytes = Uint8Array.from(binary, (character) =>
+      character.charCodeAt(0),
+    );
+    return new TextDecoder().decode(bytes);
   } catch {
-    return;
+    return null;
+  }
+}
+
+export function getTokenExpiryMs(token: string): number | null {
+  const payloadPart = token.split(".")[1];
+  if (!payloadPart) return null;
+  const decoded = decodeBase64Url(payloadPart);
+  if (!decoded) return null;
+
+  try {
+    const payload: unknown = JSON.parse(decoded);
+    if (
+      typeof payload !== "object" ||
+      payload === null ||
+      !("exp" in payload) ||
+      typeof payload.exp !== "number" ||
+      !Number.isFinite(payload.exp)
+    ) {
+      return null;
+    }
+    return payload.exp * 1000 - Date.now();
+  } catch {
+    return null;
   }
 }
 
@@ -61,9 +113,8 @@ export function clearLocalSession(): void {
   if (typeof window === "undefined") return;
 
   try {
-    window.localStorage.removeItem(ACCESS_TOKEN_KEY);
-    window.localStorage.removeItem(REFRESH_TOKEN_KEY);
-    window.localStorage.removeItem(LEGACY_REFRESH_TOKEN_KEY);
+    clearLegacyTokens();
+    writeSessionExpiresAt(null);
     window.localStorage.setItem("logout-event", Date.now().toString());
   } catch (error) {
     void error;
@@ -75,22 +126,13 @@ export function clearLocalSession(): void {
   clearLastViewedParcel();
 }
 
-async function revokeBackendSession(
-  token: string | null,
-  refreshToken: string | null,
-): Promise<void> {
+async function revokeBackendSession(): Promise<void> {
   if (typeof window === "undefined") return;
 
   try {
-    const headers: HeadersInit = {};
-    if (token) headers.Authorization = `Bearer ${token}`;
-    if (refreshToken) headers["Content-Type"] = "application/json";
-
     await fetch(apiUrl("/auth/logout"), {
       method: "POST",
       credentials: "include",
-      headers,
-      ...(refreshToken ? { body: JSON.stringify({ refreshToken }) } : {}),
     });
   } catch (error) {
     void error;
@@ -98,11 +140,8 @@ async function revokeBackendSession(
 }
 
 export async function clearSession(): Promise<void> {
-  const token = getAccessToken();
-  const refreshToken = getRefreshToken();
-
   try {
-    await revokeBackendSession(token, refreshToken);
+    await revokeBackendSession();
   } finally {
     clearLocalSession();
   }

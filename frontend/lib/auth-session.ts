@@ -1,22 +1,25 @@
 /**
  * Client-side session plumbing shared by the auth pages.
  *
- * FE-43's auth context is not in place yet, so the login page persists the
- * tokens it gets back from `POST /api/v1/auth/login` through here. When the
- * context lands it should take ownership of these functions and the pages
- * should read the session off the context instead of touching storage.
+ * Tokens are kept in httpOnly cookies set by the backend; only a non-secret
+ * expiry hint is stored here so the UI can warn before the session lapses.
+ * When the auth context lands it should take ownership of these functions and
+ * the pages should read the session off the context instead of touching storage.
  */
 
 import { invalidateRefresh } from "@/lib/api-client";
+import {
+  clearLegacyTokens,
+  getTokenExpiryMs,
+  readSessionExpiresAt,
+  writeSessionExpiresAt,
+} from "@/lib/session";
 import {
   clearAllSessionState,
   consumeSessionResume,
   type SessionStateResult,
 } from "@/lib/session-state-preserver";
 import { routing, type Locale } from "@/i18n/routing";
-
-const ACCESS_TOKEN_KEY = "auth-token";
-const REFRESH_TOKEN_KEY = "refresh-token";
 
 /** Shape of `POST /api/v1/auth/login` — mirrors backend/src/auth/auth.service.ts. */
 export interface LoginResponse {
@@ -32,30 +35,12 @@ function invalidSession(): SessionStateResult<void> {
   return { ok: false, error: { code: "unauthenticated" } };
 }
 
-function readLocalStorageItem(key: string): SessionStateResult<string | null> {
-  if (typeof window === "undefined") return unavailable<string | null>();
-  try {
-    return { ok: true, value: window.localStorage.getItem(key) };
-  } catch {
-    return { ok: false, error: { code: "storage", key } };
-  }
-}
-
-function restoreLocalStorageItem(key: string, value: string | null): void {
-  try {
-    if (value === null) window.localStorage.removeItem(key);
-    else window.localStorage.setItem(key, value);
-  } catch {
-    return;
-  }
-}
-
 /**
- * Persist login tokens. When `resumeId` is present (from the login page's
- * `?resume=` param, set when a 401 bounced the user here mid-flow), the
- * preserved form state for that resume group is restored transactionally;
- * otherwise any leftover preserved state is cleared. On any failure the
- * previous tokens are restored so a half-applied login never sticks.
+ * Record a non-secret expiry hint for the cookie-backed session. When
+ * `resumeId` is present (from the login page's `?resume=` param, set when a
+ * 401 bounced the user here mid-flow), the preserved form state for that
+ * resume group is restored; otherwise leftover preserved state is cleared.
+ * Any legacy tokens in localStorage are removed.
  */
 export function storeSession(
   tokens: LoginResponse,
@@ -65,44 +50,25 @@ export function storeSession(
   if (!tokens?.access_token) return invalidSession();
 
   invalidateRefresh();
-  const previousAccess = readLocalStorageItem(ACCESS_TOKEN_KEY);
-  const previousRefresh = readLocalStorageItem(REFRESH_TOKEN_KEY);
-  if (!previousAccess.ok) return previousAccess;
-  if (!previousRefresh.ok) return previousRefresh;
-
-  try {
-    window.localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access_token);
-    if (tokens.refresh_token) {
-      window.localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token);
-    } else {
-      window.localStorage.removeItem(REFRESH_TOKEN_KEY);
-    }
-  } catch {
-    restoreLocalStorageItem(ACCESS_TOKEN_KEY, previousAccess.value);
-    restoreLocalStorageItem(REFRESH_TOKEN_KEY, previousRefresh.value);
-    return { ok: false, error: { code: "storage" } };
-  }
+  clearLegacyTokens();
 
   const stateResult = resumeId
     ? consumeSessionResume(resumeId, tokens.access_token)
     : clearAllSessionState();
-  if (!stateResult.ok) {
-    restoreLocalStorageItem(ACCESS_TOKEN_KEY, previousAccess.value);
-    restoreLocalStorageItem(REFRESH_TOKEN_KEY, previousRefresh.value);
-    return { ok: false, error: stateResult.error };
-  }
+  if (!stateResult.ok) return { ok: false, error: stateResult.error };
+
+  const remainingMs = getTokenExpiryMs(tokens.access_token);
+  writeSessionExpiresAt(
+    remainingMs === null ? null : Date.now() + remainingMs,
+  );
   return { ok: true, value: undefined };
 }
 
 export { clearSession } from "./api-client";
 
 export function hasStoredSession(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return Boolean(window.localStorage.getItem(ACCESS_TOKEN_KEY)?.trim());
-  } catch {
-    return false;
-  }
+  const expiresAt = readSessionExpiresAt();
+  return expiresAt !== null && expiresAt > Date.now();
 }
 
 export const DEFAULT_POST_LOGIN_PATH = "/";

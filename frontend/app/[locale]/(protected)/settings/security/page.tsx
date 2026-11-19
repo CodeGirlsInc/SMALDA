@@ -1,7 +1,11 @@
 "use client";
 
 import React, { useState } from "react";
+import { useTranslations } from "next-intl";
+import { ApiError, request } from "@/lib/api-client";
+import { apiUrl } from "@/lib/api-config";
 import { clearSession } from "@/lib/auth-session";
+import { passwordSchema } from "@/app/schemas/register.schema";
 
 // ─────────────────────────────────────────────
 // Types
@@ -66,6 +70,7 @@ function SectionCard({
 }
 
 function ChangePasswordForm() {
+  const t = useTranslations();
   const [form, setForm] = useState({
     current: "",
     next: "",
@@ -87,18 +92,33 @@ function ChangePasswordForm() {
       setError("New passwords do not match.");
       return;
     }
-    if (form.next.length < 8) {
-      setError("New password must be at least 8 characters.");
+    const parsed = passwordSchema.safeParse(form.next);
+    if (!parsed.success) {
+      setError(
+        t(parsed.error.issues[0]?.message ?? "errors.password.minLength"),
+      );
       return;
     }
     setLoading(true);
+    setError(null);
+    setSuccess(false);
     try {
-      // Replace with: await api.patch('/auth/change-password', form)
-      await new Promise((r) => setTimeout(r, 800));
-      setSuccess(true);
-      setForm({ current: "", next: "", confirm: "" });
-    } catch {
-      setError("Failed to update password. Please try again.");
+      await request(apiUrl("/auth/change-password"), {
+        method: "PATCH",
+        credentials: "include",
+        skipAuthRefresh: true,
+        body: { currentPassword: form.current, newPassword: form.next },
+      });
+      clearSession();
+      window.location.href = "/login";
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setError(err.backendMessage ?? "Current password is incorrect.");
+      } else if (err instanceof ApiError && err.status === 400) {
+        setError(err.backendMessage ?? t("errors.status.validation"));
+      } else {
+        setError(t("errors.status.unknown"));
+      }
     } finally {
       setLoading(false);
     }

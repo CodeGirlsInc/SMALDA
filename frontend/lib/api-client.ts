@@ -1,9 +1,9 @@
 /**
- * Central fetch wrapper with JWT handling and auto refresh-on-401.
+ * Central fetch wrapper with auto refresh-on-401.
  *
  * Exports a `request(path, options)` helper that:
  *   - reads NEXT_PUBLIC_API_URL as the base URL
- *   - attaches the JWT from localStorage as a Bearer header
+ *   - authenticates with the httpOnly auth cookies (`credentials: "include"`)
  *   - on 401, attempts a silent refresh via POST /api/v1/auth/refresh
  *   - if refresh also fails, clears the session and redirects to /login
  *   - parses JSON responses
@@ -11,10 +11,15 @@
  *
  * Status codes map to i18n keys under `errors.status.*`. Consumers
  * catch ApiError and render <ErrorBanner messageKey={err.messageKey} />.
- * Raw backend error text, stack traces, and internal identifiers are
- * never surfaced.
+ * Stack traces and internal identifiers are never surfaced; a validated
+ * backend message may be exposed through `ApiError.backendMessage`.
  */
 
+import {
+  clearLegacyTokens,
+  getTokenExpiryMs,
+  writeSessionExpiresAt,
+} from "@/lib/session";
 import {
   clearAllSessionState,
   getPendingSessionResumeId,
@@ -36,11 +41,7 @@ export const API_V1_BASE = `${API_BASE}/api/v1`;
 const REFRESH_ENDPOINT = `${API_V1_BASE}/auth/refresh`;
 const LOGOUT_ENDPOINT = `${API_V1_BASE}/auth/logout`;
 
-const ACCESS_TOKEN_KEY = "auth-token";
-const REFRESH_TOKEN_KEY = "refresh-token";
 const LOGOUT_TIMEOUT_MS = 2000;
-const CROSS_TAB_REFRESH_GRACE_MS = 1500;
-const CROSS_TAB_REFRESH_POLL_MS = 50;
 
 // ── ApiError ────────────────────────────────────────────────────────────────
 
@@ -127,96 +128,9 @@ export function classifyStatus(status: number): ApiErrorMapping {
   }
 }
 
-// ── Token helpers ───────────────────────────────────────────────────────────
-
-function getAccessToken(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage.getItem(ACCESS_TOKEN_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function getRefreshToken(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage.getItem(REFRESH_TOKEN_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function setAccessToken(token: string): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(ACCESS_TOKEN_KEY, token);
-}
-
-interface RefreshSnapshot {
-  accessToken: string | null;
-  refreshToken: string | null;
-}
-
-function getRefreshSnapshot(): RefreshSnapshot {
-  return {
-    accessToken: getAccessToken(),
-    refreshToken: getRefreshToken(),
-  };
-}
-
-/**
- * If another tab already rotated the tokens while we were mid-refresh, adopt
- * its result instead of racing it (avoids the server treating our stale
- * refresh token as reused and revoking the whole token family — see #1398).
- */
-function getAdoptedRefreshToken(snapshot: RefreshSnapshot): string | null {
-  const accessToken = getAccessToken();
-  const refreshToken = getRefreshToken();
-  if (
-    accessToken &&
-    (accessToken !== snapshot.accessToken || refreshToken !== snapshot.refreshToken)
-  ) {
-    return accessToken;
-  }
-  return null;
-}
-
-function waitForCrossTabRefresh(snapshot: RefreshSnapshot): Promise<string | null> {
-  if (typeof window === "undefined") return Promise.resolve(null);
-
-  const current = getAdoptedRefreshToken(snapshot);
-  if (current) return Promise.resolve(current);
-
-  return new Promise((resolve) => {
-    let settled = false;
-    let poll: ReturnType<typeof setInterval> | undefined;
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    let handleStorage: (event: StorageEvent) => void = () => {};
-
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      if (poll) clearInterval(poll);
-      if (timeout) clearTimeout(timeout);
-      window.removeEventListener("storage", handleStorage);
-      resolve(getAdoptedRefreshToken(snapshot));
-    };
-
-    handleStorage = (event: StorageEvent) => {
-      if (event.key === ACCESS_TOKEN_KEY || event.key === REFRESH_TOKEN_KEY) {
-        finish();
-      }
-    };
-
-    window.addEventListener("storage", handleStorage);
-    poll = setInterval(finish, CROSS_TAB_REFRESH_POLL_MS);
-    timeout = setTimeout(finish, CROSS_TAB_REFRESH_GRACE_MS);
-  });
-}
-
 // ── Session clearing ────────────────────────────────────────────────────────
 
-async function logoutServerSession(token: string | null): Promise<boolean> {
+async function logoutServerSession(): Promise<boolean> {
   if (typeof window === "undefined") return false;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), LOGOUT_TIMEOUT_MS);
@@ -224,7 +138,6 @@ async function logoutServerSession(token: string | null): Promise<boolean> {
     const response = await fetch(LOGOUT_ENDPOINT, {
       method: "POST",
       credentials: "include",
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       signal: controller.signal,
     });
     return response.ok;
@@ -253,12 +166,12 @@ export function clearSession(
   }
 
   // Best-effort server-side revocation; do not block local logout on it.
-  void logoutServerSession(getAccessToken());
+  void logoutServerSession();
 
   let result: SessionStateResult<void> = { ok: true, value: undefined };
   try {
-    window.localStorage.removeItem(ACCESS_TOKEN_KEY);
-    window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+    clearLegacyTokens();
+    writeSessionExpiresAt(null);
     if (options.notify !== false) {
       window.localStorage.setItem("logout-event", Date.now().toString());
     }
@@ -322,35 +235,20 @@ export function invalidateRefresh(): void {
  * Attempt a silent token refresh. Deduplicates concurrent refresh calls
  * so that multiple 401s in-flight only trigger one refresh request.
  */
-async function refreshAccessToken(expectedAccessToken?: string): Promise<string> {
+async function refreshAccessToken(): Promise<string> {
   if (refreshPromise) return refreshPromise;
-
-  const currentAccessToken = getAccessToken();
-  if (
-    expectedAccessToken &&
-    currentAccessToken &&
-    currentAccessToken !== expectedAccessToken
-  ) {
-    return currentAccessToken;
-  }
 
   const generation = authGeneration;
   const controller = new AbortController();
   refreshAbortController = controller;
 
   refreshPromise = (async () => {
-    const snapshot = getRefreshSnapshot();
     try {
-      const refreshToken = snapshot.refreshToken;
-      if (!refreshToken) {
-        throw new RefreshError(null, true);
-      }
-
       const res = await fetch(REFRESH_ENDPOINT, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken }),
+        body: JSON.stringify({}),
         signal: controller.signal,
       });
 
@@ -364,38 +262,24 @@ async function refreshAccessToken(expectedAccessToken?: string): Promise<string>
         );
       }
 
-      const data = (await res.json()) as {
-        access_token?: string;
-        refresh_token?: string;
-      };
+      const data = (await res.json()) as { access_token?: string };
       if (typeof data.access_token !== "string" || !data.access_token) {
         throw new RefreshError(res.status, false);
       }
-      if (
-        generation !== authGeneration ||
-        controller.signal.aborted ||
-        getRefreshToken() !== refreshToken
-      ) {
+      if (generation !== authGeneration || controller.signal.aborted) {
         throw new RefreshInvalidatedError();
       }
 
-      setAccessToken(data.access_token);
-      // The backend rotates the refresh token on every use (see #1398's
-      // reuse-detection); persist whatever it returns or the next refresh
-      // will look like reuse of an already-rotated token.
-      if (typeof data.refresh_token === "string" && data.refresh_token) {
-        window.localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
-      } else {
-        window.localStorage.removeItem(REFRESH_TOKEN_KEY);
-      }
+      const remainingMs = getTokenExpiryMs(data.access_token);
+      writeSessionExpiresAt(
+        remainingMs === null ? null : Date.now() + remainingMs,
+      );
       return data.access_token;
     } catch (error) {
       if (error instanceof RefreshInvalidatedError) throw error;
       if (generation !== authGeneration || controller.signal.aborted) {
         throw new RefreshInvalidatedError();
       }
-      const adoptedToken = await waitForCrossTabRefresh(snapshot);
-      if (adoptedToken) return adoptedToken;
       if (error instanceof RefreshError) throw error;
       throw new RefreshError(null, false);
     } finally {
@@ -415,8 +299,10 @@ export async function refreshSession(): Promise<string> {
 
 export interface RequestOptions extends Omit<RequestInit, "body"> {
   body?: BodyInit | null | unknown;
-  /** Skip the automatic JWT Bearer header (default: false). */
+  /** Skip the automatic refresh-on-401 (default: false). */
   anonymous?: boolean;
+  /** Let a 401 surface to the caller instead of refreshing (default: false). */
+  skipAuthRefresh?: boolean;
 }
 
 /**
@@ -469,7 +355,7 @@ async function executeRequest(
   path: string,
   options: RequestOptions,
 ): Promise<Response> {
-  const { anonymous = false, ...fetchOpts } = options;
+  const { anonymous = false, skipAuthRefresh = false, ...fetchOpts } = options;
   const requestGeneration = authGeneration;
   const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
 
@@ -505,10 +391,8 @@ async function executeRequest(
   };
 
   let res: Response;
-  let requestAccessToken: string | null = null;
   try {
-    requestAccessToken = anonymous ? null : getAccessToken();
-    res = await doFetch(requestAccessToken);
+    res = await doFetch(null);
   } catch {
     throw new ApiError({
       status: null,
@@ -521,9 +405,9 @@ async function executeRequest(
     throw invalidatedRequestError();
   }
 
-  if (res.status === 401 && !anonymous) {
+  if (res.status === 401 && !anonymous && !skipAuthRefresh) {
     try {
-      const newToken = await refreshAccessToken(requestAccessToken ?? undefined);
+      const newToken = await refreshAccessToken();
       res = await doFetch(newToken);
     } catch (error) {
       if (isRefreshInvalidatedError(error)) {
