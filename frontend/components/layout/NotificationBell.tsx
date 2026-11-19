@@ -4,11 +4,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "@/i18n/navigation";
 import Link from "next/link";
 import { apiUrl } from "@/lib/api-config";
-import { getAccessToken } from "@/lib/session";
+import { request } from "@/lib/api-client";
 
 const WS_BASE = (
   process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:3001"
 ).replace(/^http/, "ws");
+const NOTIFICATION_POLL_MS = 60_000;
+
+function notificationsEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_NOTIFICATIONS_ENABLED === "true";
+}
 
 type NotificationType =
   | "risk_alert"
@@ -30,11 +35,6 @@ const NOTIFICATION_ICONS: Record<NotificationType, string> = {
   verification_complete: "\u2713",
   dispute_update: "\u2691",
 };
-
-function getAuthHeaders(): HeadersInit {
-  const token = getAccessToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
 
 function formatRelativeTime(iso: string): string {
   const now = Date.now();
@@ -71,6 +71,12 @@ function NotificationTypeIcon({ type }: { type: NotificationType }) {
 }
 
 export default function NotificationBell() {
+  if (!notificationsEnabled()) return null;
+
+  return <NotificationBellContent />;
+}
+
+function NotificationBellContent() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -80,27 +86,23 @@ export default function NotificationBell() {
   const buttonRef = useRef<HTMLButtonElement>(null);
 
   const fetchNotifications = useCallback(async () => {
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+      return;
+    }
+
     setLoading(true);
     try {
-      const [listRes, countRes] = await Promise.all([
-        fetch(apiUrl("/notifications", { limit: 5 }), {
-          credentials: "include",
-          headers: getAuthHeaders(),
-        }),
-        fetch(apiUrl("/notifications/unread-count"), {
-          credentials: "include",
-          headers: getAuthHeaders(),
-        }),
+      const [list, count] = await Promise.all([
+        request<Notification[] | { data: Notification[] }>(
+          apiUrl("/notifications", { limit: 5 }),
+        ),
+        request<{ count?: number; unreadCount?: number }>(
+          apiUrl("/notifications/unread-count"),
+        ),
       ]);
 
-      if (listRes.ok) {
-        const data = await listRes.json();
-        setNotifications(Array.isArray(data) ? data : (data?.data ?? []));
-      }
-      if (countRes.ok) {
-        const data = await countRes.json();
-        setUnreadCount(data?.count ?? data?.unreadCount ?? 0);
-      }
+      setNotifications(Array.isArray(list) ? list : (list?.data ?? []));
+      setUnreadCount(count?.count ?? count?.unreadCount ?? 0);
     } catch {
       // Silently fail — notification polling is non-critical
     } finally {
@@ -109,7 +111,33 @@ export default function NotificationBell() {
   }, []);
 
   useEffect(() => {
-    fetchNotifications();
+    void fetchNotifications();
+  }, [fetchNotifications]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        void fetchNotifications();
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [fetchNotifications]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void fetchNotifications();
+      }
+    }, NOTIFICATION_POLL_MS);
+
+    return () => clearInterval(interval);
   }, [fetchNotifications]);
 
   useEffect(() => {
@@ -161,11 +189,7 @@ export default function NotificationBell() {
 
   async function handleMarkAllRead() {
     try {
-      await fetch(apiUrl("/notifications/read-all"), {
-        method: "PATCH",
-        credentials: "include",
-        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-      });
+      await request(apiUrl("/notifications/read-all"), { method: "PATCH" });
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
       setUnreadCount(0);
     } catch {

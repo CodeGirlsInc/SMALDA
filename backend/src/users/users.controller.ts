@@ -196,14 +196,19 @@ export class UsersController {
       throw new BadRequestException('You cannot change your own role');
     }
 
+    let updated: User | null;
     if (target.role === UserRole.ADMIN && dto.role !== UserRole.ADMIN) {
-      const adminCount = await this.usersService.countAdmins();
-      if (adminCount <= 1) {
+      const demoted = await this.usersService.updateRolePreservingLastAdmin(
+        id,
+        dto.role,
+      );
+      if (!demoted) {
         throw new BadRequestException('Cannot demote the last admin');
       }
+      updated = await this.usersService.findById(id);
+    } else {
+      updated = await this.usersService.updateRole(id, dto.role);
     }
-
-    const updated = await this.usersService.updateRole(id, dto.role);
 
     await this.accessLogsService.create({
       userId: req.user!.id,
@@ -233,13 +238,14 @@ export class UsersController {
     }
 
     if (target.role === UserRole.ADMIN) {
-      const adminCount = await this.usersService.countAdmins();
-      if (adminCount <= 1) {
+      const deleted = await this.usersService.softDeletePreservingLastAdmin(id);
+      if (!deleted) {
         throw new BadRequestException('Cannot delete the last admin');
       }
+    } else {
+      await this.usersService.softDelete(id);
     }
 
-    await this.usersService.softDelete(id);
     return { message: 'User deleted' };
   }
 }

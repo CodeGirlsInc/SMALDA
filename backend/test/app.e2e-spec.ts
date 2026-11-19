@@ -21,6 +21,7 @@ import { StellarService } from '../src/stellar/stellar.service';
 import { QueueService } from '../src/queue/queue.service';
 import { MailService } from '../src/mail/mail.service';
 import { DocumentProcessor } from '../src/queue/document.processor';
+import { User, UserRole } from '../src/users/entities/user.entity';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -387,7 +388,55 @@ describe('App (e2e)', () => {
   });
 
   // ════════════════════════════════════════════════════════════════════════
-  // 5. Health check
+  // 5. Last-admin protection
+  // ════════════════════════════════════════════════════════════════════════
+
+  describe('Last-admin protection', () => {
+    it('leaves at least one admin when two admins are demoted concurrently', async () => {
+      await register('admin-a@test.com', 'Password123!', 'Admin A');
+      await register('admin-b@test.com', 'Password123!', 'Admin B');
+
+      const users = dataSource.getRepository(User);
+      await users.update(
+        { email: 'admin-a@test.com' },
+        { role: UserRole.ADMIN },
+      );
+      await users.update(
+        { email: 'admin-b@test.com' },
+        { role: UserRole.ADMIN },
+      );
+
+      const [adminA, adminB] = await users.find({
+        where: { role: UserRole.ADMIN },
+        order: { email: 'ASC' },
+      });
+
+      const tokenA = (await login('admin-a@test.com', 'Password123!')).body
+        .access_token;
+      const tokenB = (await login('admin-b@test.com', 'Password123!')).body
+        .access_token;
+      const results = await Promise.all([
+        request(app.getHttpServer())
+          .patch(`/api/v1/users/${adminB.id}`)
+          .set('Authorization', `Bearer ${tokenA}`)
+          .send({ role: UserRole.USER }),
+        request(app.getHttpServer())
+          .patch(`/api/v1/users/${adminA.id}`)
+          .set('Authorization', `Bearer ${tokenB}`)
+          .send({ role: UserRole.USER }),
+      ]);
+
+      expect(results.map((result) => result.status).sort()).toEqual([200, 400]);
+
+      const remainingAdmins = await users.count({
+        where: { role: UserRole.ADMIN },
+      });
+      expect(remainingAdmins).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  // ════════════════════════════════════════════════════════════════════════
+  // 6. Health check
   // ════════════════════════════════════════════════════════════════════════
 
   describe('Health check', () => {

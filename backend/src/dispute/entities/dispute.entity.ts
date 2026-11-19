@@ -36,6 +36,10 @@ export const ALLOWED_DISPUTE_TRANSITIONS: Record<DisputeStatus, DisputeStatus[]>
 @Entity('disputes')
 @Index('IDX_DISPUTE_DOCUMENT', ['documentId'])
 @Index('IDX_DISPUTE_FILED_BY', ['filedBy'])
+@Index('UQ_DISPUTE_ACTIVE_DOCUMENT_USER', ['documentId', 'filedBy'], {
+  unique: true,
+  where: `"status" IN ('${DisputeStatus.OPEN}', '${DisputeStatus.IN_REVIEW}')`,
+})
 export class Dispute {
   @PrimaryGeneratedColumn('uuid')
   id: string;

@@ -1,6 +1,6 @@
 ﻿import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { FindOptionsWhere, ILike, Repository } from 'typeorm';
+import { EntityManager, FindOptionsWhere, ILike, Repository } from 'typeorm';
 import { User, UserRole } from './entities/user.entity';
 
 interface RateLimitEntry {
@@ -97,8 +97,61 @@ export class UsersService {
     return this.userRepository.count({ where: { role: UserRole.ADMIN } });
   }
 
+  async updateRolePreservingLastAdmin(
+    id: string,
+    role: UserRole,
+  ): Promise<boolean> {
+    return this.userRepository.manager.transaction(async (manager) => {
+      const admins = await this.getLockedAdmins(manager);
+      if (admins.length <= 1) return false;
+
+      const result = await manager
+        .getRepository(User)
+        .createQueryBuilder()
+        .update(User)
+        .set({ role })
+        .where('id = :id', { id })
+        .andWhere('role = :adminRole', { adminRole: UserRole.ADMIN })
+        .andWhere('deleted_at IS NULL')
+        .execute();
+
+      return (result.affected ?? 0) > 0;
+    });
+  }
+
+  async softDeletePreservingLastAdmin(id: string): Promise<boolean> {
+    return this.userRepository.manager.transaction(async (manager) => {
+      const admins = await this.getLockedAdmins(manager);
+      if (admins.length <= 1) return false;
+
+      const result = await manager
+        .getRepository(User)
+        .createQueryBuilder()
+        .softDelete()
+        .from(User)
+        .where('id = :id', { id })
+        .andWhere('role = :adminRole', { adminRole: UserRole.ADMIN })
+        .andWhere('deleted_at IS NULL')
+        .execute();
+
+      return (result.affected ?? 0) > 0;
+    });
+  }
+
   async updateRole(id: string, role: UserRole): Promise<User | null> {
     await this.userRepository.update(id, { role });
     return this.findById(id);
+  }
+
+  private getLockedAdmins(manager: EntityManager): Promise<User[]> {
+    return manager
+      .getRepository(User)
+      .createQueryBuilder('user')
+      .select('user.id')
+      .where('user.role = :adminRole', { adminRole: UserRole.ADMIN })
+      .andWhere('user.deleted_at IS NULL')
+      .orderBy('user.id', 'ASC')
+      .setLock('pessimistic_write')
+      .getMany();
   }
 }

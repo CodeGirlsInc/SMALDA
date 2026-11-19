@@ -78,6 +78,21 @@ const DEFAULT_KNOWN_ISSUERS = [
   'town clerk',
 ];
 
+const MONTH_NAMES = [
+  'january',
+  'february',
+  'march',
+  'april',
+  'may',
+  'june',
+  'july',
+  'august',
+  'september',
+  'october',
+  'november',
+  'december',
+];
+
 @Injectable()
 export class RiskAssessmentService {
   private readonly logger = new Logger(RiskAssessmentService.name);
@@ -288,9 +303,9 @@ export class RiskAssessmentService {
 
     // Look for expiry date patterns
     const expiryPatterns = [
-      /(?:expir(?:es|ed|ation|y)|valid\s+(?:until|thru|through)|end\s+date)[:\s]*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/gi,
+      /(?:expir(?:es|ed|ation|y)|valid\s+(?:until|thru|through)|end\s+date)[:\s]*(\d{1,2}[\/-]\d{1,2}[\/-]\d{4})/gi,
       /(?:expir(?:es|ed|ation|y)|valid\s+(?:until|thru|through)|end\s+date)[:\s]*(\d{4}[\/-]\d{1,2}[\/-]\d{1,2})/gi,
-      /(?:expir(?:es|ed|ation|y)|valid\s+(?:until|thru|through)|end\s+date)[:\s]*([a-z]+\s+\d{1,2},?\s+\d{4})/gi,
+      /(?:expir(?:es|ed|ation|y)|valid\s+(?:until|thru|through)|end\s+date)[:\s]*([a-z]+\.?\s+\d{1,2},?\s+\d{4})/gi,
     ];
 
     for (const pattern of expiryPatterns) {
@@ -308,12 +323,69 @@ export class RiskAssessmentService {
   }
 
   private parseDate(dateStr: string): Date | null {
-    try {
-      const date = new Date(dateStr);
-      return isNaN(date.getTime()) ? null : date;
-    } catch {
+    const normalized = dateStr.trim();
+
+    const isoMatch = /^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})$/.exec(normalized);
+    if (isoMatch) {
+      return this.buildDate(
+        Number(isoMatch[1]),
+        Number(isoMatch[2]),
+        Number(isoMatch[3]),
+      );
+    }
+
+    const numericMatch = /^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/.exec(
+      normalized,
+    );
+    if (numericMatch) {
+      const first = Number(numericMatch[1]);
+      const second = Number(numericMatch[2]);
+      const year = Number(numericMatch[3]);
+      const dateOrder = (
+        this.configService.get<string>('DATE_ORDER', 'DMY') || 'DMY'
+      ).toUpperCase();
+      const [day, month] =
+        dateOrder === 'MDY' ? [second, first] : [first, second];
+      return this.buildDate(year, month, day);
+    }
+
+    const monthNameMatch = /^([a-z]+)\.?\s+(\d{1,2}),?\s+(\d{4})$/i.exec(
+      normalized,
+    );
+    if (!monthNameMatch) return null;
+
+    const month = this.parseMonthName(monthNameMatch[1]);
+    if (month === null) return null;
+
+    return this.buildDate(
+      Number(monthNameMatch[3]),
+      month,
+      Number(monthNameMatch[2]),
+    );
+  }
+
+  private parseMonthName(value: string): number | null {
+    const normalized = value.toLowerCase().replace(/\.$/, '');
+    if (normalized.length < 3) return null;
+    const index = MONTH_NAMES.findIndex((month) =>
+      month.startsWith(normalized),
+    );
+    return index === -1 ? null : index + 1;
+  }
+
+  private buildDate(year: number, month: number, day: number): Date | null {
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (
+      date.getUTCFullYear() !== year ||
+      date.getUTCMonth() !== month - 1 ||
+      date.getUTCDate() !== day
+    ) {
       return null;
     }
+
+    return date;
   }
 
   private async checkCoordinateOverlap(document: Document): Promise<boolean> {

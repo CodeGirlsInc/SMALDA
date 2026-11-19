@@ -171,6 +171,9 @@ export const ConfigValidationSchema = Joi.object({
 
   // ── Per-user upload quota ─────────────────────────────────────────────────
   USER_DOCUMENT_QUOTA: Joi.number().default(20),
+
+  // ── Date parsing ──────────────────────────────────────────────────────────
+  DATE_ORDER: Joi.string().valid('DMY', 'MDY').default('DMY'),
 });
 
 const REDACTED = '[REDACTED]';
