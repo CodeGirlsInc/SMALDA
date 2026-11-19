@@ -4,6 +4,8 @@ import type { Logger } from 'winston';
 import { Request, Response, NextFunction } from 'express';
 import { AccessLogsService } from '../../access-logs/access-logs.service';
 
+const PROBE_PATH = /(^|\/)(health|metrics)(\/|$)/;
+
 @Injectable()
 export class LoggerMiddleware implements NestMiddleware {
   constructor(
@@ -14,20 +16,30 @@ export class LoggerMiddleware implements NestMiddleware {
 
   use(req: Request, res: Response, next: NextFunction) {
     const start = Date.now();
-    const userAgent = req.headers['user-agent'] || 'unknown';
-    const forwarded = req.headers['x-forwarded-for'];
-    const ip =
-      typeof forwarded === 'string'
-        ? forwarded.split(',')[0].trim()
-        : (forwarded?.[0] ?? req.ip);
+    const userAgent =
+      typeof req.headers['user-agent'] === 'string'
+        ? req.headers['user-agent']
+        : 'unknown';
 
     res.on('finish', () => {
+      // `req.path` excludes the query string. Fall back to a manual strip so a
+      // token=... query parameter is never persisted, even in non-Express mocks.
+      const routePath =
+        req.path || (req.originalUrl || req.url || '').split('?')[0] || '/';
+
+      // Health and metrics probes add no audit value and would grow the table
+      // indefinitely, so neither log them nor insert an access-log row.
+      if (PROBE_PATH.test(routePath)) {
+        return;
+      }
+
       const duration = Date.now() - start;
-      const routePath = req.originalUrl || req.url;
       const httpMethod = req.method;
       const statusCode = res.statusCode;
       const userId = (req as any).user?.id || null;
       const requestId = (req as any).requestId || null;
+      // req.ip honours X-Forwarded-For only when Express `trust proxy` is set.
+      const ip = req.ip || '';
 
       const payload: Record<string, unknown> = {
         method: httpMethod,
@@ -48,7 +60,8 @@ export class LoggerMiddleware implements NestMiddleware {
           userId,
           routePath,
           httpMethod,
-          ipAddress: ip || '',
+          ipAddress: ip,
+          userAgent,
           statusCode,
         })
         .catch((err) => {

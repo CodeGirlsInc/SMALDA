@@ -24,6 +24,12 @@ async function bootstrap() {
 
   const configService = app.get(ConfigService);
 
+  // Only trust X-Forwarded-* headers from the configured proxy(es). With the
+  // default (false), Express derives req.ip from the socket address and forged
+  // X-Forwarded-For values cannot influence the logged client IP.
+  const trustProxy = configService.get('TRUST_PROXY') ?? false;
+  app.getHttpAdapter().getInstance().set('trust proxy', trustProxy);
+
   // Enable hardened CORS
   const { corsOptions } = buildCorsOptions(configService);
   app.enableCors(corsOptions);

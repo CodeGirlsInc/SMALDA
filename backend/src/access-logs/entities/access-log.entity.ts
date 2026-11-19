@@ -11,6 +11,7 @@ export class AccessLog {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Index('idx_access_logs_user_id')
   @Column({ nullable: true })
   userId: string;
 
@@ -29,4 +30,19 @@ export class AccessLog {
 
   @Column({ type: 'int', nullable: true })
   statusCode: number;
+
+  @Column({ name: 'action', nullable: true })
+  action?: string | null;
+
+  @Column({ name: 'resource_type', nullable: true })
+  resourceType?: string | null;
+
+  @Column({ name: 'resource_id', nullable: true })
+  resourceId?: string | null;
+
+  @Column({ name: 'metadata', type: 'jsonb', nullable: true })
+  metadata?: Record<string, unknown> | null;
+
+  @Column({ name: 'user_agent', nullable: true })
+  userAgent?: string | null;
 }

@@ -169,6 +169,16 @@ export const ConfigValidationSchema = Joi.object({
       otherwise: Joi.string().default('debug'),
     }),
 
+  // Number of trusted reverse-proxy hops, or a CIDR/subnet string. X-Forwarded-For
+  // is only honoured by Express when this is configured; it defaults to false so
+  // a forged header from an untrusted peer is ignored.
+  TRUST_PROXY: Joi.alternatives()
+    .try(Joi.boolean(), Joi.number().integer().min(0), Joi.string())
+    .default(false),
+
+  // Access-log retention window (days) used by the nightly purge job.
+  ACCESS_LOG_RETENTION_DAYS: Joi.number().integer().positive().default(90),
+
   // ── Per-user upload quota ─────────────────────────────────────────────────
   USER_DOCUMENT_QUOTA: Joi.number().default(20),
 });
