@@ -2,14 +2,9 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { SearchX } from "lucide-react";
-import jsPDF from "jspdf";
 import { EmptyState } from "@/components/EmptyState";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Configuration
-// ─────────────────────────────────────────────────────────────────────────────
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+import { request, requestBlobWithFilename } from "@/lib/api-client";
+import { apiUrl } from "@/lib/api-config";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -31,14 +26,6 @@ type DownloadState = "idle" | "loading" | "done" | "error";
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-function getAuthHeaders(): HeadersInit {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
-  return token
-    ? { Authorization: `Bearer ${token}` }
-    : {};
-}
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-GB", {
@@ -185,16 +172,14 @@ function PortfolioExport({
     setExcelError(null);
     try {
       const qs = buildQueryParams();
-      const url = `${API_BASE}/api/documents/export/excel${qs ? `?${qs}` : ""}`;
-      const res = await fetch(url, { headers: getAuthHeaders() });
-      if (!res.ok) {
-        throw new Error(`Export failed (${res.status})`);
-      }
-      const blob = await res.blob();
+      const { blob, filename } = await requestBlobWithFilename(
+        apiUrl(`/documents/export/excel${qs ? `?${qs}` : ""}`),
+      );
       const href = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = href;
-      a.download = `documents-export-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.download =
+        filename ?? `documents-export-${new Date().toISOString().slice(0, 10)}.xlsx`;
       a.click();
       URL.revokeObjectURL(href);
       saveLastExport();
@@ -210,24 +195,17 @@ function PortfolioExport({
     setPdfState("loading");
     setPdfError(null);
     try {
-      // Try the backend PDF endpoint first; fall back to client-side generation.
       const qs = buildQueryParams();
-      const url = `${API_BASE}/api/documents/export/pdf${qs ? `?${qs}` : ""}`;
-      const res = await fetch(url, { headers: getAuthHeaders() });
-
-      if (res.ok) {
-        const blob = await res.blob();
-        const href = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = href;
-        a.download = `documents-export-${new Date().toISOString().slice(0, 10)}.pdf`;
-        a.click();
-        URL.revokeObjectURL(href);
-      } else {
-        // Client-side PDF generation via jspdf
-        generateClientPdf(qs);
-      }
-
+      const { blob, filename } = await requestBlobWithFilename(
+        apiUrl(`/documents/export/pdf${qs ? `?${qs}` : ""}`),
+      );
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = href;
+      a.download =
+        filename ?? `documents-export-${new Date().toISOString().slice(0, 10)}.pdf`;
+      a.click();
+      URL.revokeObjectURL(href);
       saveLastExport();
       setLastExport(new Date().toISOString());
       setPdfState("done");
@@ -235,17 +213,6 @@ function PortfolioExport({
       setPdfError(err instanceof Error ? err.message : "PDF export failed");
       setPdfState("error");
     }
-  }
-
-  function generateClientPdf(qs: string) {
-    const doc = new jsPDF();
-    doc.setFontSize(16);
-    doc.text("Document Portfolio Export", 14, 20);
-    doc.setFontSize(11);
-    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 30);
-    if (qs) doc.text(`Filters: ${decodeURIComponent(qs)}`, 14, 40);
-    doc.text("No data available — connect to the backend for full export.", 14, 55);
-    doc.save(`documents-export-${new Date().toISOString().slice(0, 10)}.pdf`);
   }
 
   return (
@@ -293,37 +260,24 @@ function PortfolioExport({
 
 function DocumentRow({ doc }: { doc: Document }) {
   const [dlState, setDlState] = useState<DownloadState>("idle");
+  const [dlError, setDlError] = useState<string | null>(null);
 
   async function handleDownloadReport() {
     setDlState("loading");
+    setDlError(null);
     try {
-      const res = await fetch(
-        `${API_BASE}/api/documents/${doc.id}/export/pdf`,
-        { headers: getAuthHeaders() }
+      const { blob, filename } = await requestBlobWithFilename(
+        apiUrl(`/documents/${doc.id}/export/pdf`),
       );
-
-      if (res.ok) {
-        const blob = await res.blob();
-        const href = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = href;
-        a.download = `report-${doc.id}.pdf`;
-        a.click();
-        URL.revokeObjectURL(href);
-      } else {
-        // Fallback: generate a minimal PDF client-side
-        const pdf = new jsPDF();
-        pdf.setFontSize(16);
-        pdf.text("Document Report", 14, 20);
-        pdf.setFontSize(11);
-        pdf.text(`Title: ${doc.title}`, 14, 35);
-        pdf.text(`Status: ${doc.status}`, 14, 45);
-        pdf.text(`Hash: ${doc.fileHash}`, 14, 55);
-        pdf.text(`Created: ${formatDate(doc.createdAt)}`, 14, 65);
-        pdf.save(`report-${doc.id}.pdf`);
-      }
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = filename ?? `report-${doc.id}.pdf`;
+      a.click();
+      URL.revokeObjectURL(href);
       setDlState("done");
-    } catch {
+    } catch (err) {
+      setDlError(err instanceof Error ? err.message : "Download failed");
       setDlState("error");
     }
   }
@@ -374,6 +328,11 @@ function DocumentRow({ doc }: { doc: Document }) {
             "Download Report"
           )}
         </button>
+        {dlError && (
+          <p className="mt-1 text-xs text-red-600" role="alert">
+            {dlError}
+          </p>
+        )}
       </td>
     </tr>
   );
@@ -406,12 +365,9 @@ function DocumentsTable({
       if (status !== "ALL") params.set("status", status);
       const qs = params.toString();
 
-      const res = await fetch(
-        `${API_BASE}/api/documents${qs ? `?${qs}` : ""}`,
-        { headers: getAuthHeaders() }
+      const data = await request<Document[] | { documents: Document[] }>(
+        apiUrl(`/documents${qs ? `?${qs}` : ""}`),
       );
-      if (!res.ok) throw new Error(`Failed to load documents (${res.status})`);
-      const data = await res.json();
       setDocs(Array.isArray(data) ? data : data.documents ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load documents");

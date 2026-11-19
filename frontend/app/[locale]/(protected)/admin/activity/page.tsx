@@ -39,41 +39,6 @@ function getAuthHeaders(): HeadersInit {
   };
 }
 
-const MOCK_ACTIVITY: Activity[] = [
-  {
-    id: "1",
-    userId: "u1",
-    user_email: "admin@example.com",
-    actionType: "login",
-    action: "User login",
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "2",
-    userId: "u2",
-    user_email: "test@example.com",
-    actionType: "upload",
-    action: 'File upload: "document.pdf"',
-    created_at: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
-  },
-  {
-    id: "3",
-    userId: "u3",
-    user_email: "admin@example.com",
-    actionType: "delete",
-    action: 'File delete: "image.jpg"',
-    created_at: new Date(Date.now() - 1000 * 60 * 10).toISOString(),
-  },
-  {
-    id: "4",
-    userId: "u4",
-    user_email: "guest@example.com",
-    actionType: "view",
-    action: 'Viewed page: "Dashboard"',
-    created_at: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
-  },
-];
-
 const ACTION_TYPES = ["login", "upload", "delete", "view", "verify", "dispute"];
 
 // ---------------------------------------------------------------------------
@@ -83,6 +48,7 @@ const ACTION_TYPES = ["login", "upload", "delete", "view", "verify", "dispute"];
 export default function AdminActivityPage() {
   const t = useTranslations("adminActivity");
   const tCommon = useTranslations("common");
+  const tErrors = useTranslations("errors");
   const { formatDateTime } = useDateFormatting();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [total, setTotal] = useState(0);
@@ -130,15 +96,9 @@ export default function AdminActivityPage() {
       setActivities(sorted);
       setTotal(json?.total ?? sorted.length);
     } catch {
-      // Backend may be unavailable — fall back to sample data.
-      const filtered = MOCK_ACTIVITY.filter(
-        (a) =>
-          (!appliedUserId || a.userId === appliedUserId) &&
-          (!appliedActionType || a.actionType === appliedActionType),
-      );
-      setActivities(filtered);
-      setTotal(filtered.length);
-      setError(t("sampleData"));
+      setActivities([]);
+      setTotal(0);
+      setError(t("loadError"));
     } finally {
       setLoading(false);
     }
@@ -243,9 +203,19 @@ export default function AdminActivityPage() {
       </section>
 
       {error && (
-        <p role="status" className="mb-4 text-xs text-gray-500">
-          {error}
-        </p>
+        <div
+          role="alert"
+          className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800"
+        >
+          <strong className="block font-semibold">{error}</strong>
+          <button
+            type="button"
+            onClick={fetchActivity}
+            className="mt-2 rounded bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+          >
+            {tErrors("tryAgain")}
+          </button>
+        </div>
       )}
 
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -258,7 +228,7 @@ export default function AdminActivityPage() {
           <p className="p-6 text-sm text-gray-500" role="status">
             {t("loading")}
           </p>
-        ) : activities.length === 0 ? (
+        ) : error ? null : activities.length === 0 ? (
           <div className="p-10 text-center">
             <p className="text-sm text-gray-500">{t("empty")}</p>
           </div>

@@ -584,6 +584,40 @@ export async function requestBlob(
   return res.blob();
 }
 
+/** Extracts the `filename` from a `Content-Disposition` header, if present. */
+export function filenameFromContentDisposition(
+  res: Response,
+): string | undefined {
+  const header = res.headers.get("Content-Disposition");
+  if (!header) return undefined;
+  const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (utf8Match) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return undefined;
+    }
+  }
+  const quotedMatch = /filename="([^"]+)"/i.exec(header);
+  if (quotedMatch) return quotedMatch[1];
+  const plainMatch = /filename=([^;]+)/i.exec(header);
+  return plainMatch ? plainMatch[1].trim() : undefined;
+}
+
+/**
+ * Like `requestBlob`, but also surfaces the server-suggested filename from
+ * the `Content-Disposition` header so callers don't have to invent one.
+ */
+export async function requestBlobWithFilename(
+  path: string,
+  options: RequestOptions = {},
+): Promise<{ blob: Blob; filename?: string }> {
+  const res = await executeRequest(path, options);
+  const filename = filenameFromContentDisposition(res);
+  const blob = await res.blob();
+  return { blob, filename };
+}
+
 // ── Backward-compatible alias ───────────────────────────────────────────────
 
 /**
