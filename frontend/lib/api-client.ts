@@ -398,7 +398,9 @@ async function executeRequest(
 
   const doFetch = async (token: string | null): Promise<Response> => {
     const headers = new Headers(fetchOpts.headers);
-    if (!headers.has("Content-Type") && !(fetchOpts.body instanceof FormData)) {
+    const isFormData =
+      typeof FormData !== "undefined" && fetchOpts.body instanceof FormData;
+    if (!headers.has("Content-Type") && !isFormData) {
       headers.set("Content-Type", "application/json");
     }
     if (!anonymous && token && !headers.has("Authorization")) {
@@ -407,11 +409,13 @@ async function executeRequest(
 
     let body: BodyInit | null | undefined = undefined;
     if (fetchOpts.body !== undefined && fetchOpts.body !== null) {
-      if (
+      if (isFormData) {
+        body = fetchOpts.body as BodyInit;
+      } else if (
         typeof fetchOpts.body === "string" ||
-        fetchOpts.body instanceof FormData ||
-        fetchOpts.body instanceof Blob ||
-        fetchOpts.body instanceof ArrayBuffer
+        (typeof Blob !== "undefined" && fetchOpts.body instanceof Blob) ||
+        (typeof ArrayBuffer !== "undefined" &&
+          fetchOpts.body instanceof ArrayBuffer)
       ) {
         body = fetchOpts.body as BodyInit;
       } else {

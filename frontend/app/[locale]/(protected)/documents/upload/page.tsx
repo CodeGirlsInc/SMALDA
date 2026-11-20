@@ -2,6 +2,7 @@
 
 import React, { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { request } from "@/lib/api-client";
 import { apiUrl } from "@/lib/api-config";
 import {
   documentUploadConstraints,
@@ -146,31 +147,21 @@ export default function DocumentUploadPage() {
         setProgress((prev) => (prev >= 90 ? prev : prev + 20));
       }, 200);
 
-      const token = window.localStorage.getItem("auth-token");
-      const response = await fetch(
-        apiUrl("/documents/upload"),
-        {
-          method: "POST",
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-          body: formData,
-        },
-      );
-
-      clearInterval(interval);
-      setProgress(100);
-
-      if (response.status === 202 || response.ok) {
-        const data = await response.json().catch(() => ({ id: "new-doc-id" }));
-        const docId = data.id || data.documentId || "new-doc-id";
+      try {
+        const data = await request<{ id?: string; documentId?: string }>(
+          apiUrl("/documents/upload"),
+          { method: "POST", body: formData },
+        );
+        setProgress(100);
+        const docId = data?.id ?? data?.documentId ?? "new-doc-id";
         setTimeout(() => {
           router.push(`/documents/${docId}`);
         }, 500);
-      } else {
-        const data = await response.json().catch(() => ({}));
-        setError(data.message || "Failed to upload document. Please try again.");
+      } finally {
+        clearInterval(interval);
       }
     } catch {
-      setError("Network error uploading document.");
+      setError("Failed to upload document. Please try again.");
     } finally {
       setUploading(false);
     }

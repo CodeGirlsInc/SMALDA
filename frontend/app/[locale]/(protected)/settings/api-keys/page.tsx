@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { ApiError, request } from "@/lib/api-client";
+import { apiUrl } from "@/lib/api-config";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -15,20 +17,15 @@ interface ApiKey {
   status: "active" | "revoked";
 }
 
+interface CreatedApiKeyResponse extends Partial<ApiKey> {
+  key?: string;
+  record?: ApiKey;
+  data?: CreatedApiKeyResponse;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
-
-function getAuthHeaders(): HeadersInit {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
-  return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
 
 /** Cross-browser clipboard copy with execCommand fallback. */
 async function copyToClipboard(text: string): Promise<void> {
@@ -240,14 +237,12 @@ export default function ApiKeysPage() {
   useEffect(() => {
     async function fetchKeys() {
       try {
-        const res = await fetch(`${API_BASE}/api/users/me/api-keys`, {
-          headers: getAuthHeaders(),
-        });
-        if (!res.ok) throw new Error(`Failed to load keys: ${res.status}`);
-        const json = await res.json();
-        setKeys(json.data ?? []);
-      } catch (err: unknown) {
-        setLoadError(err instanceof Error ? err.message : "Failed to load API keys");
+        const json = await request<ApiKey[] | { data?: ApiKey[] }>(
+          apiUrl("/users/me/api-keys"),
+        );
+        setKeys(Array.isArray(json) ? json : json.data ?? []);
+      } catch {
+        setLoadError("Failed to load API keys. Please try again.");
       } finally {
         setLoading(false);
       }
@@ -261,23 +256,30 @@ export default function ApiKeysPage() {
     setGenerating(true);
     setGenerateError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/users/me/api-keys`, {
+      const json = await request<CreatedApiKeyResponse | null>(apiUrl("/users/me/api-keys"), {
         method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ name }),
+        body: { name },
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body?.message ?? `Request failed: ${res.status}`);
-      }
-      const json = await res.json();
+      const created = json?.data ?? json ?? {};
+      const record: ApiKey = created.record ?? {
+        id: created.id ?? "",
+        name: created.name ?? name,
+        prefix: created.prefix ?? "",
+        createdAt: created.createdAt ?? new Date().toISOString(),
+        lastUsedAt: null,
+        status: "active",
+      };
       // The full key is only returned on creation
-      setNewKeyValue(json.data?.key ?? "");
+      setNewKeyValue(created.key ?? "");
       // Add the redacted entry to the table
-      setKeys((prev) => [json.data?.record ?? { ...json.data, status: "active" }, ...prev]);
+      setKeys((prev) => [record, ...prev]);
       setShowGenerate(false);
     } catch (err: unknown) {
-      setGenerateError(err instanceof Error ? err.message : "Failed to generate key");
+      setGenerateError(
+        err instanceof ApiError && err.backendMessage
+          ? err.backendMessage
+          : "Failed to generate key. Please try again.",
+      );
     } finally {
       setGenerating(false);
     }
@@ -289,11 +291,9 @@ export default function ApiKeysPage() {
     if (!revokeTarget) return;
     setRevoking(true);
     try {
-      const res = await fetch(
-        `${API_BASE}/api/users/me/api-keys/${revokeTarget.id}`,
-        { method: "DELETE", headers: getAuthHeaders() }
-      );
-      if (!res.ok) throw new Error(`Revoke failed: ${res.status}`);
+      await request(apiUrl(`/users/me/api-keys/${revokeTarget.id}`), {
+        method: "DELETE",
+      });
       setKeys((prev) =>
         prev.map((k) =>
           k.id === revokeTarget.id ? { ...k, status: "revoked" as const } : k

@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { FileText } from "lucide-react";
 import { Link } from "@/i18n/navigation";
 import { apiRequest } from "@/lib/api-client";
+import { apiUrl } from "@/lib/api-config";
 import { EmptyState } from "@/components/EmptyState";
 import Skeleton from "@/components/Skeleton";
 
@@ -138,7 +139,7 @@ export default function DashboardPage() {
     setError(null);
     try {
       const json = await apiRequest<PaginatedDocuments>(
-        `/api/v1/documents?page=1&limit=${STATS_SAMPLE_LIMIT}`,
+        apiUrl("/documents", { page: 1, limit: STATS_SAMPLE_LIMIT }),
       );
       setStats(computeStats(json));
     } catch {

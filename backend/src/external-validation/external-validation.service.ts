@@ -151,4 +151,33 @@ export class ExternalValidationService {
       return this.validationRequestRepository.save(request);
     }
   }
+
+  async getProvidersHealth(): Promise<
+    Array<{
+      provider: ValidationType;
+      status: 'online' | 'degraded';
+      healthy: boolean;
+      circuitOpen: boolean;
+      circuitOpenUntil: string | null;
+      failureCount: number;
+      checkedAt: string;
+    }>
+  > {
+    const checkedAt = new Date().toISOString();
+    return Promise.all(
+      Array.from(this.providers.entries()).map(async ([provider, instance]) => {
+        const healthy = await instance.healthCheck();
+        const circuit = instance.getCircuitState();
+        return {
+          provider,
+          status: healthy ? 'online' : 'degraded',
+          healthy,
+          circuitOpen: circuit.open,
+          circuitOpenUntil: circuit.openUntil?.toISOString() ?? null,
+          failureCount: circuit.failureCount,
+          checkedAt,
+        };
+      }),
+    );
+  }
 }

@@ -1,6 +1,7 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import {
   IValidationProvider,
+  ProviderCircuitState,
   ValidationResponse,
 } from '../interfaces/validation-provider.interface';
 import { ValidationResult } from '../entities/validation-request.entity';
@@ -41,6 +42,15 @@ export class GovernmentIdProvider implements IValidationProvider {
 
   async healthCheck(): Promise<boolean> {
     return !this.isCircuitOpen();
+  }
+
+  getCircuitState(): ProviderCircuitState {
+    const open = this.isCircuitOpen();
+    return {
+      open,
+      openUntil: open ? this.circuitOpenUntil : null,
+      failureCount: open ? this.failureCount : 0,
+    };
   }
 
   private checkCircuit(): void {

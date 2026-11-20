@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { request } from '@/lib/api-client';
+import { apiUrl } from '@/lib/api-config';
 
 interface DocumentDetail {
   id: string;
@@ -18,7 +19,7 @@ interface DocumentDetail {
 export function useDocument(documentId: string) {
   return useQuery<DocumentDetail>({
     queryKey: ['document', documentId],
-    queryFn: () => request(`/api/documents/${documentId}`),
+    queryFn: () => request(apiUrl(`/documents/${documentId}`)),
     enabled: !!documentId,
   });
 }

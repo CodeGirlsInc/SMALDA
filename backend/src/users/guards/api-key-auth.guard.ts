@@ -8,11 +8,11 @@ import {
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { REQUIRE_SCOPES_KEY } from '../decorators/require-scopes.decorator';
 import { ApiKeyScope } from '../entities/api-key.entity';
-import { ApiKeysService } from './api-keys.service';
-import { User } from './entities/user.entity';
+import { ApiKeysService } from '../api-keys.service';
+import { User } from '../entities/user.entity';
 
 /**
  * Authenticates a request with an `x-api-key` header, falling back to the
