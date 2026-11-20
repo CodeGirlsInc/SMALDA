@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { DocumentsGateway } from './documents.gateway';
 import { DocumentsService } from './documents.service';
 import { DocumentStatus } from './entities/document.entity';
+import { VerificationStatus } from '../verification/entities/verification-record.entity';
 
 describe('DocumentsGateway', () => {
   let gateway: DocumentsGateway;
@@ -186,6 +187,47 @@ describe('DocumentsGateway', () => {
       expect(gateway.server.to).toHaveBeenCalledWith('document:doc-999');
       // Emit should only be called on the room-scoped server reference
       expect(emitSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should emit lower-case document status values matching DocumentStatus', () => {
+      const emitSpy = jest.fn();
+      gateway.server = {
+        to: jest.fn().mockReturnValue({ emit: emitSpy }),
+      } as any;
+
+      gateway.notifyStatusChanged(
+        'doc-lower',
+        DocumentStatus.ANALYZING,
+        DocumentStatus.PENDING,
+      );
+
+      expect(emitSpy).toHaveBeenCalledWith('document:status-changed', {
+        documentId: 'doc-lower',
+        status: 'analyzing',
+        previousStatus: 'pending',
+        timestamp: expect.any(String),
+      });
+    });
+
+    it('should emit lower-case verification status values including failed', () => {
+      const emitSpy = jest.fn();
+      gateway.server = {
+        to: jest.fn().mockReturnValue({ emit: emitSpy }),
+      } as any;
+
+      gateway.notifyVerificationStatusChanged(
+        'doc-lower',
+        VerificationStatus.FAILED,
+        VerificationStatus.PENDING,
+      );
+
+      expect(gateway.server.to).toHaveBeenCalledWith('document:doc-lower');
+      expect(emitSpy).toHaveBeenCalledWith('verification:status-changed', {
+        documentId: 'doc-lower',
+        status: 'failed',
+        previousStatus: 'pending',
+        timestamp: expect.any(String),
+      });
     });
   });
 
