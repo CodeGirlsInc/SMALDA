@@ -107,6 +107,39 @@ struct HorizonAccount {
     sequence: String,
     #[serde(default)]
     data: HashMap<String, String>,
+    /// Number of subentries (data entries, trustlines, offers, signers).
+    #[serde(default)]
+    subentry_count: u32,
+    #[serde(default)]
+    balances: Vec<HorizonBalance>,
+}
+
+#[derive(Debug, Deserialize)]
+struct HorizonBalance {
+    asset_type: String,
+    balance: String,
+}
+
+/// Stellar's hard cap on subentries per account.
+pub const MAX_ACCOUNT_SUBENTRIES: u32 = 1000;
+
+/// Headroom of the anchor account against Stellar's subentry cap and reserve.
+///
+/// Every anchor, transfer and revocation is a ManageData entry (one subentry
+/// each), so this is the service's capacity counter. See
+/// `contract/docs/anchoring-capacity.md`.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct AccountCapacity {
+    pub subentry_count: u32,
+    pub subentry_limit: u32,
+    /// Native balance in XLM.
+    pub balance_xlm: f64,
+    /// Minimum balance in XLM: (2 + subentries) * 0.5 (base reserve).
+    pub min_balance_xlm: f64,
+    /// `balance_xlm - min_balance_xlm`; negative means submits will fail.
+    pub reserve_headroom_xlm: f64,
+    /// Percentage of the subentry cap in use.
+    pub subentry_usage_percent: f64,
 }
 
 /// Horizon transaction submission response (subset of fields).
@@ -128,6 +161,18 @@ struct HorizonError {
 #[derive(Debug, Deserialize)]
 struct OperationsResponse {
     _embedded: OperationsEmbedded,
+    #[serde(default)]
+    _links: Option<OperationsLinks>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OperationsLinks {
+    next: Option<OperationsLink>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OperationsLink {
+    href: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -492,6 +537,38 @@ impl StellarClient {
         }
     }
 
+    /// Subentry count and reserve headroom of the anchor account (issue #1666).
+    pub async fn account_capacity(&self, anchor_account_id: &str) -> Result<AccountCapacity> {
+        let url = format!("{}/accounts/{}", self.horizon_url, anchor_account_id);
+        let resp = self
+            .get_with_backoff(&url)
+            .await
+            .map_err(|e| anyhow!("Failed to fetch account info from Horizon: {}", e))?;
+        if !resp.status().is_success() {
+            return Err(anyhow!(
+                "Horizon account fetch failed with status {}",
+                resp.status().as_u16()
+            ));
+        }
+        let account: HorizonAccount = resp.json().await?;
+        let balance_xlm = account
+            .balances
+            .iter()
+            .find(|b| b.asset_type == "native")
+            .and_then(|b| b.balance.parse::<f64>().ok())
+            .unwrap_or(0.0);
+        let min_balance_xlm = (2.0 + account.subentry_count as f64) * 0.5;
+        Ok(AccountCapacity {
+            subentry_count: account.subentry_count,
+            subentry_limit: MAX_ACCOUNT_SUBENTRIES,
+            balance_xlm,
+            min_balance_xlm,
+            reserve_headroom_xlm: balance_xlm - min_balance_xlm,
+            subentry_usage_percent: account.subentry_count as f64 * 100.0
+                / MAX_ACCOUNT_SUBENTRIES as f64,
+        })
+    }
+
     /// Fetches all ManageData history entries for a given document hash (anchors, updates, transfers).
     #[tracing::instrument(
         name = "stellar.get_hash_history",
@@ -504,50 +581,72 @@ impl StellarClient {
         anchor_account_id: &str,
     ) -> Result<Vec<HistoryEntry>> {
         let data_key = build_data_key(hash);
-        let transfer_key = build_transfer_key(hash);
         let revocation_key = build_revocation_key(hash);
 
-        let url = format!(
-            "{}/accounts/{}/operations?order=desc&limit=200",
-            self.horizon_url, anchor_account_id
+        // Every document shares one anchor account, so its operation stream holds
+        // every submit, transfer and revoke for every document. Follow Horizon's
+        // `_links.next` page by page (issue #1667) instead of reading only the
+        // newest 200 operations, stopping once this document's own anchor entry
+        // is reached (the oldest entry it can have, as pages are newest first),
+        // when a page is empty, or at a hard page cap.
+        const PAGE_LIMIT: u32 = 200;
+        const MAX_PAGES: usize = 50;
+        let transfer_prefix = transfer_key_prefix(hash);
+
+        let mut url = format!(
+            "{}/accounts/{}/operations?order=desc&limit={}",
+            self.horizon_url, anchor_account_id, PAGE_LIMIT
         );
-
-        let resp = self
-            .get_with_backoff(&url)
-            .await
-            .map_err(|e| anyhow!("Failed to fetch account operations: {}", e))?;
-
-        if !resp.status().is_success() {
-            return Err(anyhow!(
-                "Horizon operations fetch failed with status {}",
-                resp.status()
-            ));
-        }
-
-        let ops: OperationsResponse = resp.json().await?;
         let mut history = Vec::new();
 
-        for op in ops._embedded.records {
-            if op.op_type == "manage_data" {
-                if let Some(ref name) = op.name {
-                    if name == &data_key || name == &transfer_key || name == &revocation_key {
-                        let decoded_value = op.value.as_ref().map(|v| {
-                            base64::engine::general_purpose::STANDARD
-                                .decode(v)
-                                .map(|bytes| String::from_utf8_lossy(&bytes).to_string())
-                                .unwrap_or_else(|_| v.clone())
-                        });
+        'pages: for _ in 0..MAX_PAGES {
+            let resp = self
+                .get_with_backoff(&url)
+                .await
+                .map_err(|e| anyhow!("Failed to fetch account operations: {}", e))?;
 
-                        history.push(HistoryEntry {
-                            id: op.id,
-                            transaction_hash: op.transaction_hash,
-                            created_at: op.created_at,
-                            data_name: name.clone(),
-                            data_value_base64: op.value,
-                            decoded_value,
-                        });
+            if !resp.status().is_success() {
+                return Err(anyhow!(
+                    "Horizon operations fetch failed with status {}",
+                    resp.status()
+                ));
+            }
+
+            let ops: OperationsResponse = resp.json().await?;
+            let next = ops._links.and_then(|l| l.next).map(|l| l.href);
+            let page_empty = ops._embedded.records.is_empty();
+
+            for op in ops._embedded.records {
+                if op.op_type != "manage_data" {
+                    continue;
+                }
+                let Some(ref name) = op.name else { continue };
+                let is_anchor = name == &data_key;
+                if is_anchor || name.starts_with(&transfer_prefix) || name == &revocation_key {
+                    let decoded_value = op.value.as_ref().map(|v| {
+                        base64::engine::general_purpose::STANDARD
+                            .decode(v)
+                            .map(|bytes| String::from_utf8_lossy(&bytes).to_string())
+                            .unwrap_or_else(|_| v.clone())
+                    });
+
+                    history.push(HistoryEntry {
+                        id: op.id,
+                        transaction_hash: op.transaction_hash,
+                        created_at: op.created_at,
+                        data_name: name.clone(),
+                        data_value_base64: op.value,
+                        decoded_value,
+                    });
+                    if is_anchor {
+                        break 'pages;
                     }
                 }
+            }
+
+            match next {
+                Some(href) if !page_empty => url = href,
+                _ => break,
             }
         }
 
@@ -557,11 +656,12 @@ impl StellarClient {
     /// Anchor a transfer record on Stellar using a `ManageData` operation.
     #[tracing::instrument(
         name = "stellar.anchor_transfer",
-        skip(self, transfer_hash, secret_key),
+        skip(self, document_hash, transfer_hash, secret_key),
         fields(hash_prefix = %hash_prefix(transfer_hash), public_key = %public_key)
     )]
     pub async fn anchor_transfer(
         &self,
+        document_hash: &str,
         transfer_hash: &str,
         public_key: &str,
         secret_key: &str,
@@ -594,7 +694,10 @@ impl StellarClient {
             .parse()
             .map_err(|_| anyhow!("Could not parse account sequence"))?;
 
-        let transfer_key = build_transfer_key(transfer_hash);
+        // One data entry per transfer, namespaced by document, so a second
+        // transfer never replaces the first and history can be listed per
+        // document (issue #1668).
+        let transfer_key = build_transfer_entry_key(document_hash, transfer_hash);
         let data_value = DataValue::from_slice(transfer_hash.as_bytes())
             .map_err(|e| anyhow!("DataValue error: {:?}", e))?;
 
@@ -768,7 +871,8 @@ impl StellarClient {
     /// Record a document revocation on Stellar using a `ManageData` operation.
     ///
     /// Key: `"revoked_" + &hash[..56]` (max 64 bytes).
-    /// Value: the revocation JSON payload (truncated to 64 bytes).
+    /// Value: a compact value from [`build_revocation_value`] (at most 64 bytes;
+    /// longer values are rejected, never truncated).
     #[tracing::instrument(
         name = "stellar.anchor_revocation",
         skip(self, hash, revocation_json, secret_key),
@@ -810,8 +914,16 @@ impl StellarClient {
 
         let revocation_key = build_revocation_key(hash);
 
-        let raw = revocation_json.as_bytes();
-        let value_bytes = &raw[..raw.len().min(64)];
+        // Never truncate: cutting a JSON value at 64 bytes leaves invalid JSON
+        // (and can split a UTF-8 character) on-chain (issue #1665).
+        let value_bytes = revocation_json.as_bytes();
+        if value_bytes.len() > MAX_DATA_VALUE_BYTES {
+            return Err(anyhow!(
+                "revocation value is {} bytes; ManageData values are limited to {}",
+                value_bytes.len(),
+                MAX_DATA_VALUE_BYTES
+            ));
+        }
         let data_value =
             DataValue::from_slice(value_bytes).map_err(|e| anyhow!("DataValue error: {:?}", e))?;
 
@@ -897,6 +1009,41 @@ pub fn build_data_key(hash: &str) -> String {
 pub fn build_transfer_key(hash: &str) -> String {
     let suffix_len = hash.len().min(58);
     format!("trf_{}", &hash[..suffix_len])
+}
+
+/// Prefix shared by every transfer entry of one document: `"trf_" + &doc[..24] + "_"`.
+pub fn transfer_key_prefix(document_hash: &str) -> String {
+    let n = document_hash.len().min(24);
+    format!("trf_{}_", &document_hash[..n])
+}
+
+/// Per-transfer ManageData key: the document prefix plus the first 29 bytes of
+/// the transfer hash (at most 58 bytes in total, under Stellar's 64).
+pub fn build_transfer_entry_key(document_hash: &str, transfer_hash: &str) -> String {
+    let n = transfer_hash.len().min(29);
+    format!("{}{}", transfer_key_prefix(document_hash), &transfer_hash[..n])
+}
+
+/// Largest value Stellar allows in a ManageData entry.
+pub const MAX_DATA_VALUE_BYTES: usize = 64;
+
+/// Compact, fixed-size on-chain revocation value: `"<unix_ts>|<32 hex>"`, where
+/// the hex is the first 128 bits of SHA-256 over the canonical revocation JSON
+/// (which keeps the reason and `revokedBy`; the full record lives in the audit
+/// log and webhook). Always well-formed UTF-8 and well under 64 bytes.
+pub fn build_revocation_value(revoked_at: i64, revocation_json: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = hex::encode(Sha256::digest(revocation_json.as_bytes()));
+    format!("{}|{}", revoked_at, &digest[..32])
+}
+
+/// Inverse of [`build_revocation_value`]: `(unix_ts, digest_hex)`.
+pub fn parse_revocation_value(value: &str) -> Option<(i64, String)> {
+    let (ts, digest) = value.split_once('|')?;
+    if digest.len() != 32 || !digest.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    Some((ts.parse().ok()?, digest.to_string()))
 }
 
 /// Build the revocation ManageData key: `"revoked_" + &hash[..56]` (max 64 bytes).
@@ -1100,7 +1247,7 @@ mod tests {
         });
 
         let result = client
-            .anchor_transfer("transfer-hash", &public_key, secret)
+            .anchor_transfer("doc-hash", "transfer-hash", &public_key, secret)
             .await
             .unwrap();
 
@@ -1131,7 +1278,7 @@ mod tests {
         });
 
         let result = client
-            .anchor_transfer("transfer-hash", &public_key, secret)
+            .anchor_transfer("doc-hash", "transfer-hash", &public_key, secret)
             .await;
 
         assert!(result.is_err());
@@ -1333,5 +1480,151 @@ mod tests {
         // treated as public, including a self-hosted Horizon. Pinned so the
         // behaviour cannot change unnoticed before that fix lands.
         assert!(!StellarClient::new("http://localhost:8000").horizon_is_testnet());
+    }
+
+    // ── revocation value, capacity, history, transfer keys (#1665-#1668) ───────
+
+    #[test]
+    fn revocation_value_is_compact_and_round_trips() {
+        let json = serde_json::json!({
+            "revokedAt": "2026-11-18T12:34:56.789012345+00:00",
+            "reason": "é".repeat(200),
+            "revokedBy": "someone@example.com",
+        })
+        .to_string();
+        let value = build_revocation_value(1_763_469_296, &json);
+        assert!(value.len() <= MAX_DATA_VALUE_BYTES);
+        assert!(std::str::from_utf8(value.as_bytes()).is_ok());
+        let (ts, digest) = parse_revocation_value(&value).expect("well-formed");
+        assert_eq!(ts, 1_763_469_296);
+        assert_eq!(digest.len(), 32);
+        // Different records give different digests.
+        assert_ne!(value, build_revocation_value(1_763_469_296, "{}"));
+    }
+
+    #[test]
+    fn parse_revocation_value_rejects_garbage() {
+        assert!(parse_revocation_value("not a value").is_none());
+        assert!(parse_revocation_value("12|zz").is_none());
+    }
+
+    #[test]
+    fn transfer_keys_are_unique_per_transfer_and_within_the_limit() {
+        let doc = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        let t1 = "a".repeat(64);
+        let t2 = "b".repeat(64);
+        let k1 = build_transfer_entry_key(doc, &t1);
+        let k2 = build_transfer_entry_key(doc, &t2);
+        assert_ne!(k1, k2);
+        assert!(k1.len() <= 64 && k2.len() <= 64);
+        assert!(k1.starts_with(&transfer_key_prefix(doc)));
+    }
+
+    #[tokio::test]
+    async fn test_anchor_revocation_rejects_an_oversized_value_instead_of_truncating() {
+        let mock_server = MockServer::start();
+        let client = create_test_client(&mock_server);
+        mock_server.mock(|when, then| {
+            when.method(GET).path(format!("/accounts/{}", TEST_ACCOUNT));
+            then.status(200)
+                .json_body(serde_json::json!({ "sequence": "1", "data": {} }));
+        });
+        let secret = "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        let result = client
+            .anchor_revocation("abc", &"x".repeat(65), TEST_ACCOUNT, secret)
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("limited to 64"));
+    }
+
+    #[tokio::test]
+    async fn test_account_capacity_reports_subentries_and_headroom() {
+        let mock_server = MockServer::start();
+        let client = create_test_client(&mock_server);
+        mock_server.mock(|when, then| {
+            when.method(GET).path(format!("/accounts/{}", TEST_ACCOUNT));
+            then.status(200).json_body(serde_json::json!({
+                "sequence": "1",
+                "subentry_count": 800,
+                "data": {},
+                "balances": [{ "asset_type": "native", "balance": "500.0000000" }]
+            }));
+        });
+        let cap = client.account_capacity(TEST_ACCOUNT).await.unwrap();
+        assert_eq!(cap.subentry_count, 800);
+        assert_eq!(cap.subentry_usage_percent, 80.0);
+        assert_eq!(cap.min_balance_xlm, 401.0);
+        assert_eq!(cap.reserve_headroom_xlm, 99.0);
+    }
+
+    fn manage_data_op(id: &str, name: &str, value_b64: &str) -> serde_json::Value {
+        serde_json::json!({
+            "id": id,
+            "transaction_hash": format!("tx-{id}"),
+            "created_at": "2026-01-01T00:00:00Z",
+            "type": "manage_data",
+            "name": name,
+            "value": value_b64,
+        })
+    }
+
+    #[tokio::test]
+    async fn test_get_hash_history_follows_pagination_past_200_unrelated_operations() {
+        let mock_server = MockServer::start();
+        let client = create_test_client(&mock_server);
+        let doc = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        let b64 = |s: &str| base64::engine::general_purpose::STANDARD.encode(s.as_bytes());
+
+        let unrelated: Vec<_> = (0..200)
+            .map(|i| manage_data_op(&format!("u{i}"), &format!("doc_other{i}"), &b64("x")))
+            .collect();
+        let ops_path = format!("/accounts/{}/operations", TEST_ACCOUNT);
+
+        mock_server.mock(|when, then| {
+            when.method(GET).path(ops_path.clone()).query_param("order", "desc");
+            then.status(200).json_body(serde_json::json!({
+                "_embedded": { "records": unrelated },
+                "_links": { "next": { "href": mock_server.url("/page2") } }
+            }));
+        });
+        let transfer_name = build_transfer_entry_key(doc, &"c".repeat(64));
+        let anchor_name = build_data_key(doc);
+        mock_server.mock(|when, then| {
+            when.method(GET).path("/page2");
+            then.status(200).json_body(serde_json::json!({
+                "_embedded": { "records": [
+                    manage_data_op("t1", &transfer_name, &b64(&"c".repeat(64))),
+                    manage_data_op("a1", &anchor_name, &b64(doc)),
+                ] },
+                "_links": { "next": { "href": mock_server.url("/page3") } }
+            }));
+        });
+
+        let history = client.get_hash_history(doc, TEST_ACCOUNT).await.unwrap();
+        let names: Vec<_> = history.iter().map(|h| h.data_name.clone()).collect();
+        assert_eq!(names, vec![transfer_name, anchor_name]);
+    }
+
+    #[tokio::test]
+    async fn test_get_hash_history_returns_every_transfer_of_one_document() {
+        let mock_server = MockServer::start();
+        let client = create_test_client(&mock_server);
+        let doc = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        let b64 = |s: &str| base64::engine::general_purpose::STANDARD.encode(s.as_bytes());
+        let (t1, t2) = ("1".repeat(64), "2".repeat(64));
+
+        mock_server.mock(|when, then| {
+            when.method(GET)
+                .path(format!("/accounts/{}/operations", TEST_ACCOUNT));
+            then.status(200).json_body(serde_json::json!({
+                "_embedded": { "records": [
+                    manage_data_op("2", &build_transfer_entry_key(doc, &t2), &b64(&t2)),
+                    manage_data_op("1", &build_transfer_entry_key(doc, &t1), &b64(&t1)),
+                ] }
+            }));
+        });
+
+        let history = client.get_hash_history(doc, TEST_ACCOUNT).await.unwrap();
+        assert_eq!(history.len(), 2);
     }
 }
