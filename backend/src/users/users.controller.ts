@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   NotFoundException,
   Param,
@@ -18,6 +19,7 @@ import { UsersService } from './users.service';
 import { ApiKeysService } from './api-keys.service';
 import { DocumentsService } from '../documents/documents.service';
 import { AccessLogsService } from '../access-logs/access-logs.service';
+import { ActivityTrackerService } from '../activity-tracker/activity-tracker.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -29,6 +31,8 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ListUsersDto } from './dto/list-users.dto';
 import { AdminUpdateUserDto } from './dto/admin-update-user.dto';
 import { CreateApiKeyDto } from './dto/create-api-key.dto';
+import { EraseDataDto } from './dto/erase-data.dto';
+import { UpdateNotificationPreferencesDto } from './dto/notification-preferences.dto';
 
 type AuthedRequest = Request & { user?: User };
 
@@ -71,6 +75,7 @@ export class UsersController {
     private readonly documentsService: DocumentsService,
     private readonly apiKeysService: ApiKeysService,
     private readonly accessLogsService: AccessLogsService,
+    private readonly activityTracker: ActivityTrackerService,
   ) {}
 
   @Get('me')
@@ -94,6 +99,26 @@ export class UsersController {
       throw new NotFoundException('User not found');
     }
     return toProfile(updated);
+  }
+
+  @Get('me/notification-preferences')
+  @UseGuards(JwtAuthGuard)
+  async getNotificationPreferences(@Req() req: AuthedRequest) {
+    return { data: await this.usersService.getNotificationPreferences(req.user!.id) };
+  }
+
+  @Patch('me/notification-preferences')
+  @UseGuards(JwtAuthGuard)
+  async updateNotificationPreferences(
+    @Req() req: AuthedRequest,
+    @Body() dto: UpdateNotificationPreferencesDto,
+  ) {
+    return {
+      data: await this.usersService.updateNotificationPreferences(
+        req.user!.id,
+        { ...dto },
+      ),
+    };
   }
 
   @Get('me/export')
@@ -152,6 +177,32 @@ export class UsersController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.apiKeysService.revoke(req.user!.id, id);
+  }
+
+  /**
+   * Right to erasure. Re-confirms the password, then deletes the user's
+   * documents (and the files behind them), disputes, sessions and API keys,
+   * and anonymises the account. Retained on purpose: access-log rows (audit
+   * trail, legal basis: security logging); they hold the user id and a
+   * truncated, non-identifying request record only.
+   */
+  @Delete('me/data')
+  @UseGuards(JwtAuthGuard)
+  async eraseMyData(@Req() req: AuthedRequest, @Body() dto: EraseDataDto) {
+    const userId = req.user!.id;
+    if (!(await this.usersService.verifyPassword(userId, dto.password))) {
+      throw new ForbiddenException('Password confirmation failed');
+    }
+
+    const documents = await this.documentsService.findByOwner(userId);
+    for (const document of documents) {
+      await this.documentsService.delete(document.id);
+    }
+    await this.usersService.eraseUserData(
+      userId,
+      documents.map((d) => d.id),
+    );
+    return { message: 'Your data has been erased' };
   }
 
   @Delete('me')
@@ -228,6 +279,10 @@ export class UsersController {
       resourceType: 'user',
       resourceId: id,
       metadata: { from: previousRole, to: dto.role },
+    });
+    await this.activityTracker.record(id, 'ROLE_CHANGE', {
+      ip: req.ip,
+      metadata: { by: req.user!.id, from: previousRole, to: dto.role },
     });
 
     return updated ? toPublicUser(updated) : null;

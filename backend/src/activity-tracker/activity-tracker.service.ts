@@ -1,12 +1,72 @@
-import { Injectable } from '@nestjs/common';
-import type { Repository } from 'typeorm';
-import type { Activity } from './entities/activity.entity';
+import { Injectable, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { InjectRepository } from '@nestjs/typeorm';
+import { LessThan, Repository } from 'typeorm';
+import { Activity } from './entities/activity.entity';
 import type { CreateActivityDto } from './dto/create-activity.dto';
-import type { FilterActivityDto } from './dto/filter-activity.dto';
+import {
+  ACTIVITY_SORT_COLUMNS,
+  FilterActivityDto,
+} from './dto/filter-activity.dto';
+
+/** Activity older than this is deleted by the daily retention job. */
+export const ACTIVITY_RETENTION_DAYS = 90;
+
+/**
+ * Truncate an IP before storing it: IPv4 keeps the first three octets, IPv6
+ * the first three groups. Enough for coarse abuse analysis without keeping a
+ * raw address.
+ */
+export function truncateIp(ip?: string | null): string | null {
+  if (!ip) return null;
+  const v4 = ip.replace(/^::ffff:/, '');
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(v4)) {
+    return v4.split('.').slice(0, 3).join('.') + '.0';
+  }
+  if (ip.includes(':')) {
+    return ip.split(':').slice(0, 3).join(':') + '::';
+  }
+  return null;
+}
 
 @Injectable()
 export class ActivityTrackerService {
-  constructor(private activityRepository: Repository<Activity>) {}
+  private readonly logger = new Logger(ActivityTrackerService.name);
+
+  constructor(
+    @InjectRepository(Activity)
+    private activityRepository: Repository<Activity>,
+  ) {}
+
+  /**
+   * Best-effort recording used by other modules (login, role change, ...).
+   * Never throws: failing to record activity must not break the action.
+   */
+  async record(
+    userId: string,
+    actionType: string,
+    options: { ip?: string | null; metadata?: Record<string, unknown> } = {},
+  ): Promise<void> {
+    try {
+      await this.logActivity({
+        userId,
+        actionType,
+        ipAddress: truncateIp(options.ip),
+        metadata: options.metadata ?? null,
+      });
+    } catch (error) {
+      this.logger.warn(`Could not record ${actionType}: ${(error as Error)?.message}`);
+    }
+  }
+
+  @Cron(CronExpression.EVERY_DAY_AT_3AM)
+  async purgeExpired(): Promise<number> {
+    const cutoff = new Date(Date.now() - ACTIVITY_RETENTION_DAYS * 86_400_000);
+    const result = await this.activityRepository.delete({
+      timestamp: LessThan(cutoff),
+    });
+    return result.affected ?? 0;
+  }
 
   /**
    * Logs a new user activity.
@@ -60,7 +120,10 @@ export class ActivityTrackerService {
     }
 
     // Order by
-    queryBuilder.orderBy(`activity.${sortBy}`, sortOrder);
+    const column = (ACTIVITY_SORT_COLUMNS as readonly string[]).includes(sortBy)
+      ? sortBy
+      : 'timestamp';
+    queryBuilder.orderBy(`activity.${column}`, sortOrder);
 
     // Pagination
     queryBuilder.skip((page - 1) * limit).take(limit);
@@ -90,9 +153,8 @@ export class ActivityTrackerService {
 
   async findAll(action?: string): Promise<Activity[]> {
     return this.activityRepository.find({
-      where: { actionType },
+      where: action ? { actionType: action } : {},
       order: { timestamp: 'DESC' },
     });
-
   }
 }

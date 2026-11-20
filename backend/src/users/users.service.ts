@@ -1,7 +1,18 @@
 ﻿import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, FindOptionsWhere, ILike, Repository } from 'typeorm';
+import {
+  EntityManager,
+  FindOptionsWhere,
+  ILike,
+  In,
+  IsNull,
+  Repository,
+} from 'typeorm';
+import * as bcrypt from 'bcrypt';
 import { User, UserRole } from './entities/user.entity';
+import { ApiKey } from './entities/api-key.entity';
+import { RefreshSession } from '../auth/entities/refresh-session.entity';
+import { Dispute } from '../dispute/entities/dispute.entity';
 
 interface RateLimitEntry {
   count: number;
@@ -69,8 +80,95 @@ export class UsersService {
     return this.findById(id);
   }
 
+  async getNotificationPreferences(
+    id: string,
+  ): Promise<Record<string, { email: boolean; inApp: boolean }>> {
+    const user = await this.findById(id);
+    const stored = user?.notificationPreferences ?? {};
+    const out: Record<string, { email: boolean; inApp: boolean }> = {};
+    for (const key of ['risk_alert', 'verification_complete', 'dispute_update']) {
+      out[key] = {
+        email: stored[key]?.email ?? true,
+        inApp: stored[key]?.inApp ?? true,
+      };
+    }
+    return out;
+  }
+
+  async updateNotificationPreferences(
+    id: string,
+    patch: Record<string, { email?: boolean; inApp?: boolean } | undefined>,
+  ): Promise<Record<string, { email: boolean; inApp: boolean }>> {
+    const current = await this.getNotificationPreferences(id);
+    for (const [key, channels] of Object.entries(patch)) {
+      if (!channels) continue;
+      current[key] = {
+        email: channels.email ?? current[key]?.email ?? true,
+        inApp: channels.inApp ?? current[key]?.inApp ?? true,
+      };
+    }
+    await this.userRepository.update(id, { notificationPreferences: current });
+    return current;
+  }
+
+  /**
+   * Soft-delete the account and make it unusable: refresh sessions and API
+   * keys are revoked, and the email is anonymised so the unique `email` column
+   * no longer blocks registering the same address again (#1608). Access tokens
+   * stop resolving because `findById` hides soft-deleted rows.
+   */
   async softDelete(id: string): Promise<void> {
-    await this.userRepository.softDelete(id);
+    await this.userRepository.manager.transaction(async (manager) => {
+      await this.revokeCredentials(manager, id);
+      await manager.getRepository(User).update(id, {
+        email: `deleted+${id}@invalid`,
+      });
+      await manager.getRepository(User).softDelete(id);
+    });
+  }
+
+  /** True when `password` matches the stored hash (false for password-less accounts). */
+  async verifyPassword(id: string, password: string): Promise<boolean> {
+    const user = await this.findById(id);
+    if (!user?.passwordHash) return false;
+    return bcrypt.compare(password, user.passwordHash);
+  }
+
+  /**
+   * Erase the user's data rows in one transaction: disputes filed by the user
+   * or against their documents, sessions and API keys, then the account itself
+   * (anonymised and soft-deleted). Documents and their files are removed by the
+   * caller through `DocumentsService.delete` first.
+   */
+  async eraseUserData(id: string, documentIds: string[]): Promise<void> {
+    await this.userRepository.manager.transaction(async (manager) => {
+      const disputes = manager.getRepository(Dispute);
+      await disputes.delete({ filedBy: id });
+      if (documentIds.length > 0) {
+        await disputes.delete({ documentId: In(documentIds) });
+      }
+      await this.revokeCredentials(manager, id);
+      await manager.getRepository(User).update(id, {
+        email: `deleted+${id}@invalid`,
+        fullName: 'Deleted user',
+        passwordHash: null,
+        twoFactorSecret: undefined,
+        twoFactorBackupCodes: undefined,
+        twoFactorEnabled: false,
+        notificationPreferences: {},
+      });
+      await manager.getRepository(User).softDelete(id);
+    });
+  }
+
+  private async revokeCredentials(manager: EntityManager, userId: string) {
+    const now = new Date();
+    await manager
+      .getRepository(RefreshSession)
+      .update({ userId, revokedAt: IsNull() }, { revokedAt: now });
+    await manager
+      .getRepository(ApiKey)
+      .update({ userId, revokedAt: IsNull() }, { revokedAt: now });
   }
 
   async findAllPaginated(

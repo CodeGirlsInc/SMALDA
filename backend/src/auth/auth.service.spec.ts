@@ -8,6 +8,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { RefreshSession } from './entities/refresh-session.entity';
 import { TwoFactorService } from './two-factor.service';
 import { TokenRevocationService } from './token-revocation.service';
+import { ActivityTrackerService } from '../activity-tracker/activity-tracker.service';
 
 const mockUser = {
   id: 'user-1',
@@ -65,6 +66,7 @@ describe('AuthService', () => {
         },
         { provide: TwoFactorService, useValue: { challenge: jest.fn() } },
         { provide: TokenRevocationService, useValue: mockRevocationService },
+        { provide: ActivityTrackerService, useValue: { record: jest.fn() } },
         {
           provide: ConfigService,
           useValue: {

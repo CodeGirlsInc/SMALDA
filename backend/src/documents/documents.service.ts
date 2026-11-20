@@ -251,4 +251,46 @@ export class DocumentsService {
     const [data, total] = await qb.getManyAndCount();
     return { data, total };
   }
+
+  /**
+   * Documents matching `filters`, newest first. When `ownerId` is given the
+   * result is restricted to that owner regardless of `filters.ownerId`, which
+   * is how the non-admin exports guarantee ownership filtering.
+   */
+  async findFiltered(
+    filters: {
+      status?: DocumentStatus;
+      minRisk?: number;
+      maxRisk?: number;
+      ownerId?: string;
+      from?: string;
+      to?: string;
+    },
+    options: { restrictToOwnerId?: string; page?: number; limit?: number } = {},
+  ): Promise<{ data: Document[]; total: number }> {
+    const qb = this.documentRepository.createQueryBuilder('document');
+    const owner = options.restrictToOwnerId ?? filters.ownerId;
+    if (owner) qb.andWhere('document.owner_id = :owner', { owner });
+    if (filters.status) {
+      qb.andWhere('document.status = :status', { status: filters.status });
+    }
+    if (filters.minRisk !== undefined) {
+      qb.andWhere('document.risk_score >= :minRisk', { minRisk: filters.minRisk });
+    }
+    if (filters.maxRisk !== undefined) {
+      qb.andWhere('document.risk_score <= :maxRisk', { maxRisk: filters.maxRisk });
+    }
+    if (filters.from) {
+      qb.andWhere('document.created_at >= :from', { from: new Date(filters.from) });
+    }
+    if (filters.to) {
+      qb.andWhere('document.created_at <= :to', { to: new Date(filters.to) });
+    }
+    qb.orderBy('document.created_at', 'DESC');
+    if (options.limit) {
+      qb.skip(((options.page ?? 1) - 1) * options.limit).take(options.limit);
+    }
+    const [data, total] = await qb.getManyAndCount();
+    return { data, total };
+  }
 }

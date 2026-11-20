@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, IsNull, Repository } from 'typeorm';
+import { User } from '../users/entities/user.entity';
 import {
   Notification,
   NotificationType,
@@ -22,6 +23,8 @@ export class NotificationsService {
   constructor(
     @InjectRepository(Notification)
     private readonly notificationRepository: Repository<Notification>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
   ) {}
 
   async create(
@@ -30,7 +33,14 @@ export class NotificationsService {
     title: string,
     body: string,
     documentId?: string | null,
-  ): Promise<NotificationResponse> {
+  ): Promise<NotificationResponse | null> {
+    // Respect the user's preferences (#1605): an explicit `inApp: false` for
+    // this type suppresses the in-app notification.
+    const owner = await this.userRepository.findOne({ where: { id: userId } });
+    if (owner?.notificationPreferences?.[type]?.inApp === false) {
+      return null;
+    }
+
     const notification = this.notificationRepository.create({
       userId,
       type,

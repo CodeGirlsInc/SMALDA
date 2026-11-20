@@ -28,6 +28,8 @@ import { lookup } from 'mime-types';
 import * as multer from 'multer';
 
 import { DocumentsService } from './documents.service';
+import { DocumentExportService } from './document-export.service';
+import { DocumentFiltersDto } from './dto/document-filters.dto';
 import { DocumentStatus, Document } from './entities/document.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User, UserRole } from '../users/entities/user.entity';
@@ -76,6 +78,7 @@ export class DocumentsController {
     private readonly verificationCache: VerificationCacheService,
     private readonly accessLogsService: AccessLogsService,
     private readonly metricsService: MetricsService,
+    private readonly exportService: DocumentExportService,
     @Optional() private readonly stellarService?: StellarService,
   ) {}
 
@@ -175,6 +178,73 @@ export class DocumentsController {
       page: result.page,
       limit: result.limit,
     };
+  }
+
+  // The export routes must be declared before `@Get(':id')`, otherwise
+  // "export" would be parsed as a document id.
+
+  @Get('export/excel')
+  @UseGuards(JwtAuthGuard)
+  async exportExcel(
+    @Query() filters: DocumentFiltersDto,
+    @Req() req: Request & { user?: User },
+    @Res() res: Response,
+  ) {
+    // Always the caller's own documents, whatever `ownerId` the query carries.
+    const { data } = await this.documentsService.findFiltered(filters, {
+      restrictToOwnerId: req.user!.id,
+    });
+    const buffer = await this.exportService.toExcel(data);
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename="documents.xlsx"',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    res.send(buffer);
+  }
+
+  @Get('export/pdf')
+  @UseGuards(JwtAuthGuard)
+  async exportPdf(
+    @Query() filters: DocumentFiltersDto,
+    @Req() req: Request & { user?: User },
+    @Res() res: Response,
+  ) {
+    const { data } = await this.documentsService.findFiltered(filters, {
+      restrictToOwnerId: req.user!.id,
+    });
+    const buffer = await this.exportService.toPdf(data, 'Document portfolio');
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': 'attachment; filename="documents.pdf"',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    res.send(buffer);
+  }
+
+  @Get(':id/export/pdf')
+  @UseGuards(JwtAuthGuard)
+  async exportDocumentPdf(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request & { user?: User },
+    @Res() res: Response,
+  ) {
+    const document = await this.documentsService.findById(id);
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+    this.assertOwnerOrAdmin(document, req.user);
+    const buffer = await this.exportService.toPdf(
+      [document],
+      `Report: ${document.title}`,
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="document-${document.id}-report.pdf"`,
+      'X-Content-Type-Options': 'nosniff',
+    });
+    res.send(buffer);
   }
 
   @Get(':id')

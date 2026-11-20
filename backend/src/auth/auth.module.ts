@@ -10,6 +10,7 @@ import { TokenRevocationService } from './token-revocation.service';
 import { TwoFactorService } from './two-factor.service';
 import { RefreshSession } from './entities/refresh-session.entity';
 import { UsersModule } from '../users/users.module';
+import { ActivityTrackerModule } from '../activity-tracker/activity-tracker.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { GithubStrategy } from './strategies/github.strategy';
@@ -17,6 +18,7 @@ import { GithubStrategy } from './strategies/github.strategy';
 @Module({
   imports: [
     UsersModule,
+    ActivityTrackerModule,
     TypeOrmModule.forFeature([RefreshSession]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
