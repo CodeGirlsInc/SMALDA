@@ -295,8 +295,11 @@
   },
   "documentReport": {
     "title": "Risk report",
-    "sampleData": "Could not load this document — showing sample data.",
     "notFound": "Document not found.",
+    "accessDenied": {
+      "title": "Access denied",
+      "description": "You do not have permission to view this document report."
+    },
     "backToDocuments": "Back to documents",
     "backToDocument": "← Back to document",
     "downloadPdf": "Download PDF",
@@ -392,7 +395,7 @@
   "adminActivity": {
     "title": "User Activity Timeline",
     "subtitle": "Paginated user-action timeline, most recent first.",
-    "sampleData": "Could not load activity — showing sample data.",
+    "loadError": "Could not load activity. Please try again.",
     "feedTitle": "Activity feed",
     "eventCount": "{count, plural, one {# event} other {# events}}",
     "loading": "Loading activity…",

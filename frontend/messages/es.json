@@ -295,8 +295,11 @@
   },
   "documentReport": {
     "title": "Informe de riesgo",
-    "sampleData": "No se pudo cargar este documento — se muestran datos de ejemplo.",
     "notFound": "Documento no encontrado.",
+    "accessDenied": {
+      "title": "Acceso denegado",
+      "description": "No tiene permiso para ver este informe de documento."
+    },
     "backToDocuments": "Volver a los documentos",
     "backToDocument": "← Volver al documento",
     "downloadPdf": "Descargar PDF",
@@ -392,7 +395,7 @@
   "adminActivity": {
     "title": "Cronología de actividad de usuarios",
     "subtitle": "Cronología paginada de acciones de usuarios, la más reciente primero.",
-    "sampleData": "No se pudo cargar la actividad — se muestran datos de ejemplo.",
+    "loadError": "No se pudo cargar la actividad. Inténtelo de nuevo.",
     "feedTitle": "Registro de actividad",
     "eventCount": "{count, plural, one {# evento} other {# eventos}}",
     "loading": "Cargando actividad…",

@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { FileText } from "lucide-react";
-import { useRouter } from "@/i18n/navigation";
+import { useSearchParams } from "next/navigation";
+import { useRouter, usePathname } from "@/i18n/navigation";
 import { EmptyState } from "@/components/EmptyState";
 import { apiUrl } from "@/lib/api-config";
 import { getAccessToken } from "@/lib/session";
@@ -89,26 +90,75 @@ const DEFAULT_FILTERS: Filters = {
   dateTo: "",
 };
 
+/** Reads filters + page out of the URL so an admin view can be shared via its link. */
+function filtersFromSearchParams(params: URLSearchParams): {
+  filters: Filters;
+  page: number;
+} {
+  const riskMin = Number(params.get("riskMin"));
+  const riskMax = Number(params.get("riskMax"));
+  return {
+    filters: {
+      status: params.get("status") ?? DEFAULT_FILTERS.status,
+      ownerEmail: params.get("ownerEmail") ?? DEFAULT_FILTERS.ownerEmail,
+      riskMin: Number.isFinite(riskMin) && params.has("riskMin") ? riskMin : DEFAULT_FILTERS.riskMin,
+      riskMax: Number.isFinite(riskMax) && params.has("riskMax") ? riskMax : DEFAULT_FILTERS.riskMax,
+      dateFrom: params.get("dateFrom") ?? DEFAULT_FILTERS.dateFrom,
+      dateTo: params.get("dateTo") ?? DEFAULT_FILTERS.dateTo,
+    },
+    page: Math.max(1, Number(params.get("page")) || 1),
+  };
+}
+
+function searchParamsFromFilters(f: Filters, page: number): URLSearchParams {
+  const params = new URLSearchParams();
+  if (page > 1) params.set("page", String(page));
+  if (f.status) params.set("status", f.status);
+  if (f.ownerEmail) params.set("ownerEmail", f.ownerEmail);
+  if (f.riskMin > 0) params.set("riskMin", String(f.riskMin));
+  if (f.riskMax < 1) params.set("riskMax", String(f.riskMax));
+  if (f.dateFrom) params.set("dateFrom", f.dateFrom);
+  if (f.dateTo) params.set("dateTo", f.dateTo);
+  return params;
+}
+
 // ---------------------------------------------------------------------------
 // Page component
 // ---------------------------------------------------------------------------
 
 export default function AdminDocumentsPage() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const t = useTranslations("documents");
   const tCommon = useTranslations("common");
+
+  const initial = filtersFromSearchParams(searchParams);
   const [documents, setDocuments] = useState<AdminDocument[]>([]);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(initial.page);
   const PAGE_SIZE = 20;
 
-  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState<Filters>(initial.filters);
   const [appliedFilters, setAppliedFilters] =
-    useState<Filters>(DEFAULT_FILTERS);
+    useState<Filters>(initial.filters);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
+  const didMount = useRef(false);
+
+  // Keep the URL in sync so an admin's filtered + paginated view can be shared.
+  useEffect(() => {
+    if (!didMount.current) {
+      didMount.current = true;
+      return;
+    }
+    const params = searchParamsFromFilters(appliedFilters, page);
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appliedFilters, page]);
 
   const fetchDocuments = useCallback(
     async (currentPage: number, f: Filters) => {

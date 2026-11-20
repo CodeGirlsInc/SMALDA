@@ -6,8 +6,9 @@ import { useTranslations } from "next-intl";
 import { jsPDF } from "jspdf";
 import { Link } from "@/i18n/navigation";
 import { useDateFormatting } from "@/i18n/formatting";
-import { request } from "@/lib/api-client";
+import { ApiError, request } from "@/lib/api-client";
 import { apiUrl } from "@/lib/api-config";
+import { ErrorBanner } from "@/components/ErrorBanner";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -33,17 +34,6 @@ function hasCompletedAnalysis(doc: DocumentReport): boolean {
   return doc.riskScore != null;
 }
 
-const MOCK_DOCUMENT: DocumentReport = {
-  id: "doc-123",
-  title: "Sample Land Title",
-  status: "VERIFIED",
-  fileHash: "a".repeat(64),
-  riskScore: 62,
-  riskFlags: ["Ownership conflict", "Duplicate title"],
-  stellarTxHash: "txhash-1234567890abcdef",
-  anchoredAt: new Date().toISOString(),
-};
-
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
@@ -57,19 +47,49 @@ export default function DocumentReportPage() {
 
   const [doc, setDoc] = useState<DocumentReport | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
+  const [forbidden, setForbidden] = useState(false);
+  const [apiError, setApiError] = useState<ApiError | null>(null);
+  const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
     if (!docId) return;
+    let cancelled = false;
+    setLoading(true);
+    setNotFound(false);
+    setForbidden(false);
+    setApiError(null);
     request<DocumentReport>(apiUrl(`/documents/${encodeURIComponent(docId)}`))
-      .then(setDoc)
-      .catch(() => {
-        // Backend may be unavailable — fall back to sample data.
-        setDoc(MOCK_DOCUMENT);
-        setError(t("sampleData"));
+      .then((data) => {
+        if (cancelled) return;
+        setDoc(data);
       })
-      .finally(() => setLoading(false));
-  }, [docId, t]);
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setDoc(null);
+        if (err instanceof ApiError && err.status === 404) {
+          setNotFound(true);
+        } else if (err instanceof ApiError && err.status === 403) {
+          setForbidden(true);
+        } else if (err instanceof ApiError) {
+          setApiError(err);
+        } else {
+          setApiError(
+            new ApiError({
+              status: null,
+              kind: "network",
+              messageKey: "errors.status.network",
+            }),
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [docId, retryToken]);
 
   function statusLabel(status: string): string {
     const key = status.toLowerCase();
@@ -109,12 +129,42 @@ export default function DocumentReportPage() {
     );
   }
 
-  if (!doc) {
+  if (notFound) {
     return (
       <main className="mx-auto max-w-2xl px-4 py-8">
-        <p className="text-sm text-red-600">
-          {error ?? t("notFound")}
-        </p>
+        <p className="text-sm text-red-600">{t("notFound")}</p>
+        <Link href="/documents" className="mt-3 block text-sm text-blue-600 underline">
+          {t("backToDocuments")}
+        </Link>
+      </main>
+    );
+  }
+
+  if (forbidden) {
+    return (
+      <main className="mx-auto max-w-2xl px-4 py-8">
+        <div className="rounded-xl border border-red-200 bg-red-50 p-6">
+          <h1 className="text-lg font-semibold text-red-800">
+            {t("accessDenied.title")}
+          </h1>
+          <p className="mt-1 text-sm text-red-700">
+            {t("accessDenied.description")}
+          </p>
+        </div>
+        <Link href="/documents" className="mt-3 block text-sm text-blue-600 underline">
+          {t("backToDocuments")}
+        </Link>
+      </main>
+    );
+  }
+
+  if (apiError || !doc) {
+    return (
+      <main className="mx-auto max-w-2xl px-4 py-8">
+        <ErrorBanner
+          messageKey={apiError?.messageKey ?? "errors.status.unknown"}
+          onRetry={() => setRetryToken((n) => n + 1)}
+        />
         <Link href="/documents" className="mt-3 block text-sm text-blue-600 underline">
           {t("backToDocuments")}
         </Link>
@@ -132,12 +182,6 @@ export default function DocumentReportPage() {
       >
         {t("backToDocument")}
       </Link>
-
-      {error && (
-        <p role="status" className="mb-4 text-xs text-gray-500">
-          {error}
-        </p>
-      )}
 
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">{t("title")}</h1>

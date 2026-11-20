@@ -295,8 +295,11 @@
   },
   "documentReport": {
     "title": "Rapport de risque",
-    "sampleData": "Impossible de charger ce document — affichage de données d'exemple.",
     "notFound": "Document introuvable.",
+    "accessDenied": {
+      "title": "Accès refusé",
+      "description": "Vous n'avez pas la permission de consulter ce rapport de document."
+    },
     "backToDocuments": "Retour aux documents",
     "backToDocument": "← Retour au document",
     "downloadPdf": "Télécharger le PDF",
@@ -392,7 +395,7 @@
   "adminActivity": {
     "title": "Chronologie de l'activité des utilisateurs",
     "subtitle": "Chronologie paginée des actions des utilisateurs, la plus récente en premier.",
-    "sampleData": "Impossible de charger l'activité — affichage de données d'exemple.",
+    "loadError": "Impossible de charger l'activité. Veuillez réessayer.",
     "feedTitle": "Flux d'activité",
     "eventCount": "{count, plural, one {# événement} other {# événements}}",
     "loading": "Chargement de l'activité…",
