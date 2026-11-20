@@ -3,10 +3,20 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConflictException } from '@nestjs/common';
 
 import { VerificationService } from './verification.service';
+import { VerificationCacheService } from './verification-cache.service';
+import { DocumentsGateway } from '../documents/documents.gateway';
 import {
   VerificationRecord,
   VerificationStatus,
 } from './entities/verification-record.entity';
+
+const mockVerificationCache = {
+  invalidateByDocument: jest.fn(),
+};
+
+const mockDocumentsGateway = {
+  notifyVerificationStatusChanged: jest.fn(),
+};
 
 const mockRecord = {
   id: 'vr-1',
@@ -37,6 +47,11 @@ describe('VerificationService', () => {
           provide: getRepositoryToken(VerificationRecord),
           useValue: mockRepository,
         },
+        { provide: DocumentsGateway, useValue: mockDocumentsGateway },
+        {
+          provide: VerificationCacheService,
+          useValue: mockVerificationCache,
+        },
       ],
     }).compile();
 
@@ -63,6 +78,9 @@ describe('VerificationService', () => {
       expect(mockRepository.save).toHaveBeenCalled();
       expect(result.stellarTxHash).toBe('tx-hash-abc123');
       expect(result.status).toBe(VerificationStatus.CONFIRMED);
+      expect(mockVerificationCache.invalidateByDocument).toHaveBeenCalledWith(
+        'doc-1',
+      );
     });
 
     it('should default status to PENDING when not specified', async () => {
@@ -181,6 +199,9 @@ describe('VerificationService', () => {
         status: VerificationStatus.CONFIRMED,
       });
       expect(result.status).toBe(VerificationStatus.CONFIRMED);
+      expect(mockVerificationCache.invalidateByDocument).toHaveBeenCalledWith(
+        'doc-1',
+      );
     });
 
     it('should update status to FAILED', async () => {

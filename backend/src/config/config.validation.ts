@@ -37,6 +37,9 @@ export const ConfigValidationSchema = Joi.object({
   APP_PORT: Joi.number().positive().default(3001),
   APP_URL: Joi.string().uri().required(),
   FRONTEND_URL: originList,
+  // Shared bearer token required to read /metrics. If unset, metrics are
+  // disabled (the guard denies every request).
+  METRICS_TOKEN: Joi.string().allow('').optional(),
 
   // ── Database ───────────────────────────────────────────────────────────────
   DATABASE_HOST: Joi.string().required(),
@@ -185,6 +188,7 @@ const SECRET_CONFIG_KEYS = new Set([
   'GOOGLE_CLIENT_SECRET',
   'GITHUB_CLIENT_SECRET',
   'ENCRYPTION_SECRET',
+  'METRICS_TOKEN',
 ]);
 
 /**

@@ -7,6 +7,7 @@ import {
   VerificationStatus,
 } from './entities/verification-record.entity';
 import { DocumentsGateway } from '../documents/documents.gateway';
+import { VerificationCacheService } from './verification-cache.service';
 
 @Injectable()
 export class VerificationService {
@@ -14,6 +15,7 @@ export class VerificationService {
     @InjectRepository(VerificationRecord)
     private readonly verificationRepository: Repository<VerificationRecord>,
     private readonly documentsGateway: DocumentsGateway,
+    private readonly verificationCache: VerificationCacheService,
   ) {}
 
   async create(payload: Partial<VerificationRecord>): Promise<VerificationRecord> {
@@ -33,6 +35,7 @@ export class VerificationService {
     }
 
     const record = await this.verificationRepository.save(payload);
+    this.verificationCache.invalidateByDocument(record.documentId);
     this.documentsGateway.notifyVerificationStatusChanged(
       record.documentId,
       record.status,
@@ -61,6 +64,7 @@ export class VerificationService {
     const record = await this.verificationRepository.findOne({ where: { id } });
 
     if (record) {
+      this.verificationCache.invalidateByDocument(record.documentId);
       this.documentsGateway.notifyVerificationStatusChanged(
         record.documentId,
         record.status,

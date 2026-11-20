@@ -10,6 +10,7 @@ import { StellarModule } from '../stellar/stellar.module';
 import { VerificationModule } from '../verification/verification.module';
 import { QueueModule } from '../queue/queue.module';
 import { AccessLogsModule } from '../access-logs/access-logs.module';
+import { MetricsModule } from '../metrics/metrics.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { AccessLogsModule } from '../access-logs/access-logs.module';
     forwardRef(() => VerificationModule),
     forwardRef(() => QueueModule),
     AccessLogsModule,
+    forwardRef(() => MetricsModule),
   ],
   controllers: [DocumentsController],
   providers: [DocumentsService, DocumentsGateway],

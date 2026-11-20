@@ -5,6 +5,8 @@ import { DocumentsModule } from '../documents/documents.module';
 import { RiskAssessmentModule } from '../risk-assessment/risk-assessment.module';
 import { StellarModule } from '../stellar/stellar.module';
 import { VerificationModule } from '../verification/verification.module';
+import { MetricsModule } from '../metrics/metrics.module';
+import { DeadLetterQueueService } from './dead-letter-queue.service';
 import { DocumentProcessor } from './document.processor';
 import { QueueService } from './queue.service';
 
@@ -15,8 +17,9 @@ import { QueueService } from './queue.service';
     RiskAssessmentModule,
     StellarModule,
     VerificationModule,
+    forwardRef(() => MetricsModule),
   ],
-  providers: [QueueService, DocumentProcessor],
-  exports: [QueueService],
+  providers: [QueueService, DocumentProcessor, DeadLetterQueueService],
+  exports: [QueueService, DeadLetterQueueService],
 })
 export class QueueModule {}

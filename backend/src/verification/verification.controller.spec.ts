@@ -4,9 +4,16 @@ import { BadRequestException } from '@nestjs/common';
 import { VerificationController } from './verification.controller';
 import { DocumentsService } from '../documents/documents.service';
 import { VerificationService } from './verification.service';
+import { VerificationCacheService } from './verification-cache.service';
 import {
   VerificationStatus,
 } from './entities/verification-record.entity';
+
+const mockVerificationCache = {
+  get: jest.fn(),
+  set: jest.fn(),
+  invalidateByDocument: jest.fn(),
+};
 
 const mockDocumentsService = {
   findByFileHash: jest.fn(),
@@ -26,6 +33,10 @@ describe('VerificationController', () => {
       providers: [
         { provide: DocumentsService, useValue: mockDocumentsService },
         { provide: VerificationService, useValue: mockVerificationService },
+        {
+          provide: VerificationCacheService,
+          useValue: mockVerificationCache,
+        },
       ],
     }).compile();
 
@@ -136,10 +147,7 @@ describe('VerificationController', () => {
       expect(result.anchoredAt).toEqual(new Date('2025-06-01T00:00:00Z'));
     });
 
-    it('should report verified: true for a failed verification record that is the latest', async () => {
-      // A failed record is still a valid verification attempt — the caller
-      // should see the result. The controller returns verified: true because
-      // a Stellar record exists; the status of the record is returned as-is.
+    it('should report verified: false for a failed verification record that is the latest', async () => {
       const doc = { id: 'doc-1', fileHash: 'e'.repeat(64) };
       const record = {
         id: 'vr-2',
@@ -155,10 +163,51 @@ describe('VerificationController', () => {
 
       const result = await controller.verifyByHash('e'.repeat(64));
 
-      // The controller returns verified: true when a record exists,
-      // but the caller should check the stellarTxHash for details.
+      expect(result.verified).toBe(false);
+      expect(result.verificationStatus).toBe('failed');
+      expect(result).not.toHaveProperty('stellarTxHash');
+    });
+
+    it('should report verified: false and a pending status for a PENDING record', async () => {
+      const doc = { id: 'doc-1', fileHash: '2'.repeat(64) };
+      const record = {
+        id: 'vr-3',
+        documentId: 'doc-1',
+        stellarTxHash: 'tx-hash-pending',
+        stellarLedger: 0,
+        status: VerificationStatus.PENDING,
+      };
+      mockDocumentsService.findByFileHash.mockResolvedValueOnce(doc);
+      mockVerificationService.findLatestByDocument.mockResolvedValueOnce(
+        record,
+      );
+
+      const result = await controller.verifyByHash('2'.repeat(64));
+
+      expect(result.verified).toBe(false);
+      expect(result.verificationStatus).toBe('pending');
+      expect(result).not.toHaveProperty('stellarTxHash');
+    });
+
+    it('should expose verificationStatus: confirmed for a CONFIRMED record', async () => {
+      const doc = { id: 'doc-1', fileHash: '3'.repeat(64) };
+      const record = {
+        id: 'vr-4',
+        documentId: 'doc-1',
+        stellarTxHash: 'tx-hash-confirmed',
+        stellarLedger: 42,
+        anchoredAt: new Date('2025-06-01T00:00:00Z'),
+        status: VerificationStatus.CONFIRMED,
+      };
+      mockDocumentsService.findByFileHash.mockResolvedValueOnce(doc);
+      mockVerificationService.findLatestByDocument.mockResolvedValueOnce(
+        record,
+      );
+
+      const result = await controller.verifyByHash('3'.repeat(64));
+
       expect(result.verified).toBe(true);
-      expect(result.stellarTxHash).toBe('tx-hash-failed');
+      expect(result.verificationStatus).toBe('confirmed');
     });
   });
 
