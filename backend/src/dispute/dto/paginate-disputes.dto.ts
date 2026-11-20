@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Min } from 'class-validator';
+import { IsInt, IsOptional, Max, Min } from 'class-validator';
 
 /**
  * Pagination query params for GET /disputes, avoiding an unbounded
@@ -16,5 +16,6 @@ export class PaginateDisputesDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(100)
   limit: number = 20;
 }
