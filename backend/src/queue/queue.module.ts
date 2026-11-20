@@ -7,6 +7,7 @@ import { StellarModule } from '../stellar/stellar.module';
 import { VerificationModule } from '../verification/verification.module';
 import { MetricsModule } from '../metrics/metrics.module';
 import { DeadLetterQueueService } from './dead-letter-queue.service';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { DocumentProcessor } from './document.processor';
 import { QueueService } from './queue.service';
 
@@ -18,6 +19,7 @@ import { QueueService } from './queue.service';
     StellarModule,
     VerificationModule,
     forwardRef(() => MetricsModule),
+    NotificationsModule,
   ],
   providers: [QueueService, DocumentProcessor, DeadLetterQueueService],
   exports: [QueueService, DeadLetterQueueService],

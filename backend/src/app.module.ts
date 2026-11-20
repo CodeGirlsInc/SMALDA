@@ -29,6 +29,7 @@ import { MetricsModule } from './metrics/metrics.module';
 import { QueueObservabilityModule } from './queue/queue-observability.module';
 import { NetworkModule } from './network/network.module';
 import { TransferModule } from './transfer/transfer.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { TransferModule } from './transfer/transfer.module';
     QueueObservabilityModule,
     NetworkModule,
     TransferModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [

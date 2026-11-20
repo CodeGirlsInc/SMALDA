@@ -1,8 +1,9 @@
 import {
+  BadRequestException,
   Injectable,
   Logger,
   NotFoundException,
-  BadRequestException,
+  PayloadTooLargeException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -13,10 +14,50 @@ import {
   ValidationType,
 } from './entities/validation-request.entity';
 import { CreateValidationRequestDto } from './dto/validation-request.dto';
+import {
+  assertJsonPayloadSize,
+  MAX_JSON_PAYLOAD_BYTES,
+} from './dto/bounded-json.util';
 import { IValidationProvider } from './interfaces/validation-provider.interface';
 import { LandRegistryProvider } from './providers/land-registry.provider';
 import { GovernmentIdProvider } from './providers/government-id.provider';
 import { BusinessRegistrationProvider } from './providers/business-registration.provider';
+
+/**
+ * Raw provider errors are logged server-side only. Clients always see this
+ * generic message instead of an upstream error string or stack trace.
+ */
+const GENERIC_FAILURE_MESSAGE =
+  'External validation could not be completed; the request needs manual review';
+const SENSITIVE_PAYLOAD_KEYS = new Set([
+  'providerError',
+  'error',
+  'errorMessage',
+  'upstreamError',
+  'stack',
+]);
+
+function sanitizePayload(
+  payload: Record<string, any> | null | undefined,
+): Record<string, any> | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const safe: Record<string, any> = {};
+  for (const [key, value] of Object.entries(payload)) {
+    if (SENSITIVE_PAYLOAD_KEYS.has(key)) continue;
+    safe[key] =
+      value && typeof value === 'object' && !Array.isArray(value)
+        ? sanitizePayload(value)
+        : value;
+  }
+  return safe;
+}
+
+function toSafeResponse(request: ValidationRequest): ValidationRequest {
+  return {
+    ...request,
+    responsePayload: sanitizePayload(request.responsePayload),
+  } as ValidationRequest;
+}
 
 @Injectable()
 export class ExternalValidationService {
@@ -58,6 +99,15 @@ export class ExternalValidationService {
       );
     }
 
+    try {
+      assertJsonPayloadSize(createDto.requestPayload, 'requestPayload');
+      assertJsonPayloadSize(createDto.metadata, 'metadata');
+    } catch (error) {
+      throw new PayloadTooLargeException(
+        error.message || `Payload exceeds ${MAX_JSON_PAYLOAD_BYTES} bytes`,
+      );
+    }
+
     const validationRequest = this.validationRequestRepository.create({
       documentId: createDto.documentId,
       validationType: createDto.validationType,
@@ -70,7 +120,14 @@ export class ExternalValidationService {
     const savedRequest =
       await this.validationRequestRepository.save(validationRequest);
 
-    this.processValidation(savedRequest.id);
+    // Queue the work without blocking the request, but never leave a rejected
+    // promise unhandled if the provider or the database fails.
+    void this.processValidation(savedRequest.id).catch((error) => {
+      this.logger.error(
+        `Unhandled error while processing validation ${savedRequest.id}: ${error?.message}`,
+        error?.stack,
+      );
+    });
 
     return savedRequest;
   }
@@ -87,7 +144,7 @@ export class ExternalValidationService {
       this.logger.warn(
         `Validation request ${requestId} is not in pending status, current status: ${request.status}`,
       );
-      return request;
+      return toSafeResponse(request);
     }
 
     this.logger.log(`Processing validation request: ${requestId}`);
@@ -110,14 +167,23 @@ export class ExternalValidationService {
         metadata: request.metadata,
       });
 
+      if (!validationResponse.success) {
+        this.logger.warn(
+          `Provider for ${request.validationType} did not complete validation ${requestId}: ${validationResponse.errorMessage}`,
+        );
+        request.status = ValidationStatus.FAILED;
+        request.result = ValidationResult.UNSURE;
+        request.errorMessage = GENERIC_FAILURE_MESSAGE;
+        request.responsePayload = { configured: false };
+        request.validatedAt = null;
+        return toSafeResponse(await this.validationRequestRepository.save(request));
+      }
+
       request.status = ValidationStatus.COMPLETED;
       request.result = validationResponse.result;
-      request.responsePayload = validationResponse.data;
+      request.responsePayload = sanitizePayload(validationResponse.data);
       request.validatedAt = new Date();
-
-      if (!validationResponse.success) {
-        request.errorMessage = validationResponse.errorMessage;
-      }
+      request.errorMessage = null;
 
       const updatedRequest =
         await this.validationRequestRepository.save(request);
@@ -125,30 +191,20 @@ export class ExternalValidationService {
       this.logger.log(
         `Validation completed for request ${requestId}: ${request.result}`,
       );
-      return updatedRequest;
+      return toSafeResponse(updatedRequest);
     } catch (error) {
       this.logger.error(
-        `Validation failed for request ${requestId}: ${error.message}`,
-        error.stack,
+        `Validation failed for request ${requestId}: ${error?.message}`,
+        error?.stack,
       );
 
-      // Degraded mode: the primary provider is unavailable. Instead of
-      // failing the request outright, mark it for manual review so the
-      // outcome can be resolved off-line.
-      this.logger.warn(
-        `Entering degraded mode for request ${requestId}; assigning to manual review`,
-      );
-
-      request.status = ValidationStatus.COMPLETED;
+      request.status = ValidationStatus.FAILED;
       request.result = ValidationResult.UNSURE;
-      request.errorMessage =
-        'Primary validation provider unavailable; assigned to manual review';
-      request.responsePayload = {
-        degraded: true,
-        providerError: error.message,
-      };
+      request.errorMessage = GENERIC_FAILURE_MESSAGE;
+      request.responsePayload = { degraded: true };
+      request.validatedAt = null;
 
-      return this.validationRequestRepository.save(request);
+      return toSafeResponse(await this.validationRequestRepository.save(request));
     }
   }
 
@@ -179,5 +235,20 @@ export class ExternalValidationService {
         };
       }),
     );
+  }
+
+  async findByDocument(documentId: string): Promise<ValidationRequest[]> {
+    const requests = await this.validationRequestRepository.find({
+      where: { documentId },
+      order: { createdAt: 'DESC' },
+    });
+    return requests.map(toSafeResponse);
+  }
+
+  async findById(requestId: string): Promise<ValidationRequest | null> {
+    const request = await this.validationRequestRepository.findOne({
+      where: { id: requestId },
+    });
+    return request ? toSafeResponse(request) : null;
   }
 }

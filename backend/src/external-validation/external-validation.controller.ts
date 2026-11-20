@@ -15,8 +15,10 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User } from '../users/entities/user.entity';
 import { DocumentsService } from '../documents/documents.service';
 import { ExternalValidationService } from './external-validation.service';
-import { CreateValidationRequestDto } from './dto/validation-request.dto';
-import { ValidationType } from './entities/validation-request.entity';
+import {
+  CreateExternalValidationBodyDto,
+  CreateValidationRequestDto,
+} from './dto/validation-request.dto';
 
 @Controller('documents/:id/external-validation')
 @UseGuards(JwtAuthGuard)
@@ -30,11 +32,7 @@ export class ExternalValidationController {
   async createValidation(
     @Param('id', ParseUUIDPipe) documentId: string,
     @Body()
-    body: {
-      validationType: ValidationType;
-      requestPayload?: Record<string, any>;
-      metadata?: Record<string, any>;
-    },
+    body: CreateExternalValidationBodyDto,
     @Req() req: Request & { user?: User },
   ) {
     const document = await this.documentsService.findById(documentId);

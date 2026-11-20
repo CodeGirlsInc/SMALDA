@@ -2,6 +2,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
   OnModuleDestroy,
   forwardRef,
 } from '@nestjs/common';
@@ -17,6 +18,8 @@ import { getRiskThresholds } from '../risk-assessment/risk-thresholds.config';
 import { StellarService } from '../stellar/stellar.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { DeadLetterQueueService } from './dead-letter-queue.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/entities/notification.entity';
 import { QueueService, DocumentJobData } from './queue.service';
 import {
   generateCorrelationId,
@@ -38,6 +41,7 @@ export class DocumentProcessor implements OnModuleDestroy {
     private readonly documentsGateway: DocumentsGateway,
     private readonly deadLetterQueue: DeadLetterQueueService,
     private readonly metricsService: MetricsService,
+    @Optional() private readonly notificationsService?: NotificationsService,
   ) {
     const connection = this.queueService.getConnectionOptions();
     this.worker = new Worker(
@@ -147,6 +151,16 @@ export class DocumentProcessor implements OnModuleDestroy {
       newStatus,
       DocumentStatus.ANALYZING,
     );
+
+    if (newStatus === DocumentStatus.FLAGGED) {
+      await this.notify(
+        document.ownerId,
+        NotificationType.RISK_ALERT,
+        'Document flagged for review',
+        `Your document scored ${result.score} and needs manual review.`,
+        documentId,
+      );
+    }
   }
 
   private async handleAnchor(documentId: string) {
@@ -197,7 +211,31 @@ export class DocumentProcessor implements OnModuleDestroy {
       DocumentStatus.VERIFIED,
       prevStatus,
     );
+    await this.notify(
+      document.ownerId,
+      NotificationType.VERIFICATION_COMPLETE,
+      'Document verification complete',
+      `Your document was verified on Stellar (ledger ${ledger}).`,
+      documentId,
+    );
+
     this.logger.log(`Document ${documentId} verified on ledger ${ledger}`);
+  }
+
+  private async notify(
+    userId: string | undefined,
+    type: NotificationType,
+    title: string,
+    body: string,
+    documentId: string,
+  ): Promise<void> {
+    if (!this.notificationsService || !userId) return;
+    try {
+      await this.notificationsService.create(userId, type, title, body, documentId);
+    } catch (error) {
+      // A failed notification must never fail the document job itself.
+      this.logger.warn(`Could not persist notification for ${documentId}: ${error?.message}`);
+    }
   }
 
   async onModuleDestroy(): Promise<void> {

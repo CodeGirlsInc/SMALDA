@@ -82,6 +82,18 @@ export const ConfigValidationSchema = Joi.object({
   }),
   STELLAR_HORIZON_URL: Joi.string().uri().required(),
 
+  // Maximum stroops per Stellar transaction. The effective fee is the lower
+  // of Horizon's fetchBaseFee() and this cap.
+  STELLAR_MAX_FEE: Joi.number().positive().default(10000),
+  STELLAR_MAX_RETRIES: Joi.number().integer().positive().default(3),
+
+  // Optional Rust stellar-doc-verifier. When unset the backend keeps using
+  // its stellar-sdk anchoring path.
+  VERIFIER_URL: Joi.string().uri().allow('').optional(),
+  STELLAR_VERIFIER_URL: Joi.string().uri().allow('').optional(),
+  VERIFIER_TIMEOUT_MS: Joi.number().positive().default(10000),
+  VERIFIER_MAX_RETRIES: Joi.number().integer().positive().default(3),
+
   // ── Auth ───────────────────────────────────────────────────────────────────
   JWT_SECRET: Joi.string()
     .when('NODE_ENV', {

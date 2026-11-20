@@ -13,10 +13,12 @@ import {
   AdminDisputeController,
   DisputeController,
 } from './dispute.controller';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Dispute, DisputeReason]),
+    NotificationsModule,
     AccessLogsModule,
     DocumentsModule,
     JwtModule.registerAsync({

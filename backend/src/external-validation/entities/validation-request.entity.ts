@@ -5,7 +5,10 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   Index,
+  BeforeInsert,
+  BeforeUpdate,
 } from 'typeorm';
+import { assertJsonPayloadSize } from '../dto/bounded-json.util';
 
 export enum ValidationType {
   LAND_REGISTRY = 'LAND_REGISTRY',
@@ -70,4 +73,12 @@ export class ValidationRequest {
 
   @Column({ nullable: true })
   validatedAt: Date | null;
+
+  @BeforeInsert()
+  @BeforeUpdate()
+  enforceJsonSizeLimits(): void {
+    assertJsonPayloadSize(this.requestPayload, 'requestPayload');
+    assertJsonPayloadSize(this.responsePayload, 'responsePayload');
+    assertJsonPayloadSize(this.metadata, 'metadata');
+  }
 }

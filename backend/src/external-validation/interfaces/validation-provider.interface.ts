@@ -3,6 +3,9 @@ import {
   ValidationResult,
 } from '../entities/validation-request.entity';
 
+/** Stub providers must never be able to report a real-world VALID result. */
+export const PROVIDER_NOT_CONFIGURED = 'provider not configured';
+
 export interface ValidationDocumentParams {
   documentId: string;
   validationType: ValidationType;

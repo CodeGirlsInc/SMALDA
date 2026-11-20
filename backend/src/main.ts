@@ -89,6 +89,7 @@ async function bootstrap() {
     .addTag('Disputes', 'Land title dispute resolution endpoints')
     .addTag('External Validation', 'Registry external validation')
     .addTag('Access Logs', 'Audit logging endpoints')
+    .addTag('Notifications', 'Per-user in-app notifications')
     .addTag('Stellar', 'Blockchain anchoring endpoints')
     .build();
 
