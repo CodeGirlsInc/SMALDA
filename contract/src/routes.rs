@@ -2,7 +2,8 @@
 //!
 //! This module maps URL paths and HTTP methods to handlers. Handler behavior,
 //! shared state, and service-level metrics are defined in `lib.rs` and
-//! `metrics.rs`; `site.rs` is an unused legacy metrics registry.
+//! `metrics.rs`. Liveness and readiness probes (`/v1/health/live`,
+//! `/v1/health/ready`) live in `health.rs`.
 //! `/v1` is the canonical API prefix; unprefixed routes remain compatibility
 //! aliases for existing clients.
 
@@ -17,7 +18,7 @@ use tower_http::trace::TraceLayer;
 
 use crate::{
     audit_log_handler, batch_verify_documents, enforce_rate_limit, health_check, metrics_handler,
-    record_transfer, require_metrics_auth, revoke_document, submit_document, verify_document,
+    record_transfer, require_metrics_auth, require_write_auth, revoke_document, submit_document, verify_document,
     verify_document_by_hash, verify_document_history, AppState, REQUEST_ID_HEADER,
 };
 use crate::handlers::transfer::get_transfer_history;
@@ -40,6 +41,8 @@ pub fn app(state: AppState) -> Router {
             "/v1",
             Router::new()
                 .route("/health", get(health_check))
+                .route("/health/live", get(crate::health::health_live))
+                .route("/health/ready", get(crate::health::health_ready))
                 .route(
                     "/metrics",
                     get(metrics_handler).layer(axum::middleware::from_fn_with_state(
@@ -54,16 +57,35 @@ pub fn app(state: AppState) -> Router {
                 .route("/verify/:hash/history", get(verify_document_history))
                 .route(
                     "/submit",
-                    post(submit_document).layer(DefaultBodyLimit::max(MAX_SUBMIT_BODY_BYTES)),
+                    post(submit_document)
+                        .layer(axum::middleware::from_fn_with_state(
+                            state.clone(),
+                            require_write_auth,
+                        ))
+                        .layer(DefaultBodyLimit::max(MAX_SUBMIT_BODY_BYTES)),
                 )
-                .route("/revoke", post(revoke_document))
-                .route("/transfer", post(record_transfer))
+                .route(
+                    "/revoke",
+                    post(revoke_document).layer(axum::middleware::from_fn_with_state(
+                        state.clone(),
+                        require_write_auth,
+                    )),
+                )
+                .route(
+                    "/transfer",
+                    post(record_transfer).layer(axum::middleware::from_fn_with_state(
+                        state.clone(),
+                        require_write_auth,
+                    )),
+                )
                 .route("/transfer/:document_hash", get(get_transfer_history))
                 .route("/module/network", get(crate::module::network::network_handler))
                 .route("/module/chain/:document_hash", get(chain_handler))
                 .route("/module/owner/:document_hash", get(current_owner_handler)),
         )
         .route("/health", get(health_check))
+        .route("/health/live", get(crate::health::health_live))
+        .route("/health/ready", get(crate::health::health_ready))
         .route(
             "/metrics",
             get(metrics_handler).layer(axum::middleware::from_fn_with_state(
@@ -78,10 +100,27 @@ pub fn app(state: AppState) -> Router {
         .route("/verify/:hash/history", get(verify_document_history))
         .route(
             "/submit",
-            post(submit_document).layer(DefaultBodyLimit::max(MAX_SUBMIT_BODY_BYTES)),
+            post(submit_document)
+                .layer(axum::middleware::from_fn_with_state(
+                    state.clone(),
+                    require_write_auth,
+                ))
+                .layer(DefaultBodyLimit::max(MAX_SUBMIT_BODY_BYTES)),
         )
-        .route("/revoke", post(revoke_document))
-        .route("/transfer", post(record_transfer))
+        .route(
+            "/revoke",
+            post(revoke_document).layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                require_write_auth,
+            )),
+        )
+        .route(
+            "/transfer",
+            post(record_transfer).layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                require_write_auth,
+            )),
+        )
         .route("/transfer/:document_hash", get(get_transfer_history))
         .route("/module/network", get(crate::module::network::network_handler))
         .route("/module/chain/:document_hash", get(chain_handler))

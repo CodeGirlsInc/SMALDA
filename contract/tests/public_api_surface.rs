@@ -68,7 +68,6 @@ const PUBLIC_BUT_INTERNAL: &[&str] = &[
     "module",
     "retry",
     "routes",
-    "site",
     "webhook",
 ];
 

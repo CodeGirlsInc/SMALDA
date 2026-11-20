@@ -26,6 +26,7 @@ fn state_with_token(token: Option<&str>) -> AppState {
         webhook_urls: Vec::new(),
         webhook_secret: None,
         metrics_token: token.map(str::to_string),
+        write_api_token: None,
     }
 }
 
