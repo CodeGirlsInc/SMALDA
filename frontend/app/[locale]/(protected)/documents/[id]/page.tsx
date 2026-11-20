@@ -1,5 +1,6 @@
 "use client";
 
+import { useDocumentStatusSocket } from "@/hooks/useDocumentStatusSocket";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -20,7 +21,6 @@ import {
 // Configuration
 // ─────────────────────────────────────────────────────────────────────────────
 
-const WS_BASE = (process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:3001").replace(/^http/, "ws");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -277,34 +277,6 @@ export default function DocumentDetailPage() {
   const [savingLocation, setSavingLocation] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
 
-  // ── WebSocket for real-time status updates (FE-06) ──────────────────────
-  const wsRef = useRef<WebSocket | null>(null);
-
-  const setupWebSocket = useCallback(() => {
-    if (!docId || typeof window === "undefined") return;
-    const ws = new WebSocket(`${WS_BASE}/documents/${docId}/status`);
-    wsRef.current = ws;
-
-    ws.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data) as { status?: DocumentStatus };
-        if (payload.status) {
-          setDoc((prev) => prev ? { ...prev, status: payload.status as DocumentStatus } : prev);
-        }
-      } catch {
-        // malformed message — ignore
-      }
-    };
-
-    ws.onerror = () => ws.close();
-    ws.onclose = () => {
-      // Reconnect after 5 s (simple back-off)
-      setTimeout(setupWebSocket, 5000);
-    };
-
-    return () => ws.close();
-  }, [docId]);
-
   // ── Fetch document + risk data ─────────────────────────────────────────
   const fetchData = useCallback(async () => {
     if (!docId) return;
@@ -336,13 +308,18 @@ export default function DocumentDetailPage() {
     fetchData();
   }, [fetchData]);
 
-  useEffect(() => {
-    const cleanup = setupWebSocket();
-    return () => {
-      cleanup?.();
-      wsRef.current?.close();
-    };
-  }, [setupWebSocket]);
+  // ── Live status updates over Socket.IO (#1643) ──────────────────────────
+  // The detail page updates without a reload when the backend moves the
+  // document through PENDING -> ANALYZING -> VERIFIED/FLAGGED, and refetches
+  // the risk data on every change.
+  useDocumentStatusSocket(docId, {
+    onStatus: (event) => {
+      setDoc((prev) =>
+        prev ? { ...prev, status: event.status.toUpperCase() as DocumentStatus } : prev,
+      );
+      void fetchData();
+    },
+  });
 
   // ── Verify on Stellar ──────────────────────────────────────────────────
   async function handleVerify() {

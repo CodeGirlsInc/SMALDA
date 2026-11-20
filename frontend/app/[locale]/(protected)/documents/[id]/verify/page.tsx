@@ -8,14 +8,7 @@ import { useDateFormatting } from "@/i18n/formatting";
 import { ApiError, request } from "@/lib/api-client";
 import { apiUrl } from "@/lib/api-config";
 import { stellarTxUrl } from "@/lib/stellar";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Configuration
-// ─────────────────────────────────────────────────────────────────────────────
-
-const WS_BASE = (
-  process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:3001"
-).replace(/^http/, "ws");
+import { useDocumentStatusSocket } from "@/hooks/useDocumentStatusSocket";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -53,24 +46,6 @@ function truncateHash(hash: string, chars = 10): string {
 // ─────────────────────────────────────────────────────────────────────────────
 // Sub-components
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** Thin animated progress bar. */
-function ProgressBar({ value }: { value: number }) {
-  return (
-    <div
-      className="h-2 w-full overflow-hidden rounded-full bg-gray-200"
-      role="progressbar"
-      aria-valuenow={value}
-      aria-valuemin={0}
-      aria-valuemax={100}
-    >
-      <div
-        className="h-full rounded-full bg-blue-500 transition-all duration-500"
-        style={{ width: `${Math.max(4, value)}%` }}
-      />
-    </div>
-  );
-}
 
 /** Copyable text field. */
 function CopyField({
@@ -203,13 +178,7 @@ function PreVerification({
 // Processing state
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ProcessingView({
-  progress,
-  statusMsg,
-}: {
-  progress: number;
-  statusMsg: string;
-}) {
+function ProcessingView({ statusMsg }: { statusMsg: string }) {
   return (
     <div className="flex flex-col items-center gap-6 py-8">
       <svg
@@ -240,8 +209,13 @@ function ProcessingView({
         >
           {statusMsg}
         </p>
-        <ProgressBar value={progress} />
-        <p className="text-center text-xs text-gray-400">{progress}%</p>
+        {/* Indeterminate: the job reports no percentage, so none is faked. */}
+        <div
+          role="progressbar"
+          aria-busy="true"
+          aria-label={statusMsg}
+          className="h-2 w-full animate-pulse rounded-full bg-blue-500/60"
+        />
       </div>
     </div>
   );
@@ -433,13 +407,13 @@ export default function VerifyPage() {
   const [viewState, setViewState] = useState<VerifyState>("pre");
   const [anchoring, setAnchoring] = useState(false);
   const [anchorError, setAnchorError] = useState<string | null>(null);
-  const [progress, setProgress] = useState(0);
   const [statusMsg, setStatusMsg] = useState(() => t("submitting"));
   const [verification, setVerification] = useState<VerificationRecord | null>(
     null,
   );
 
-  const wsRef = useRef<WebSocket | null>(null);
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const finished = useRef(false);
 
   // ── Fetch document metadata ────────────────────────────────────────────
   useEffect(() => {
@@ -464,34 +438,6 @@ export default function VerifyPage() {
       .finally(() => setPageLoading(false));
   }, [docId, router, t]);
 
-  // ── WebSocket progress handler ─────────────────────────────────────────
-  const connectProgressWs = useCallback(() => {
-    if (!docId || typeof window === "undefined") return;
-    const ws = new WebSocket(`${WS_BASE}/documents/${docId}/verify/progress`);
-    wsRef.current = ws;
-
-    ws.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data) as {
-          progress?: number;
-          message?: string;
-          status?: string;
-        };
-        if (payload.progress !== undefined) setProgress(payload.progress);
-        if (payload.message) setStatusMsg(payload.message);
-        if (payload.status === "VERIFIED") {
-          ws.close();
-          // Fetch final verification record
-          fetchVerification();
-        }
-      } catch {
-        // ignore malformed messages
-      }
-    };
-
-    ws.onerror = () => ws.close();
-  }, [docId]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // ── Fetch verification record after anchoring ──────────────────────────
   const fetchVerification = useCallback(async () => {
     if (!docId) return;
@@ -513,50 +459,64 @@ export default function VerifyPage() {
   }, [docId, t]);
 
   // ── Anchor handler ─────────────────────────────────────────────────────
+  // Completion comes from the Socket.IO event below; polling with backoff is
+  // only the fallback, so the page reflects the real job outcome however long
+  // anchoring takes.
+  const finishVerification = useCallback(async () => {
+    if (finished.current) return;
+    finished.current = true;
+    if (pollTimer.current) clearTimeout(pollTimer.current);
+    await fetchVerification();
+  }, [fetchVerification]);
+
+  const startPolling = useCallback(() => {
+    if (!docId) return;
+    let attempt = 0;
+    const MAX_ATTEMPTS = 12;
+    const poll = async () => {
+      if (finished.current) return;
+      attempt += 1;
+      try {
+        const data = await request<VerificationRecord>(
+          documentPath(docId, "/verification"),
+        );
+        if (data?.transactionHash) {
+          finished.current = true;
+          setVerification(data);
+          setViewState("post");
+          return;
+        }
+      } catch {
+        // Not anchored yet (404) or a transient error: keep waiting.
+      }
+      if (attempt >= MAX_ATTEMPTS) {
+        setStatusMsg(t("stillProcessing"));
+        return;
+      }
+      pollTimer.current = setTimeout(poll, Math.min(2000 * 2 ** (attempt - 1), 30000));
+    };
+    pollTimer.current = setTimeout(poll, 2000);
+  }, [docId, t]);
+
+  useDocumentStatusSocket(viewState === "processing" ? docId : null, {
+    onVerification: (event) => {
+      if (event.status === "confirmed" || event.status === "failed") {
+        void finishVerification();
+      }
+    },
+  });
+
   async function handleAnchor() {
     if (!docId) return;
     setAnchoring(true);
     setAnchorError(null);
-    setProgress(0);
     setStatusMsg(t("submitting"));
+    finished.current = false;
 
     try {
       await request(documentPath(docId, "/verify"), { method: "POST" });
-
-      // Switch to processing view and open WS for real-time updates
       setViewState("processing");
-      connectProgressWs();
-
-      // Simulate progress advancement when WS is unavailable
-      const interval = setInterval(() => {
-        setProgress((prev) => {
-          if (prev >= 90) {
-            clearInterval(interval);
-            return prev;
-          }
-          return prev + 10;
-        });
-      }, 800);
-
-      // Poll for completion (fallback when WS is not available)
-      const poll = async () => {
-        await new Promise((r) => setTimeout(r, 8000));
-        const data = await request<VerificationRecord>(
-          documentPath(docId, "/verification"),
-        );
-        clearInterval(interval);
-        setProgress(100);
-        setVerification(data);
-        setViewState("post");
-        wsRef.current?.close();
-      };
-
-      poll().catch(() => {
-        // WS/poll failed — move to post with partial info
-        clearInterval(interval);
-        setProgress(100);
-        fetchVerification();
-      });
+      startPolling();
     } catch {
       setAnchorError(t("anchorError"));
       setAnchoring(false);
@@ -565,7 +525,10 @@ export default function VerifyPage() {
 
   // ── Cleanup ────────────────────────────────────────────────────────────
   useEffect(() => {
-    return () => wsRef.current?.close();
+    return () => {
+      finished.current = true;
+      if (pollTimer.current) clearTimeout(pollTimer.current);
+    };
   }, []);
 
   // ── Render ─────────────────────────────────────────────────────────────
@@ -650,7 +613,7 @@ export default function VerifyPage() {
           />
         )}
         {viewState === "processing" && (
-          <ProcessingView progress={progress} statusMsg={statusMsg} />
+          <ProcessingView statusMsg={statusMsg} />
         )}
         {viewState === "post" && verification && (
           <PostVerification docId={docId} verification={verification} />

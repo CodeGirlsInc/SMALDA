@@ -417,7 +417,8 @@
       "qrPending": "QR code available after server-side generation (BE-85)",
       "downloadCertificate": "Download Verification Certificate",
       "backToDocument": "Back to Document"
-    }
+    },
+    "stillProcessing": "Still processing. This can take a few minutes; the page will update when anchoring finishes."
   },
   "map": {
     "title": "Document Map",

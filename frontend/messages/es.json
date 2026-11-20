@@ -417,7 +417,8 @@
       "qrPending": "Código QR disponible tras la generación en el servidor (BE-85)",
       "downloadCertificate": "Descargar certificado de verificación",
       "backToDocument": "Volver al documento"
-    }
+    },
+    "stillProcessing": "Procesando todavía. Puede tardar unos minutos; la página se actualizará cuando termine el anclaje."
   },
   "map": {
     "title": "Mapa de documentos",

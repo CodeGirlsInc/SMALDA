@@ -2,7 +2,12 @@
 
 import React, { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { request } from "@/lib/api-client";
+import { getAccessToken } from "@/lib/session";
+import {
+  UploadAbortedError,
+  uploadWithProgress,
+  type UploadHandle,
+} from "@/lib/upload-xhr";
 import { apiUrl } from "@/lib/api-config";
 import {
   documentUploadConstraints,
@@ -25,6 +30,7 @@ export default function DocumentUploadPage() {
   const [error, setError] = useState<string>("");
   const [uploading, setUploading] = useState<boolean>(false);
   const [progress, setProgress] = useState<number>(0);
+  const uploadRef = useRef<UploadHandle<unknown> | null>(null);
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
 
   function validateFile(file: File): string | null {
@@ -130,7 +136,7 @@ export default function DocumentUploadPage() {
     }
 
     setUploading(true);
-    setProgress(10);
+    setProgress(0);
     setError("");
 
     try {
@@ -142,26 +148,27 @@ export default function DocumentUploadPage() {
         formData.append("longitude", longitude.trim());
       }
 
-      // Simulated upload progress
-      const interval = setInterval(() => {
-        setProgress((prev) => (prev >= 90 ? prev : prev + 20));
-      }, 200);
-
-      try {
-        const data = await request<{ id?: string; documentId?: string }>(
-          apiUrl("/documents/upload"),
-          { method: "POST", body: formData },
-        );
-        setProgress(100);
-        const docId = data?.id ?? data?.documentId ?? "new-doc-id";
-        setTimeout(() => {
-          router.push(`/documents/${docId}`);
-        }, 500);
-      } finally {
-        clearInterval(interval);
-      }
-    } catch {
-      setError("Failed to upload document. Please try again.");
+      // Real progress (bytes sent), cancellable (#1641).
+      const upload = uploadWithProgress<{ id?: string; documentId?: string }>(
+        apiUrl("/documents/upload"),
+        formData,
+        { token: getAccessToken(), onProgress: setProgress },
+      );
+      uploadRef.current = upload;
+      const data = await upload.promise;
+      uploadRef.current = null;
+      const docId = data?.id ?? data?.documentId ?? "new-doc-id";
+      setTimeout(() => {
+        router.push(`/documents/${docId}`);
+      }, 500);
+    } catch (err) {
+      uploadRef.current = null;
+      setError(
+        err instanceof UploadAbortedError
+          ? "Upload cancelled."
+          : "Failed to upload document. Please try again.",
+      );
+      setProgress(0);
     } finally {
       setUploading(false);
     }
@@ -290,6 +297,10 @@ export default function DocumentUploadPage() {
               </div>
               <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-800">
                 <div
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={progress}
                   className="h-full bg-blue-500 transition-all duration-200"
                   style={{ width: `${progress}%` }}
                 />
@@ -300,7 +311,13 @@ export default function DocumentUploadPage() {
           <div className="flex justify-end space-x-3">
             <button
               type="button"
-              onClick={() => router.push("/documents")}
+              onClick={() => {
+                if (uploadRef.current) {
+                  uploadRef.current.abort();
+                } else {
+                  router.push("/documents");
+                }
+              }}
               className="rounded-lg border border-gray-800 bg-gray-900 px-4 py-2 text-sm text-gray-300 hover:bg-gray-800"
             >
               Cancel
