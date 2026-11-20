@@ -61,7 +61,8 @@ async fn revoke_with_invalid_hash_returns_400() {
 
 #[tokio::test]
 async fn revoke_unanchored_hash_returns_404() {
-    let server = TestServer::new(app(test_state("https://horizon-testnet.stellar.org"))).unwrap();
+    // Unreachable Horizon: the chain fallback (#1671) finds no anchor either.
+    let server = TestServer::new(app(test_state("http://127.0.0.1:1"))).unwrap();
 
     let response = server.post("/revoke").json(&revoke_body(&valid_hash())).await;
 
