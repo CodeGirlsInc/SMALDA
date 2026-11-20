@@ -57,6 +57,7 @@ pub mod routes;
 pub mod stellar;
 pub mod types;
 pub mod webhook;
+pub mod smalda_helpers;
 
 use axum::{
     body::Body,
