@@ -59,6 +59,7 @@ const mockDocumentsService = {
   findById: jest.fn(),
   findByOwner: jest.fn().mockResolvedValue([]),
   findAllWithCoordinates: jest.fn().mockResolvedValue([]),
+  findOverlapCandidates: jest.fn().mockResolvedValue([]),
   updateRisk: jest.fn().mockResolvedValue(undefined),
 };
 
@@ -93,6 +94,7 @@ describe('RiskAssessmentService', () => {
     // Default: no other docs for owner, no coords on any doc
     mockDocumentsService.findByOwner.mockResolvedValue([]);
     mockDocumentsService.findAllWithCoordinates.mockResolvedValue([]);
+    mockDocumentsService.findOverlapCandidates.mockResolvedValue([]);
     mockDocumentsService.updateRisk.mockResolvedValue(undefined);
 
     // Default: non-PDF file so extractTextFromPdf is skipped
@@ -215,12 +217,12 @@ describe('RiskAssessmentService', () => {
         longitude: -122.4195,
       };
       mockDocumentsService.findById.mockResolvedValue(doc);
-      mockDocumentsService.findAllWithCoordinates.mockResolvedValue([
-        doc,
-        nearbyDoc,
-      ]);
+      mockDocumentsService.findOverlapCandidates.mockResolvedValue([nearbyDoc]);
 
       const result = await service.assessDocument('doc-1');
+      expect(
+        mockDocumentsService.findOverlapCandidates,
+      ).toHaveBeenCalledWith(37.7749, -122.4194, 0.1, 'user-1', 'doc-1');
       expect(result.flags.map((f: any) => f.flag)).toContain(RiskFlag.OVERLAPPING_CLAIM);
     });
 
@@ -235,13 +237,44 @@ describe('RiskAssessmentService', () => {
         longitude: -74.006,
       };
       mockDocumentsService.findById.mockResolvedValue(doc);
-      mockDocumentsService.findAllWithCoordinates.mockResolvedValue([
-        doc,
-        farDoc,
-      ]);
+      mockDocumentsService.findOverlapCandidates.mockResolvedValue([farDoc]);
 
       const result = await service.assessDocument('doc-1');
       expect(result.flags.map((f: any) => f.flag)).not.toContain(RiskFlag.OVERLAPPING_CLAIM);
+    });
+
+    it('should not flag a document exactly outside the bounding box edge', async () => {
+      const doc = makeDocument({
+        latitude: 37.7749,
+        longitude: -122.4194,
+      });
+      const outsideBox = {
+        ...makeDocument({ id: 'doc-edge' }),
+        latitude: 37.7749 + 0.001,
+        longitude: -122.4194,
+      };
+      mockDocumentsService.findById.mockResolvedValue(doc);
+      mockDocumentsService.findOverlapCandidates.mockResolvedValue([outsideBox]);
+
+      const result = await service.assessDocument('doc-1');
+      expect(result.flags.map((f: any) => f.flag)).not.toContain(RiskFlag.OVERLAPPING_CLAIM);
+    });
+
+    it('should flag a document exactly at the bounding box edge when within radius', async () => {
+      const doc = makeDocument({
+        latitude: 0,
+        longitude: 0,
+      });
+      const edgeDoc = {
+        ...makeDocument({ id: 'doc-edge' }),
+        latitude: 0.0005,
+        longitude: 0.0005,
+      };
+      mockDocumentsService.findById.mockResolvedValue(doc);
+      mockDocumentsService.findOverlapCandidates.mockResolvedValue([edgeDoc]);
+
+      const result = await service.assessDocument('doc-1');
+      expect(result.flags.map((f: any) => f.flag)).toContain(RiskFlag.OVERLAPPING_CLAIM);
     });
   });
 

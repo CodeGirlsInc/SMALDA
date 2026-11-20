@@ -294,26 +294,32 @@ export class RiskAssessmentService {
       return false;
     }
 
-    // Configurable proximity radius in kilometers (default: 0.1 km = 100 meters)
-    const proximityRadiusKm = parseFloat(
+    const configuredRadius = parseFloat(
       this.configService.get<string>('OVERLAP_PROXIMITY_KM') || '0.1',
     );
+    const proximityRadiusKm =
+      Number.isFinite(configuredRadius) && configuredRadius >= 0
+        ? configuredRadius
+        : 0.1;
 
-    // Find all documents with coordinates
-    const documentsWithCoords =
-      await this.documentsService.findAllWithCoordinates();
+    const candidates = await this.documentsService.findOverlapCandidates(
+      Number(document.latitude),
+      Number(document.longitude),
+      proximityRadiusKm,
+      document.ownerId,
+      document.id,
+    );
 
-    // Check if any other document is within the proximity radius
-    for (const otherDoc of documentsWithCoords) {
+    for (const otherDoc of candidates) {
       if (otherDoc.id === document.id) continue;
       if (otherDoc.latitude == null || otherDoc.longitude == null) continue;
       if (otherDoc.ownerId === document.ownerId) continue;
 
       const distance = this.calculateDistanceKm(
-        document.latitude,
-        document.longitude,
-        otherDoc.latitude,
-        otherDoc.longitude,
+        Number(document.latitude),
+        Number(document.longitude),
+        Number(otherDoc.latitude),
+        Number(otherDoc.longitude),
       );
 
       if (distance <= proximityRadiusKm) {

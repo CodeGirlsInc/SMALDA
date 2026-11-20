@@ -1,4 +1,4 @@
-import { IsString, Length, MinLength } from 'class-validator';
+import { IsOptional, IsString, Length, MinLength } from 'class-validator';
 
 export class TwoFactorCodeDto {
   @IsString()
@@ -16,8 +16,14 @@ export class TwoFactorChallengeDto {
 }
 
 export class DisableTwoFactorDto {
+  @IsOptional()
   @IsString()
-  password: string;
+  password?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(4, 32)
+  code?: string;
 }
 
 export class ChangePasswordDto {

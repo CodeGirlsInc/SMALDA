@@ -94,7 +94,7 @@ describe('FileValidationPipe', () => {
     expect(result.mimetype).toBe('image/jpeg');
   });
 
-  it('should accept static SVG content and store a bounded PNG', async () => {
+  it('should accept static SVG content and keep it as a bounded SVG', async () => {
     const buffer = createSvg(`
       <svg xmlns="http://www.w3.org/2000/svg" width="120" height="40" viewBox="0 0 120 40">
         <title>Parcel A &amp; B</title>
@@ -111,8 +111,8 @@ describe('FileValidationPipe', () => {
 
     const result = await pipe.transform(file);
 
-    expect(result.mimetype).toBe('image/png');
-    expect(result.buffer.subarray(1, 4).toString('ascii')).toBe('PNG');
+    expect(result.mimetype).toBe('image/svg+xml');
+    expect(result.buffer.toString('utf8')).toContain('<svg');
     expect(result.size).toBe(result.buffer.length);
   });
 
@@ -156,7 +156,7 @@ describe('FileValidationPipe', () => {
       createFile(buffer, 'image/svg+xml', 'descriptive.svg'),
     );
 
-    expect(result.mimetype).toBe('image/png');
+    expect(result.mimetype).toBe('image/svg+xml');
   });
 
   it.each([

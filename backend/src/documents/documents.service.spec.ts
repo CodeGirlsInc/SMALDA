@@ -2,6 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DocumentsService } from './documents.service';
 import { Document, DocumentStatus } from './entities/document.entity';
+import { User } from '../users/entities/user.entity';
+import { BadRequestException } from '@nestjs/common';
 
 const mockDocument = {
   id: 'doc-123',
@@ -20,7 +22,13 @@ const mockRepository = {
   findAndCount: jest.fn().mockResolvedValue([[mockDocument], 1]),
   update: jest.fn().mockResolvedValue({ affected: 1 }),
   delete: jest.fn().mockResolvedValue({ affected: 1 }),
+  count: jest.fn().mockResolvedValue(0),
   createQueryBuilder: jest.fn(),
+  manager: {
+    transaction: jest.fn(async (callback: (manager: unknown) => unknown) =>
+      callback({ getRepository: () => mockRepository }),
+    ),
+  },
 };
 
 describe('DocumentsService', () => {
@@ -247,6 +255,157 @@ describe('DocumentsService', () => {
 
       expect(mockRepository.createQueryBuilder).toHaveBeenCalledWith('document');
       expect(result).toEqual([docWithCoords]);
+    });
+  });
+
+  describe('findOverlapCandidates()', () => {
+    const makeQueryBuilder = () => ({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      setParameters: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([]),
+    });
+
+    it('uses an indexed latitude/longitude bounding box and excludes archived, rejected and own documents', async () => {
+      const mockQb = makeQueryBuilder();
+      mockRepository.createQueryBuilder.mockReturnValue(mockQb);
+
+      await service.findOverlapCandidates(
+        37.7749,
+        -122.4194,
+        0.1,
+        'user-456',
+        'doc-123',
+      );
+
+      expect(mockQb.where).toHaveBeenCalledWith(
+        'document.latitude BETWEEN :minLat AND :maxLat',
+      );
+      const andWhereCalls = mockQb.andWhere.mock.calls.map((call) => call[0]);
+      expect(andWhereCalls).toContain('document.owner_id != :ownerId');
+      expect(andWhereCalls).toContain('document.id != :excludeDocumentId');
+      expect(andWhereCalls).toContain('document.archived = false');
+      expect(andWhereCalls).toContain('document.status != :rejectedStatus');
+
+      const params = mockQb.setParameters.mock.calls[0][0];
+      expect(params.minLat).toBeCloseTo(37.7749 - 0.1 / 111.32, 6);
+      expect(params.maxLat).toBeCloseTo(37.7749 + 0.1 / 111.32, 6);
+      expect(params.minLon0).toBeLessThan(-122.4194);
+      expect(params.maxLon0).toBeGreaterThan(-122.4194);
+      expect(params.ownerId).toBe('user-456');
+      expect(params.excludeDocumentId).toBe('doc-123');
+      expect(params.rejectedStatus).toBe(DocumentStatus.REJECTED);
+    });
+
+    it('splits the longitude box across the antimeridian', async () => {
+      const mockQb = makeQueryBuilder();
+      mockRepository.createQueryBuilder.mockReturnValue(mockQb);
+
+      await service.findOverlapCandidates(0, 179.9999, 0.1, 'user-456', 'doc-123');
+
+      const params = mockQb.setParameters.mock.calls[0][0];
+      expect(params.minLon0).toBeLessThan(179.9999);
+      expect(params.maxLon0).toBe(180);
+      expect(params.minLon1).toBe(-180);
+      expect(params.maxLon1).toBeGreaterThan(-180);
+    });
+
+    it('clamps latitude at the pole and caps longitude delta', async () => {
+      const mockQb = makeQueryBuilder();
+      mockRepository.createQueryBuilder.mockReturnValue(mockQb);
+
+      await service.findOverlapCandidates(89.9999, 0, 0.1, 'user-456', 'doc-123');
+
+      const params = mockQb.setParameters.mock.calls[0][0];
+      expect(params.maxLat).toBe(90);
+      expect(params.minLat).toBeCloseTo(89.9999 - 0.1 / 111.32, 6);
+      expect(params.maxLon0 - params.minLon0).toBeLessThanOrEqual(360);
+    });
+  });
+
+  describe('createWithinQuota()', () => {
+    it('locks the user row and counts documents inside the transaction', async () => {
+      const findOne = jest.fn().mockResolvedValue({ id: 'user-456' });
+      const count = jest.fn().mockResolvedValue(19);
+      const save = jest.fn(async (document: Document) => document);
+      const manager = {
+        getRepository: jest.fn((entity: unknown) => {
+          if (entity === User) return { findOne };
+          return { count, create: (payload: Document) => payload, save };
+        }),
+      };
+      mockRepository.manager.transaction.mockImplementationOnce(
+        async (callback: (manager: unknown) => unknown) => callback(manager),
+      );
+
+      await service.createWithinQuota(
+        { ownerId: 'user-456', title: 'Deed' },
+        20,
+      );
+
+      expect(findOne).toHaveBeenCalledWith({
+        where: { id: 'user-456' },
+        lock: { mode: 'pessimistic_write' },
+      });
+      expect(count).toHaveBeenCalledWith({ where: { ownerId: 'user-456' } });
+      expect(save).toHaveBeenCalledTimes(1);
+    });
+
+    it('creates exactly one document for twenty concurrent uploads at quota minus one', async () => {
+      const documents: Document[] = Array.from({ length: 19 }, (_, index) => ({
+        id: `doc-${index}`,
+      })) as Document[];
+      let previous = Promise.resolve();
+      const manager = {
+        getRepository: jest.fn((entity: unknown) =>
+          entity === User
+            ? { findOne: jest.fn().mockResolvedValue({ id: 'user-456' }) }
+            : {
+                count: jest.fn(async () => documents.length),
+                create: (payload: Document) => payload,
+                save: jest.fn(async (document: Document) => {
+                  documents.push(document);
+                  return document;
+                }),
+              },
+        ),
+      };
+      mockRepository.manager.transaction.mockImplementation(
+        async (callback: (manager: unknown) => unknown) => {
+          const current = previous;
+          let release: () => void = () => undefined;
+          previous = new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          await current;
+          try {
+            return await callback(manager);
+          } finally {
+            release();
+          }
+        },
+      );
+
+      const results = await Promise.allSettled(
+        Array.from({ length: 20 }, (_, index) =>
+          service.createWithinQuota(
+            { ownerId: 'user-456', title: `Deed ${index}` },
+            20,
+          ),
+        ),
+      );
+
+      expect(
+        results.filter((result) => result.status === 'fulfilled'),
+      ).toHaveLength(1);
+      expect(
+        results.filter(
+          (result) =>
+            result.status === 'rejected' &&
+            result.reason instanceof BadRequestException,
+        ),
+      ).toHaveLength(19);
+      expect(documents).toHaveLength(20);
     });
   });
 
