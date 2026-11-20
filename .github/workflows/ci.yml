@@ -153,6 +153,9 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Check every source file is a declared module
+        run: bash scripts/check_modules_reachable.sh
+
       - name: Clippy (lint)
         run: cargo clippy --all-targets --all-features -- -D warnings
 

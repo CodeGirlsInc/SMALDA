@@ -14,7 +14,7 @@
 //!
 //! | Module | Why it is public |
 //! |---|---|
-//! | `app` | The Axum `Router` constructor. This is the entry point for embedding the service. |
+//! | *(root)* `app` | Not a module: `pub fn app(state)` at the crate root builds the Axum `Router` (it delegates to `routes::app`). This is the entry point for embedding the service. |
 //! | `cache` | `CacheBackend` / `InMemoryCache` / `RedisCache` are named in `AppState`, which integration tests construct. |
 //! | `config` | `AppConfig::from_env` and `ConfigError` are how a deployment is configured. |
 //! | `hash_validator` | `HashValidator` and `ValidationError` are the contract for callers accepting document hashes. |
@@ -42,7 +42,6 @@
 //! Until then the rule is: **do not add new `pub` items to these modules**, and
 //! prefer `pub(crate)` for anything new that does not have to be reachable.
 
-pub mod app;
 pub mod cache;
 pub mod config;
 pub mod error;
@@ -58,6 +57,9 @@ pub mod stellar;
 pub mod types;
 pub mod webhook;
 pub mod smalda_helpers;
+
+#[cfg(test)]
+mod tests;
 
 use axum::{
     body::Body,
@@ -1419,7 +1421,7 @@ pub fn find_duplicates(documents: &[&str], threshold: f64) -> Vec<(usize, usize,
 }
 
 #[cfg(test)]
-mod tests {
+mod unit_tests {
     use super::*;
 
     #[test]

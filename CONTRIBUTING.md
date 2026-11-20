@@ -16,3 +16,13 @@ Follow existing conventions. Write tests for new features.
 ## Reporting Issues
 
 Include: steps to reproduce, expected behavior, environment info.
+
+## Rust formatting
+
+CI runs `cargo fmt --all -- --check` for `contract/`. Enable the repo hook once so it is checked before every commit:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+and run `cd contract && cargo fmt --all` if it complains.
