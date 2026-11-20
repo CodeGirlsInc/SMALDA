@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   ConflictException,
   Controller,
   ForbiddenException,
@@ -38,6 +39,8 @@ import { MetricsService } from '../metrics/metrics.service';
 import { FileValidationPipe } from './pipes/file-validation.pipe';
 import { ListDocumentsDto } from './dto/list-documents.dto';
 import { DocumentResponseDto } from './dto/document-response.dto';
+import { CreateDocumentDto } from './dto/create-document.dto';
+import { UpdateDocumentLocationDto } from './dto/update-document-location.dto';
 import {
   DOCUMENT_ALLOWED_MIME_TYPES,
   DOCUMENT_MAX_FILE_SIZE_BYTES,
@@ -87,6 +90,7 @@ export class DocumentsController {
     @UploadedFile() file: Express.Multer.File,
     @Req() req: Request & { user?: User },
     @Res() res: Response,
+    @Body() body: CreateDocumentDto = {},
   ) {
     if (!file) {
       throw new BadRequestException('File is required');
@@ -96,6 +100,11 @@ export class DocumentsController {
     if (!user) {
       throw new BadRequestException('Authenticated user is required');
     }
+
+    const coordinates = this.parseCoordinates(
+      body?.latitude,
+      body?.longitude,
+    );
 
     const userQuota =
       this.configService.get<number>('USER_DOCUMENT_QUOTA') ?? DEFAULT_USER_QUOTA;
@@ -125,12 +134,13 @@ export class DocumentsController {
 
     const document = await this.documentsService.create({
       ownerId: user.id,
-      title: req.body.title || file.originalname,
+      title: body?.title || req.body?.title || file.originalname,
       filePath: targetPath,
       fileHash,
       fileSize: file.size,
       mimeType: file.mimetype,
       status: DocumentStatus.PENDING,
+      ...coordinates,
     });
 
     this.metricsService.incDocumentsSubmitted();
@@ -177,6 +187,36 @@ export class DocumentsController {
     this.assertOwnerOrAdmin(document, user);
 
     return toDocumentResponse(document);
+  }
+
+  @Patch(':id/location')
+  @UseGuards(JwtAuthGuard)
+  async updateLocation(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: UpdateDocumentLocationDto,
+    @Req() req: Request & { user?: User },
+  ) {
+    const document = await this.documentsService.findById(id);
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+
+    this.assertOwnerOrAdmin(document, req.user);
+
+    const { latitude, longitude } = this.parseCoordinates(
+      body?.latitude,
+      body?.longitude,
+      true,
+    );
+    const updated = await this.documentsService.updateLocation(
+      id,
+      latitude!,
+      longitude!,
+    );
+
+    await this.queueService.enqueueAnalyze(id, (req as any).requestId);
+
+    return toDocumentResponse(updated ?? document);
   }
 
   @Post(':id/verify')
@@ -295,6 +335,45 @@ export class DocumentsController {
     });
 
     stream.pipe(res);
+  }
+
+  private parseCoordinates(
+    latitude?: unknown,
+    longitude?: unknown,
+    required = false,
+  ): { latitude?: number; longitude?: number } {
+    const hasLatitude =
+      latitude !== undefined && latitude !== null && latitude !== '';
+    const hasLongitude =
+      longitude !== undefined && longitude !== null && longitude !== '';
+
+    if (!hasLatitude && !hasLongitude) {
+      if (required) {
+        throw new BadRequestException('latitude and longitude are required');
+      }
+      return {};
+    }
+
+    if (!hasLatitude || !hasLongitude) {
+      throw new BadRequestException(
+        'latitude and longitude must be provided together',
+      );
+    }
+
+    const parsedLatitude = Number(latitude);
+    const parsedLongitude = Number(longitude);
+    if (
+      !Number.isFinite(parsedLatitude) ||
+      !Number.isFinite(parsedLongitude) ||
+      parsedLatitude < -90 ||
+      parsedLatitude > 90 ||
+      parsedLongitude < -180 ||
+      parsedLongitude > 180
+    ) {
+      throw new BadRequestException('Coordinates are out of range');
+    }
+
+    return { latitude: parsedLatitude, longitude: parsedLongitude };
   }
 
   private assertOwnerOrAdmin(document: Document, user?: User): void {

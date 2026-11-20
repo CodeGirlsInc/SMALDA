@@ -11,10 +11,14 @@ import { VerificationModule } from '../verification/verification.module';
 import { QueueModule } from '../queue/queue.module';
 import { AccessLogsModule } from '../access-logs/access-logs.module';
 import { MetricsModule } from '../metrics/metrics.module';
+import { AuthModule } from '../auth/auth.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
     ConfigModule,
+    forwardRef(() => AuthModule),
+    forwardRef(() => UsersModule),
     TypeOrmModule.forFeature([Document]),
     JwtModule.registerAsync({
       imports: [ConfigModule],

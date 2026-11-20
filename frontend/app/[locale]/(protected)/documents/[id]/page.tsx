@@ -35,6 +35,8 @@ interface DocumentDetail {
   status: DocumentStatus;
   uploadedAt: string;
   updatedAt: string;
+  latitude: number | null;
+  longitude: number | null;
 }
 
 interface RiskFlag {
@@ -270,6 +272,10 @@ export default function DocumentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
+  const [latitudeInput, setLatitudeInput] = useState("");
+  const [longitudeInput, setLongitudeInput] = useState("");
+  const [savingLocation, setSavingLocation] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
 
   // ── WebSocket for real-time status updates (FE-06) ──────────────────────
   const wsRef = useRef<WebSocket | null>(null);
@@ -312,6 +318,8 @@ export default function DocumentDetailPage() {
         request<RiskData>(apiUrl(`${path}/risk`)).catch(() => null),
       ]);
       setDoc(docData);
+      setLatitudeInput(docData.latitude == null ? "" : String(docData.latitude));
+      setLongitudeInput(docData.longitude == null ? "" : String(docData.longitude));
       setRisk(riskData);
     } catch (err) {
       setError(
@@ -350,6 +358,41 @@ export default function DocumentDetailPage() {
       setError(t("verifyError"));
     } finally {
       setVerifying(false);
+    }
+  }
+
+  async function handleSaveLocation() {
+    if (!docId) return;
+    const latitude = latitudeInput.trim();
+    const longitude = longitudeInput.trim();
+    const parsedLatitude = Number(latitude);
+    const parsedLongitude = Number(longitude);
+    if (
+      !latitude ||
+      !longitude ||
+      !Number.isFinite(parsedLatitude) ||
+      !Number.isFinite(parsedLongitude) ||
+      parsedLatitude < -90 ||
+      parsedLatitude > 90 ||
+      parsedLongitude < -180 ||
+      parsedLongitude > 180
+    ) {
+      setLocationError(t("location.invalid"));
+      return;
+    }
+
+    setSavingLocation(true);
+    setLocationError(null);
+    try {
+      await request(apiUrl(`/documents/${encodeURIComponent(docId)}/location`), {
+        method: "PATCH",
+        body: { latitude: parsedLatitude, longitude: parsedLongitude },
+      });
+      await fetchData();
+    } catch {
+      setLocationError(t("location.error"));
+    } finally {
+      setSavingLocation(false);
     }
   }
 
@@ -408,6 +451,52 @@ export default function DocumentDetailPage() {
           <p className="text-sm text-gray-500">{t("risk.unavailable")}</p>
         </div>
       )}
+
+      <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+        <h2 className="mb-4 text-base font-semibold text-gray-900">{t("location.title")}</h2>
+        <p className="text-sm text-gray-600">
+          {doc.latitude == null || doc.longitude == null
+            ? t("location.missing")
+            : t("location.current", {
+                latitude: doc.latitude,
+                longitude: doc.longitude,
+              })}
+        </p>
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label className="text-xs font-medium text-gray-700">
+            {t("location.latitude")}
+            <input
+              type="number"
+              step="any"
+              min={-90}
+              max={90}
+              value={latitudeInput}
+              onChange={(e) => setLatitudeInput(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
+            />
+          </label>
+          <label className="text-xs font-medium text-gray-700">
+            {t("location.longitude")}
+            <input
+              type="number"
+              step="any"
+              min={-180}
+              max={180}
+              value={longitudeInput}
+              onChange={(e) => setLongitudeInput(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
+            />
+          </label>
+        </div>
+        <button
+          onClick={handleSaveLocation}
+          disabled={savingLocation}
+          className="mt-4 inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        >
+          {savingLocation ? t("location.saving") : t("location.save")}
+        </button>
+        {locationError && <p className="mt-2 text-xs text-red-600">{locationError}</p>}
+      </div>
 
       {/* ── Status timeline + Actions ── */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">

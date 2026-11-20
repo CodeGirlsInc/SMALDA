@@ -1,5 +1,5 @@
 ﻿import { Injectable, Inject, NestMiddleware } from '@nestjs/common';
-import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
+import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import type { Logger } from 'winston';
 import { Request, Response, NextFunction } from 'express';
 import { AccessLogsService } from '../../access-logs/access-logs.service';
@@ -9,7 +9,7 @@ const PROBE_PATH = /(^|\/)(health|metrics)(\/|$)/;
 @Injectable()
 export class LoggerMiddleware implements NestMiddleware {
   constructor(
-    @Inject(WINSTON_MODULE_NEST_PROVIDER)
+    @Inject(WINSTON_MODULE_PROVIDER)
     private readonly logger: Logger,
     private readonly accessLogsService: AccessLogsService,
   ) {}

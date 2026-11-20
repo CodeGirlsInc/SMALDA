@@ -20,6 +20,8 @@ export default function DocumentUploadPage() {
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [title, setTitle] = useState<string>("");
+  const [latitude, setLatitude] = useState<string>("");
+  const [longitude, setLongitude] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [uploading, setUploading] = useState<boolean>(false);
   const [progress, setProgress] = useState<number>(0);
@@ -37,6 +39,26 @@ export default function DocumentUploadPage() {
       return "Invalid file type. Only PDF, PNG, JPEG, and SVG files are allowed.";
     }
     return `File is too large. Maximum file size allowed is ${MAX_SIZE_MB}MB.`;
+  }
+
+  function validateCoordinates(lat: string, lon: string): string | null {
+    if (!lat.trim() && !lon.trim()) return null;
+    if (!lat.trim() || !lon.trim()) {
+      return "Enter both latitude and longitude.";
+    }
+    const parsedLat = Number(lat);
+    const parsedLon = Number(lon);
+    if (
+      !Number.isFinite(parsedLat) ||
+      !Number.isFinite(parsedLon) ||
+      parsedLat < -90 ||
+      parsedLat > 90 ||
+      parsedLon < -180 ||
+      parsedLon > 180
+    ) {
+      return "Coordinates are out of range.";
+    }
+    return null;
   }
 
   async function handleFileChange(file: File | null) {
@@ -101,6 +123,12 @@ export default function DocumentUploadPage() {
       return;
     }
 
+    const coordinateError = validateCoordinates(latitude, longitude);
+    if (coordinateError) {
+      setError(coordinateError);
+      return;
+    }
+
     setUploading(true);
     setProgress(10);
     setError("");
@@ -109,6 +137,10 @@ export default function DocumentUploadPage() {
       const formData = new FormData();
       formData.append("file", selectedFile);
       formData.append("title", title || selectedFile.name);
+      if (latitude.trim() && longitude.trim()) {
+        formData.append("latitude", latitude.trim());
+        formData.append("longitude", longitude.trim());
+      }
 
       // Simulated upload progress
       const interval = setInterval(() => {
@@ -165,6 +197,50 @@ export default function DocumentUploadPage() {
               placeholder="e.g. Q2 Financial Report"
               className="mt-2 w-full rounded-md border border-gray-800 bg-gray-900 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
             />
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-4">
+            <div>
+              <label
+                htmlFor="document-latitude"
+                className="block text-xs font-medium text-gray-300"
+              >
+                Latitude (optional)
+              </label>
+              <input
+                id="document-latitude"
+                type="number"
+                step="any"
+                min={-90}
+                max={90}
+                value={latitude}
+                onChange={(e) => setLatitude(e.target.value)}
+                placeholder="e.g. 9.082"
+                className="mt-2 w-full rounded-md border border-gray-800 bg-gray-900 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="document-longitude"
+                className="block text-xs font-medium text-gray-300"
+              >
+                Longitude (optional)
+              </label>
+              <input
+                id="document-longitude"
+                type="number"
+                step="any"
+                min={-180}
+                max={180}
+                value={longitude}
+                onChange={(e) => setLongitude(e.target.value)}
+                placeholder="e.g. 8.6753"
+                className="mt-2 w-full rounded-md border border-gray-800 bg-gray-900 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+            <p className="col-span-2 text-xs text-gray-500">
+              Add both values to place this document on the parcel map.
+            </p>
           </div>
 
           {/* Drag & Drop Zone */}

@@ -187,18 +187,9 @@ export class RiskAssessmentService {
       }
     }
 
-    // OVERLAPPING_CLAIM: Compare coordinates if available
     const hasOverlap = await this.checkCoordinateOverlap(document);
     if (hasOverlap) {
       flags.push(RiskFlag.OVERLAPPING_CLAIM);
-    } else if (!document.latitude || !document.longitude) {
-      // Fallback to old behavior only if no coordinates
-      const ownerDocuments = await this.documentsService.findByOwner(
-        document.ownerId,
-      );
-      if (ownerDocuments.some((doc) => doc.id !== document.id)) {
-        flags.push(RiskFlag.OVERLAPPING_CLAIM);
-      }
     }
 
     // FORGED_SIGNATURE_INDICATOR: File size as one signal among others
@@ -299,8 +290,7 @@ export class RiskAssessmentService {
   }
 
   private async checkCoordinateOverlap(document: Document): Promise<boolean> {
-    // Skip overlap check if document has no coordinates
-    if (!document.latitude || !document.longitude) {
+    if (document.latitude == null || document.longitude == null) {
       return false;
     }
 
@@ -316,7 +306,8 @@ export class RiskAssessmentService {
     // Check if any other document is within the proximity radius
     for (const otherDoc of documentsWithCoords) {
       if (otherDoc.id === document.id) continue;
-      if (!otherDoc.latitude || !otherDoc.longitude) continue;
+      if (otherDoc.latitude == null || otherDoc.longitude == null) continue;
+      if (otherDoc.ownerId === document.ownerId) continue;
 
       const distance = this.calculateDistanceKm(
         document.latitude,

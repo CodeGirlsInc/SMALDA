@@ -11,10 +11,8 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { WinstonModule } from 'nest-winston';
 import { buildWinstonOptions } from './common/logger.config';
 import { buildCorsOptions } from './common/cors.config';
+import { ConfigurableIoAdapter } from './common/adapters/configurable-io.adapter';
 import { apiContracts } from './common/api-contracts';
-import { config as loadEnv } from 'dotenv';
-
-loadEnv({ path: '.env' });
 
 async function bootstrap() {
   const logger = WinstonModule.createLogger(buildWinstonOptions());
@@ -33,6 +31,7 @@ async function bootstrap() {
   // Enable hardened CORS
   const { corsOptions } = buildCorsOptions(configService);
   app.enableCors(corsOptions);
+  app.useWebSocketAdapter(new ConfigurableIoAdapter(app, configService));
 
   // Global prefix & URI versioning
   app.setGlobalPrefix('api');

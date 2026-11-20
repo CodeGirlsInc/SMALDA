@@ -278,6 +278,17 @@
       "weight": "Peso: {value} %",
       "contribution": "Contribución: {value}"
     },
+    "location": {
+      "title": "Ubicación de la parcela",
+      "current": "Latitud: {latitude}, Longitud: {longitude}",
+      "missing": "Todavía no hay una ubicación.",
+      "latitude": "Latitud",
+      "longitude": "Longitud",
+      "save": "Establecer ubicación",
+      "saving": "Guardando...",
+      "invalid": "Introduzca una latitud entre -90 y 90 y una longitud entre -180 y 180.",
+      "error": "No se pudo guardar la ubicación."
+    },
     "actions": {
       "title": "Acciones",
       "verify": "Verificar en Stellar",

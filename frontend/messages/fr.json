@@ -278,6 +278,17 @@
       "weight": "Poids : {value} %",
       "contribution": "Contribution : {value}"
     },
+    "location": {
+      "title": "Localisation de la parcelle",
+      "current": "Latitude : {latitude}, Longitude : {longitude}",
+      "missing": "Aucune localisation définie.",
+      "latitude": "Latitude",
+      "longitude": "Longitude",
+      "save": "Définir la localisation",
+      "saving": "Enregistrement...",
+      "invalid": "Saisissez une latitude entre -90 et 90 et une longitude entre -180 et 180.",
+      "error": "Impossible d'enregistrer la localisation."
+    },
     "actions": {
       "title": "Actions",
       "verify": "Vérifier sur Stellar",
