@@ -25,19 +25,15 @@
 //!
 //! ## Public but not intended for external consumption
 //!
-//! `health`, `site`, `error`, `event`, `handlers`, `module`, `retry`, `routes`
+//! `health`, `error`, `event`, `handlers`, `module`, `retry`, `routes`
 //! and `webhook` are not meant to be consumed directly. They are `pub` today
 //! because narrowing them is not a free refactor:
 //!
 //! - A public item somewhere names a type from one of them, so narrowing the
 //!   module would be a breaking change to the public API rather than an internal
 //!   cleanup.
-//! - `site` is an unused legacy registry (see `src/site.rs`) and `health`'s
-//!   liveness router is not wired into `routes.rs`. Both are already dead code,
-//!   but they do not warn *because* they are `pub`. Narrowing them to
-//!   `pub(crate)` would surface that as `dead_code`, and CI runs
-//!   `cargo clippy --all-targets --all-features -- -D warnings`, so the build
-//!   would fail. Deleting them is the real fix and is tracked separately.
+//!   (`health` carries the `/v1/health/live` and `/v1/health/ready` probes
+//!   wired in `routes.rs`.)
 //!
 //! Until then the rule is: **do not add new `pub` items to these modules**, and
 //! prefer `pub(crate)` for anything new that does not have to be reachable.
@@ -47,6 +43,7 @@ pub mod config;
 pub mod error;
 pub mod event;
 pub mod handlers;
+pub mod health;
 pub mod hash_validator;
 pub mod metrics;
 pub mod module;
@@ -100,7 +97,17 @@ async fn enforce_rate_limit(
 ) -> Response {
     let path = req.uri().path();
     // Probes and scrapes must never be throttled (issue #1441).
-    if matches!(path, "/health" | "/v1/health" | "/metrics" | "/v1/metrics") {
+    if matches!(
+        path,
+        "/health"
+            | "/v1/health"
+            | "/health/live"
+            | "/v1/health/live"
+            | "/health/ready"
+            | "/v1/health/ready"
+            | "/metrics"
+            | "/v1/metrics"
+    ) {
         return next.run(req).await;
     }
     let limiter = if path == "/submit" || path == "/v1/submit" {
@@ -180,6 +187,44 @@ async fn require_metrics_auth(
     next.run(req).await
 }
 
+/// Require the service credential on the write routes (`/submit`, `/revoke`,
+/// `/transfer`), which sign Stellar transactions with the anchor key.
+///
+/// Mirrors [`require_metrics_auth`]: when `write_api_token` is `None` the
+/// request is let through so local development and the existing test suite
+/// keep working; production startup requires the token to be set
+/// (`VERIFIER_API_TOKEN`). The comparison is constant-time.
+async fn require_write_auth(
+    State(state): State<AppState>,
+    req: Request<Body>,
+    next: Next,
+) -> Response {
+    let Some(expected) = state.write_api_token.as_deref() else {
+        return next.run(req).await;
+    };
+
+    let authorized = req
+        .headers()
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .map(|token| constant_time_eq(token.as_bytes(), expected.as_bytes()))
+        .unwrap_or(false);
+
+    if !authorized {
+        warn!("Rejected unauthenticated request to a write route");
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({
+                "error": "this endpoint requires a valid bearer token",
+            })),
+        )
+            .into_response();
+    }
+
+    next.run(req).await
+}
+
 // Application state
 #[derive(Clone)]
 pub struct AppState {
@@ -198,6 +243,8 @@ pub struct AppState {
     /// Bearer token guarding `/metrics` (#1380). `None` leaves the endpoint
     /// open, which is only intended for local development.
     pub metrics_token: Option<String>,
+    /// Bearer token required on `/submit`, `/revoke` and `/transfer` when set.
+    pub write_api_token: Option<String>,
 }
 
 // Request/Response types

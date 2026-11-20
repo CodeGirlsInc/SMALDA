@@ -184,6 +184,7 @@ mod tests {
             webhook_urls: Vec::new(),
             webhook_secret: None,
             metrics_token: None,
+            write_api_token: None,
         }
     }
 

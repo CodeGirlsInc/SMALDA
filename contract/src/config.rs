@@ -49,6 +49,8 @@ pub struct AppConfig {
     /// endpoint is left open for local development, but production refuses to
     /// start without it.
     pub metrics_token: Option<String>,
+    /// Bearer token required on the write routes (`VERIFIER_API_TOKEN`).
+    pub write_api_token: Option<String>,
     pub cache_verification_ttl: u64,
     pub shutdown_timeout_secs: u64,
 }
@@ -182,6 +184,18 @@ impl AppConfig {
         if is_production && metrics_token.is_none() {
             errors.push(
                 "METRICS_TOKEN must be set in production so /metrics is not publicly readable"
+                    .to_string(),
+            );
+        }
+
+        // Service credential for the write routes (/submit, /revoke, /transfer).
+        let write_api_token = env::var("VERIFIER_API_TOKEN")
+            .ok()
+            .map(|token| token.trim().to_string())
+            .filter(|token| !token.is_empty());
+        if is_production && write_api_token.is_none() {
+            errors.push(
+                "VERIFIER_API_TOKEN must be set in production so write routes are authenticated"
                     .to_string(),
             );
         }
@@ -413,6 +427,7 @@ impl AppConfig {
             webhook_urls,
             webhook_secret,
             metrics_token,
+            write_api_token,
             cache_verification_ttl,
             shutdown_timeout_secs,
         })
@@ -444,6 +459,7 @@ mod tests {
             "WEBHOOK_URLS",
             "WEBHOOK_SECRET",
             "METRICS_TOKEN",
+            "VERIFIER_API_TOKEN",
             "CACHE_VERIFICATION_TTL",
             "SHUTDOWN_TIMEOUT_SECS",
         ];

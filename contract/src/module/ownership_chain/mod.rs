@@ -9,15 +9,18 @@
 //!   GET /module/owner/:document_hash  → [`current_owner_handler`]
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 use crate::{cache::CacheBackend, AppState, TransferRecord};
+
+mod pagination;
+use pagination::paginate;
 
 // ────────────────────────────────────────────────────────────────────────────
 // Public result type
@@ -73,14 +76,18 @@ pub async fn validate_chain(
         Some(v) => v,
         None => return Ok(ValidationResult::Empty),
     };
+    Ok(validate_records(&records))
+}
 
+/// Validate an already-loaded list of records (see [`validate_chain`]).
+pub fn validate_records(records: &[TransferRecord]) -> ValidationResult {
     if records.is_empty() {
-        return Ok(ValidationResult::Empty);
+        return ValidationResult::Empty;
     }
 
     // A single record is always a valid (trivially unbroken) chain.
     if records.len() == 1 {
-        return Ok(ValidationResult::Valid);
+        return ValidationResult::Valid;
     }
 
     // An owner re-acquiring the property (A -> B -> A) is valid; only a repeated
@@ -92,42 +99,68 @@ pub async fn validate_chain(
         let expected = &records[i - 1].to_owner;
         let found = &records[i].from_owner;
         if expected != found {
-            return Ok(ValidationResult::Invalid {
+            return ValidationResult::Invalid {
                 gap_at_index: i,
                 expected_owner: expected.clone(),
                 found_owner: found.clone(),
-            });
+            };
         }
         if records[i].from_owner == records[i].to_owner
             || !seen_hashes.insert(records[i].transfer_hash.clone())
         {
-            return Ok(ValidationResult::Cycle {
+            return ValidationResult::Cycle {
                 at_index: i,
                 owner: records[i].to_owner.clone(),
-            });
+            };
         }
     }
 
-    Ok(ValidationResult::Valid)
+    ValidationResult::Valid
 }
 
 // ────────────────────────────────────────────────────────────────────────────
 // HTTP handler
 // ────────────────────────────────────────────────────────────────────────────
 
-/// `GET /module/chain/:document_hash` — returns the validation result as JSON.
+/// Query parameters for `GET /module/chain/:document_hash`.
+#[derive(Debug, Deserialize)]
+pub struct ChainQuery {
+    /// Index of the first record to return (default 0).
+    pub cursor: Option<usize>,
+    /// Page size, clamped to 1..=100 (default 100).
+    pub limit: Option<usize>,
+}
+
+/// `GET /module/chain/:document_hash?cursor=&limit=` — the validation result
+/// as JSON, plus one page of the transfer records and `next_cursor` (null on
+/// the last page). Validation always covers the whole chain.
 pub async fn chain_handler(
     State(state): State<AppState>,
     Path(document_hash): Path<String>,
+    Query(query): Query<ChainQuery>,
 ) -> impl IntoResponse {
-    match validate_chain(&document_hash, &state.cache).await {
-        Ok(result) => (StatusCode::OK, Json(result)).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": e.to_string() })),
-        )
-            .into_response(),
+    let key = format!("transfer:{}", document_hash);
+    let records: Vec<TransferRecord> = match state.cache.get(&key).await {
+        Ok(Some(v)) => v,
+        Ok(None) => Vec::new(),
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+
+    let result = validate_records(&records);
+    let page = paginate(&records, query.cursor.unwrap_or(0), query.limit.unwrap_or(100));
+
+    let mut body = serde_json::to_value(&result).unwrap_or_else(|_| serde_json::json!({}));
+    if let Some(obj) = body.as_object_mut() {
+        obj.insert("records".to_string(), serde_json::json!(page.items));
+        obj.insert("next_cursor".to_string(), serde_json::json!(page.next_cursor));
     }
+    (StatusCode::OK, Json(body)).into_response()
 }
 
 /// Return only the current owner of `document_hash`, without validating the
