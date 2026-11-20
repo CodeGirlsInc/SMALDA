@@ -6,7 +6,7 @@
  * that signed the user out without deleting anything. These calls back each
  * action with the real API.
  */
-import { apiUrl } from "./api-version";
+import { apiUrl } from "@/lib/api-config";
 
 export interface SessionInfo {
   id: string;

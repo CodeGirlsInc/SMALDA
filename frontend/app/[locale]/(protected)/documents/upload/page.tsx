@@ -2,14 +2,13 @@
 
 import React, { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { API_PREFIX } from "@/lib/api-contracts";
+import { apiUrl } from "@/lib/api-config";
 import {
   documentUploadConstraints,
   documentUploadSchema,
 } from "@/lib/schemas/document";
 import { sanitizeSvg } from "@/lib/document-sanitizer";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const MAX_SIZE_MB = Math.round(
   documentUploadConstraints.fileSize.max / (1024 * 1024),
 );
@@ -149,7 +148,7 @@ export default function DocumentUploadPage() {
 
       const token = window.localStorage.getItem("auth-token");
       const response = await fetch(
-        `${API_BASE}${API_PREFIX}/documents/upload`,
+        apiUrl("/documents/upload"),
         {
           method: "POST",
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,

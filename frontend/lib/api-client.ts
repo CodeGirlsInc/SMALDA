@@ -15,32 +15,31 @@
  * never surfaced.
  */
 
+import { API_BASE, getApiOrigin } from "@/lib/api-config";
 import {
-  clearAllSessionState,
+  ACCESS_TOKEN_KEY,
+  LEGACY_REFRESH_TOKEN_KEY,
+  REFRESH_TOKEN_KEY,
+  clearSession,
+  getAccessToken,
+  getRefreshToken,
+  setAccessToken,
+  setRefreshToken,
+  clearRefreshToken,
+} from "@/lib/session";
+import {
   getPendingSessionResumeId,
   type SessionStateError,
   type SessionStateResult,
 } from "@/lib/session-state-preserver";
 
-function normalizeApiBase(value: string): string {
-  return value
-    .trim()
-    .replace(/\/+$/, "")
-    .replace(/(?:\/api)+(?:\/v1)?$/, "");
-}
-
-const API_BASE = normalizeApiBase(
-  process.env.NEXT_PUBLIC_API_URL?.trim() || "http://localhost:3001",
-);
-export const API_V1_BASE = `${API_BASE}/api/v1`;
+const API_ORIGIN = getApiOrigin() ?? API_BASE;
+export const API_V1_BASE = API_BASE;
 const REFRESH_ENDPOINT = `${API_V1_BASE}/auth/refresh`;
-const LOGOUT_ENDPOINT = `${API_V1_BASE}/auth/logout`;
-
-const ACCESS_TOKEN_KEY = "auth-token";
-const REFRESH_TOKEN_KEY = "refresh-token";
-const LOGOUT_TIMEOUT_MS = 2000;
 const CROSS_TAB_REFRESH_GRACE_MS = 1500;
 const CROSS_TAB_REFRESH_POLL_MS = 50;
+
+export { clearSession };
 
 // ── ApiError ────────────────────────────────────────────────────────────────
 
@@ -129,29 +128,6 @@ export function classifyStatus(status: number): ApiErrorMapping {
 
 // ── Token helpers ───────────────────────────────────────────────────────────
 
-function getAccessToken(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage.getItem(ACCESS_TOKEN_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function getRefreshToken(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage.getItem(REFRESH_TOKEN_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function setAccessToken(token: string): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(ACCESS_TOKEN_KEY, token);
-}
-
 interface RefreshSnapshot {
   accessToken: string | null;
   refreshToken: string | null;
@@ -203,7 +179,11 @@ function waitForCrossTabRefresh(snapshot: RefreshSnapshot): Promise<string | nul
     };
 
     handleStorage = (event: StorageEvent) => {
-      if (event.key === ACCESS_TOKEN_KEY || event.key === REFRESH_TOKEN_KEY) {
+      if (
+        event.key === ACCESS_TOKEN_KEY ||
+        event.key === REFRESH_TOKEN_KEY ||
+        event.key === LEGACY_REFRESH_TOKEN_KEY
+      ) {
         finish();
       }
     };
@@ -212,63 +192,6 @@ function waitForCrossTabRefresh(snapshot: RefreshSnapshot): Promise<string | nul
     poll = setInterval(finish, CROSS_TAB_REFRESH_POLL_MS);
     timeout = setTimeout(finish, CROSS_TAB_REFRESH_GRACE_MS);
   });
-}
-
-// ── Session clearing ────────────────────────────────────────────────────────
-
-async function logoutServerSession(token: string | null): Promise<boolean> {
-  if (typeof window === "undefined") return false;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), LOGOUT_TIMEOUT_MS);
-  try {
-    const response = await fetch(LOGOUT_ENDPOINT, {
-      method: "POST",
-      credentials: "include",
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      signal: controller.signal,
-    });
-    return response.ok;
-  } catch {
-    return false;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-/**
- * Clears the local session (and, best-effort, revokes it server-side).
- *
- * `preserveSessionState` skips clearing transactional form state preserved
- * across a redirect (used when a 401 bounces the user to login mid-flow, so
- * they don't lose in-progress work). `notify: false` skips broadcasting the
- * cross-tab logout-event, used when reacting to *another* tab's logout to
- * avoid an infinite storage-event ping-pong.
- */
-export function clearSession(
-  options: { preserveSessionState?: boolean; notify?: boolean } = {},
-): SessionStateResult<void> {
-  invalidateRefresh();
-  if (typeof window === "undefined") {
-    return { ok: false, error: { code: "unavailable" } };
-  }
-
-  // Best-effort server-side revocation; do not block local logout on it.
-  void logoutServerSession(getAccessToken());
-
-  let result: SessionStateResult<void> = { ok: true, value: undefined };
-  try {
-    window.localStorage.removeItem(ACCESS_TOKEN_KEY);
-    window.localStorage.removeItem(REFRESH_TOKEN_KEY);
-    if (options.notify !== false) {
-      window.localStorage.setItem("logout-event", Date.now().toString());
-    }
-  } catch {
-    result = { ok: false, error: { code: "storage" } };
-  }
-
-  if (options.preserveSessionState) return result;
-  const stateResult = clearAllSessionState();
-  return stateResult.ok ? result : stateResult;
 }
 
 /**
@@ -384,9 +307,9 @@ async function refreshAccessToken(expectedAccessToken?: string): Promise<string>
       // reuse-detection); persist whatever it returns or the next refresh
       // will look like reuse of an already-rotated token.
       if (typeof data.refresh_token === "string" && data.refresh_token) {
-        window.localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
+        setRefreshToken(data.refresh_token);
       } else {
-        window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+        clearRefreshToken();
       }
       return data.access_token;
     } catch (error) {
@@ -471,7 +394,7 @@ async function executeRequest(
 ): Promise<Response> {
   const { anonymous = false, ...fetchOpts } = options;
   const requestGeneration = authGeneration;
-  const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
+  const url = path.startsWith("http") ? path : `${API_ORIGIN}${path}`;
 
   const doFetch = async (token: string | null): Promise<Response> => {
     const headers = new Headers(fetchOpts.headers);

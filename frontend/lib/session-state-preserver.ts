@@ -13,9 +13,10 @@
  * original file again through the upload flow.
  */
 
+import { ACCESS_TOKEN_KEY } from "@/lib/session";
+
 const SESSION_STATE_PREFIX = "smalda-session-state:";
 const PENDING_RESUMES_KEY = `${SESSION_STATE_PREFIX}__pending__`;
-const ACCESS_TOKEN_KEY = "auth-token";
 const STORAGE_VERSION = 1;
 
 export type JsonValue =

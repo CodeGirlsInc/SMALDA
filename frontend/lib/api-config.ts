@@ -13,6 +13,14 @@ export const API_BASE = normalizeConfiguredBase(
   process.env.NEXT_PUBLIC_API_URL ?? DEFAULT_API_ORIGIN,
 );
 
+export function getApiOrigin(): string | null {
+  try {
+    return new URL(API_BASE).origin;
+  } catch {
+    return null;
+  }
+}
+
 export function normalizeResourcePath(path: string): string {
   let normalized = path.trim();
   if (!normalized) return "/";

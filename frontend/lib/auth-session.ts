@@ -7,7 +7,12 @@
  * should read the session off the context instead of touching storage.
  */
 
-import { invalidateRefresh } from "@/lib/api-client";
+import {
+  ACCESS_TOKEN_KEY,
+  LEGACY_REFRESH_TOKEN_KEY,
+  REFRESH_TOKEN_KEY,
+  invalidateRefresh,
+} from "@/lib/session";
 import {
   clearAllSessionState,
   consumeSessionResume,
@@ -15,8 +20,7 @@ import {
 } from "@/lib/session-state-preserver";
 import { routing, type Locale } from "@/i18n/routing";
 
-const ACCESS_TOKEN_KEY = "auth-token";
-const REFRESH_TOKEN_KEY = "refresh-token";
+export { clearSession, hasStoredSession } from "@/lib/session";
 
 /** Shape of `POST /api/v1/auth/login` — mirrors backend/src/auth/auth.service.ts. */
 export interface LoginResponse {
@@ -67,8 +71,10 @@ export function storeSession(
   invalidateRefresh();
   const previousAccess = readLocalStorageItem(ACCESS_TOKEN_KEY);
   const previousRefresh = readLocalStorageItem(REFRESH_TOKEN_KEY);
+  const previousLegacyRefresh = readLocalStorageItem(LEGACY_REFRESH_TOKEN_KEY);
   if (!previousAccess.ok) return previousAccess;
   if (!previousRefresh.ok) return previousRefresh;
+  if (!previousLegacyRefresh.ok) return previousLegacyRefresh;
 
   try {
     window.localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access_token);
@@ -77,9 +83,11 @@ export function storeSession(
     } else {
       window.localStorage.removeItem(REFRESH_TOKEN_KEY);
     }
+    window.localStorage.removeItem(LEGACY_REFRESH_TOKEN_KEY);
   } catch {
     restoreLocalStorageItem(ACCESS_TOKEN_KEY, previousAccess.value);
     restoreLocalStorageItem(REFRESH_TOKEN_KEY, previousRefresh.value);
+    restoreLocalStorageItem(LEGACY_REFRESH_TOKEN_KEY, previousLegacyRefresh.value);
     return { ok: false, error: { code: "storage" } };
   }
 
@@ -89,20 +97,10 @@ export function storeSession(
   if (!stateResult.ok) {
     restoreLocalStorageItem(ACCESS_TOKEN_KEY, previousAccess.value);
     restoreLocalStorageItem(REFRESH_TOKEN_KEY, previousRefresh.value);
+    restoreLocalStorageItem(LEGACY_REFRESH_TOKEN_KEY, previousLegacyRefresh.value);
     return { ok: false, error: stateResult.error };
   }
   return { ok: true, value: undefined };
-}
-
-export { clearSession } from "./api-client";
-
-export function hasStoredSession(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return Boolean(window.localStorage.getItem(ACCESS_TOKEN_KEY)?.trim());
-  } catch {
-    return false;
-  }
 }
 
 export const DEFAULT_POST_LOGIN_PATH = "/";

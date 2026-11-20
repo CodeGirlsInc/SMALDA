@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { Link, useRouter } from "@/i18n/navigation";
 import { useParams } from "next/navigation";
 import { ApiError, request } from "@/lib/api-client";
-import { API_PREFIX } from "@/lib/api-contracts";
+import { apiUrl } from "@/lib/api-config";
 import {
   disputeStatusValues,
   type DisputeResponse,
@@ -80,12 +80,12 @@ export default function DisputeDetailPage() {
     setError(null);
     try {
       const disputeData = await request<Dispute>(
-        `${API_PREFIX}/disputes/${disputeId}`,
+        apiUrl(`/disputes/${disputeId}`),
       );
       setDispute(disputeData);
       setAdminStatus(disputeData.status ?? "open");
       try {
-        const userData = await request<User>(`${API_PREFIX}/auth/me`);
+        const userData = await request<User>(apiUrl("/auth/me"));
         setUser(userData);
       } catch {
         setUser(null);
@@ -104,7 +104,7 @@ export default function DisputeDetailPage() {
   const handleWithdrawDispute = async () => {
     if (!disputeId) return;
     try {
-      await request(`${API_PREFIX}/disputes/${disputeId}`, {
+      await request(apiUrl(`/disputes/${disputeId}`), {
         method: "DELETE",
       });
       toast({
@@ -124,7 +124,7 @@ export default function DisputeDetailPage() {
   const handleAdminUpdate = async () => {
     if (!disputeId) return;
     try {
-      await request(`${API_PREFIX}/disputes/${disputeId}/status`, {
+      await request(apiUrl(`/disputes/${disputeId}/status`), {
         method: "PATCH",
         body: { status: adminStatus, resolution: adminResolution },
       });

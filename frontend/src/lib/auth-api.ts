@@ -4,7 +4,7 @@
  * The security settings "Change password" form reported success without calling
  * any API. This provides the missing call so the UI reflects the real result.
  */
-import { apiUrl } from "./api-version";
+import { apiUrl } from "@/lib/api-config";
 
 export interface ChangePasswordPayload {
   currentPassword: string;
