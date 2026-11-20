@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link, useRouter } from "@/i18n/navigation";
-import { storeSession, resolvePostLoginPath } from "@/lib/auth-session";
+import { resolvePostLoginPath } from "@/lib/auth-session";
+import { request } from "@/lib/api-client";
 import { consumeOAuthRedirect } from "@/lib/oauth-redirect";
 
 export default function OAuthCallbackPage() {
@@ -16,25 +17,19 @@ export default function OAuthCallbackPage() {
     if (started.current) return;
     started.current = true;
 
-    const params = new URLSearchParams(window.location.hash.slice(1));
-    const accessToken = params.get("access_token");
-    if (!accessToken || accessToken.length > 4096) {
-      setFailed(true);
-      return;
-    }
-
-    storeSession({ access_token: accessToken });
-    window.history.replaceState(
-      {},
-      "",
-      `${window.location.pathname}${window.location.search}`,
-    );
-    const target = resolvePostLoginPath(consumeOAuthRedirect());
-    router.replace(
-      target === "/auth/oauth/callback" || target === "/auth/refresh"
-        ? "/"
-        : target,
-    );
+    // The backend already set the httpOnly session cookies on the redirect
+    // (and no longer puts a token in the URL). Confirm the session works
+    // before redirecting; a failure shows the error state (#1647).
+    request("/auth/me")
+      .then(() => {
+        const target = resolvePostLoginPath(consumeOAuthRedirect());
+        router.replace(
+          target === "/auth/oauth/callback" || target === "/auth/refresh"
+            ? "/"
+            : target,
+        );
+      })
+      .catch(() => setFailed(true));
   }, [router]);
 
   return (
