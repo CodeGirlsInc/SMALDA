@@ -113,7 +113,7 @@ async fn the_full_document_lifecycle_composes_for_one_document() {
         .await;
     assert_eq!(
         transfer.status(),
-        StatusCode::BAD_REQUEST,
+        StatusCode::NOT_FOUND,
         "transferring an unanchored document must be a client error, not a server error: {}",
         transfer.text()
     );

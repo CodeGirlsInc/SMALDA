@@ -495,6 +495,23 @@ pub async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse
     )
 }
 
+/// Whether `hash` has been anchored, and if so the anchoring transaction id.
+///
+/// Checks the Redis record first, then falls back to the chain: Redis is a
+/// cache (TTL, possible eviction or restart), and an anchor made by another
+/// instance or the backend is only on-chain. `None` means not anchored.
+async fn find_anchor(state: &AppState, hash: &str) -> Option<Option<String>> {
+    let key = format!("stellar:verify:{}", hash);
+    if let Ok(Some(existing)) = state.cache.get::<SubmitResponse>(&key).await {
+        return Some(existing.transaction_id);
+    }
+    let account = derive_account_id(&state.stellar_secret_key).ok()?;
+    match state.stellar.verify_hash(hash, &account).await {
+        Ok(record) if record.anchored => Some(record.transaction_id),
+        _ => None,
+    }
+}
+
 /// Compute deterministic transfer hash from core fields.
 ///
 /// `v1` scheme (issues #1430, #1431): SHA-256 over `v1` followed by
@@ -589,8 +606,58 @@ pub async fn record_transfer(
         }
     }
 
+    // Only anchored documents can be transferred (issue #1670).
+    if find_anchor(&state, &normalized_hash).await.is_none() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ValidationErrorResponse {
+                error: "document hash has no anchor record; cannot transfer".to_string(),
+            }),
+        ));
+    }
+
+    let key = format!("transfer:{}", normalized_hash);
+
+    // Read the history BEFORE touching the chain, so a Redis failure fails fast
+    // with nothing written on-chain (issue #1669).
+    let mut history: Vec<TransferRecord> = match state.cache.get(&key).await {
+        Ok(Some(existing)) => existing,
+        Ok(None) => Vec::new(),
+        Err(e) => {
+            warn!("Failed to read transfer history from cache: {}", e);
+            state.metrics.increment_error_count();
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ValidationErrorResponse {
+                    error: "failed to read transfer history".to_string(),
+                }),
+            ));
+        }
+    };
+
+    // The sender must be the current owner, when there is one (issue #1670).
+    if let Some(current) = history.last().map(|r| r.to_owner.clone()) {
+        if current != req.from_owner {
+            return Err((
+                StatusCode::CONFLICT,
+                Json(ValidationErrorResponse {
+                    error: "from_owner is not the current owner of this document".to_string(),
+                }),
+            ));
+        }
+    }
+
     let transfer_hash = compute_transfer_hash(&req);
     let memo = build_transfer_memo(&transfer_hash);
+
+    // Idempotent by transfer_hash: a retry of an already-recorded transfer
+    // returns the original result without a second on-chain transaction.
+    if history.iter().any(|r| r.transfer_hash == transfer_hash) {
+        return Ok(Json(TransferResponse {
+            transfer_hash,
+            memo,
+        }));
+    }
 
     let anchor_account_id = derive_account_id(&state.stellar_secret_key).map_err(|e| {
         warn!("Failed to derive anchor account id: {}", e);
@@ -633,23 +700,6 @@ pub async fn record_transfer(
         anchored_at: Utc::now().to_rfc3339(),
     };
 
-    let key = format!("transfer:{}", record.document_hash);
-
-    let mut history: Vec<TransferRecord> = match state.cache.get(&key).await {
-        Ok(Some(existing)) => existing,
-        Ok(None) => Vec::new(),
-        Err(e) => {
-            warn!("Failed to read transfer history from cache: {}", e);
-            state.metrics.increment_error_count();
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ValidationErrorResponse {
-                    error: "failed to read transfer history".to_string(),
-                }),
-            ));
-        }
-    };
-
     history.push(record.clone());
 
     // Set a long but finite TTL (10 years) to keep an auditable history
@@ -657,10 +707,15 @@ pub async fn record_transfer(
     if let Err(e) = state.cache.set(&key, &history, TEN_YEARS_SECONDS).await {
         warn!("Failed to persist transfer history: {}", e);
         state.metrics.increment_error_count();
+        // The transfer IS on-chain; only the cache write failed. Report 202
+        // rather than 500 so the client does not retry it as a new transfer.
         return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::ACCEPTED,
             Json(ValidationErrorResponse {
-                error: "failed to persist transfer history".to_string(),
+                error: format!(
+                    "transfer anchored on-chain (transfer_hash {}) but the history cache write failed; do not resubmit",
+                    transfer_hash
+                ),
             }),
         ));
     }
@@ -728,7 +783,18 @@ pub async fn verify_document(
     if let Ok(Some(cached)) = state.cache.get::<VerifyResponse>(&normalized_hash).await {
         info!("Cache hit for hash: {}", normalized_hash);
         state.metrics.increment_cache_hits();
-        return Json(VerifyResponse { cached: true, ..cached }).into_response();
+        // A caller-supplied transaction_id must match the cached one too
+        // (issue #1672), otherwise a hit would verify any transaction id.
+        let tx_matches = match (&req.transaction_id, &cached.transaction_id) {
+            (Some(want), Some(got)) => want == got,
+            _ => true,
+        };
+        return Json(VerifyResponse {
+            verified: cached.verified && tx_matches,
+            cached: true,
+            ..cached
+        })
+        .into_response();
     }
 
     state.metrics.increment_cache_misses();
@@ -1219,14 +1285,9 @@ pub async fn revoke_document(
         }
     }
 
-    // Ensure the document was previously anchored before revoking.
-    let existing: Option<SubmitResponse> = state
-        .cache
-        .get::<SubmitResponse>(&anchor_key)
-        .await
-        .unwrap_or(None);
-
-    if existing.is_none() {
+    // Ensure the document was previously anchored before revoking. Redis is
+    // only a cache, so fall back to the chain (issue #1671).
+    let Some(anchored_tx) = find_anchor(&state, &normalized_hash).await else {
         return (
             StatusCode::NOT_FOUND,
             Json(ValidationErrorResponse {
@@ -1234,7 +1295,7 @@ pub async fn revoke_document(
             }),
         )
             .into_response();
-    }
+    };
 
     info!(
         "Revoking document hash {} (revoked_by: {})",
@@ -1269,7 +1330,7 @@ pub async fn revoke_document(
             // Update the cached verify entry to reflect revocation.
             let updated_verify = VerifyResponse {
                 verified: true,
-                transaction_id: existing.and_then(|r| r.transaction_id),
+                transaction_id: anchored_tx,
                 timestamp: Some(revoked_at),
                 cached: false,
                 revoked: Some(true),
