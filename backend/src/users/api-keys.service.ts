@@ -3,13 +3,19 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { createHash, randomBytes } from 'crypto';
 
-import { ApiKey } from './entities/api-key.entity';
+import { ApiKey, ApiKeyScope } from './entities/api-key.entity';
 import { User } from './entities/user.entity';
 import { CreateApiKeyDto } from './dto/create-api-key.dto';
+import { ApiKeyResponseDto } from './dto/api-key-response.dto';
 import { UsersService } from './users.service';
 
 function hashSecret(secret: string): string {
   return createHash('sha256').update(secret).digest('hex');
+}
+
+export interface ValidatedApiKey {
+  user: User;
+  scopes: ApiKeyScope[];
 }
 
 @Injectable()
@@ -45,11 +51,22 @@ export class ApiKeysService {
     };
   }
 
-  list(userId: string): Promise<ApiKey[]> {
-    return this.apiKeyRepository.find({
+  async list(userId: string): Promise<ApiKeyResponseDto[]> {
+    const keys = await this.apiKeyRepository.find({
       where: { userId, revokedAt: IsNull() },
       order: { createdAt: 'DESC' },
     });
+
+    // Never expose the stored key hash (or the owner id) to the browser.
+    return keys.map((key) => ({
+      id: key.id,
+      name: key.name,
+      prefix: key.prefix,
+      scopes: key.scopes,
+      lastUsedAt: key.lastUsedAt,
+      expiresAt: key.expiresAt,
+      createdAt: key.createdAt,
+    }));
   }
 
   async revoke(userId: string, id: string): Promise<{ message: string }> {
@@ -68,7 +85,7 @@ export class ApiKeysService {
     return { message: 'API key revoked' };
   }
 
-  async validateKey(secret: string): Promise<User | null> {
+  async validateKey(secret: string): Promise<ValidatedApiKey | null> {
     const apiKey = await this.apiKeyRepository.findOne({
       where: { keyHash: hashSecret(secret) },
     });
@@ -82,6 +99,11 @@ export class ApiKeysService {
     apiKey.lastUsedAt = new Date();
     await this.apiKeyRepository.save(apiKey);
 
-    return this.usersService.findById(apiKey.userId);
+    const user = await this.usersService.findById(apiKey.userId);
+    if (!user) {
+      return null;
+    }
+
+    return { user, scopes: apiKey.scopes ?? [] };
   }
 }

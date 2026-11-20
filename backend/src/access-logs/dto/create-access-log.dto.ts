@@ -1,4 +1,4 @@
-import { IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsNumber, IsObject, IsOptional, IsString } from 'class-validator';
 
 export class CreateAccessLogDto {
   @IsOptional()
@@ -17,4 +17,24 @@ export class CreateAccessLogDto {
   @IsOptional()
   @IsNumber()
   statusCode?: number;
+
+  @IsOptional()
+  @IsString()
+  action?: string | null;
+
+  @IsOptional()
+  @IsString()
+  resourceType?: string | null;
+
+  @IsOptional()
+  @IsString()
+  resourceId?: string | null;
+
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, unknown> | null;
+
+  @IsOptional()
+  @IsString()
+  userAgent?: string | null;
 }

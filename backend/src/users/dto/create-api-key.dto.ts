@@ -1,4 +1,12 @@
-import { IsArray, IsISO8601, IsOptional, IsString, Length } from 'class-validator';
+import {
+  IsArray,
+  IsEnum,
+  IsISO8601,
+  IsOptional,
+  IsString,
+  Length,
+} from 'class-validator';
+import { ApiKeyScope } from '../entities/api-key.entity';
 
 export class CreateApiKeyDto {
   @IsString()
@@ -7,8 +15,8 @@ export class CreateApiKeyDto {
 
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
-  scopes?: string[];
+  @IsEnum(ApiKeyScope, { each: true })
+  scopes?: ApiKeyScope[];
 
   @IsOptional()
   @IsISO8601()

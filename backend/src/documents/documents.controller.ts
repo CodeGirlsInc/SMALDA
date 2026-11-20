@@ -269,6 +269,9 @@ export class DocumentsController {
       'download',
       user.id,
       req.ip,
+      typeof req.headers['user-agent'] === 'string'
+        ? req.headers['user-agent']
+        : null,
     );
 
     // Pre-check that the file exists on disk before creating the stream.

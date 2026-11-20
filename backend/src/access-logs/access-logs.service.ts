@@ -1,5 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { Repository, Between, FindOptionsWhere } from 'typeorm';
 import { AccessLog } from './entities/access-log.entity';
 import type { CreateAccessLogDto } from './dto/create-access-log.dto';
@@ -20,6 +22,7 @@ export class AccessLogsService {
   constructor(
     @InjectRepository(AccessLog)
     private readonly accessLogRepository: Repository<AccessLog>,
+    @Optional() private readonly configService?: ConfigService,
   ) {}
 
   async create(dto: CreateAccessLogDto): Promise<AccessLog> {
@@ -29,6 +32,11 @@ export class AccessLogsService {
       httpMethod: dto.httpMethod,
       ipAddress: dto.ipAddress,
       statusCode: dto.statusCode ?? null,
+      ...(dto.action != null ? { action: dto.action } : {}),
+      ...(dto.resourceType != null ? { resourceType: dto.resourceType } : {}),
+      ...(dto.resourceId != null ? { resourceId: dto.resourceId } : {}),
+      ...(dto.metadata != null ? { metadata: dto.metadata } : {}),
+      ...(dto.userAgent != null ? { userAgent: dto.userAgent } : {}),
     });
     return this.accessLogRepository.save(log);
   }
@@ -40,23 +48,33 @@ export class AccessLogsService {
     ipAddress?: string,
     userAgent?: string,
     isDenied = false,
+    metadata?: Record<string, unknown>,
   ): Promise<void> {
     try {
-      await this.accessLogRepository.save(
-        this.accessLogRepository.create({
-          userId: userId ?? null,
-          routePath: `documents/${documentId}/${action}`,
-          httpMethod: 'GET',
-          ipAddress,
-          statusCode: isDenied ? 403 : 200,
-        }),
-      );
+      await this.create({
+        userId: userId ?? null,
+        routePath: `documents/${documentId}/${action}`,
+        httpMethod: this.httpMethodForAction(action),
+        ipAddress: ipAddress ?? '',
+        userAgent: userAgent ?? null,
+        statusCode: isDenied ? 403 : 200,
+        action,
+        resourceType: 'document',
+        resourceId: documentId,
+        metadata: metadata ?? null,
+      });
       this.logger.log(
         `Document Access Log: docId=${documentId}, action=${action}, user=${userId || 'anonymous'}, denied=${isDenied}`,
       );
     } catch (err) {
       this.logger.error('Failed to log document access', err);
     }
+  }
+
+  private httpMethodForAction(action: string): string {
+    if (action === 'dispute_filed') return 'POST';
+    if (action === 'dispute_status_changed') return 'PATCH';
+    return 'GET';
   }
 
   async findAll(filterDto: FilterAccessLogsDto): Promise<PaginatedAccessLogs> {
@@ -167,5 +185,16 @@ export class AccessLogsService {
     await this.accessLogRepository.delete({
       createdAt: Between(new Date('1970-01-01'), olderThan),
     });
+  }
+
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  async cleanupOldLogs(): Promise<void> {
+    const retentionDays =
+      Number(this.configService?.get('ACCESS_LOG_RETENTION_DAYS')) || 90;
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+    await this.deleteOldLogs(cutoff);
+    this.logger.log(
+      `Purged access logs older than ${cutoff.toISOString()} (retention: ${retentionDays} days)`,
+    );
   }
 }

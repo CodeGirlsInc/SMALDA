@@ -22,6 +22,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ApiKeyAuthGuard } from './guards/api-key-auth.guard';
+import { RequireScopes } from './decorators/require-scopes.decorator';
+import { ApiKeyScope } from './entities/api-key.entity';
 import { User, UserRole } from './entities/user.entity';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ListUsersDto } from './dto/list-users.dto';
@@ -96,6 +98,7 @@ export class UsersController {
 
   @Get('me/export')
   @UseGuards(ApiKeyAuthGuard)
+  @RequireScopes(ApiKeyScope.EXPORT)
   async exportMyData(@Req() req: AuthedRequest) {
     const userId = req.user!.id;
     const [user, documents] = await Promise.all([
@@ -203,6 +206,7 @@ export class UsersController {
       }
     }
 
+    const previousRole = target.role;
     const updated = await this.usersService.updateRole(id, dto.role);
 
     await this.accessLogsService.create({
@@ -210,7 +214,15 @@ export class UsersController {
       routePath: `admin/users/${id}/role`,
       httpMethod: 'PATCH',
       ipAddress: req.ip ?? 'unknown',
+      userAgent:
+        typeof req.headers['user-agent'] === 'string'
+          ? req.headers['user-agent']
+          : null,
       statusCode: 200,
+      action: 'ROLE_CHANGE',
+      resourceType: 'user',
+      resourceId: id,
+      metadata: { from: previousRole, to: dto.role },
     });
 
     return updated ? toPublicUser(updated) : null;

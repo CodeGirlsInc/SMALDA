@@ -8,23 +8,8 @@ import {
 } from '@nestjs/common';
 import { Response, Request } from 'express';
 
-const SENSITIVE_ERROR_PATTERNS = [
-  /password/i,
-  /secret/i,
-  /token/i,
-  /jwt/i,
-  /hash/i,
-  /bcrypt/i,
-  /e\.?r\.?r\.?o\.?r\.?/i,
-  /ENOENT/i,
-  /EACCES/i,
-  /connect.*refused/i,
-  /database/i,
-  /sql/i,
-  /query.*failed/i,
-  /constraint/i,
-  /duplicate/i,
-];
+const GENERIC_MESSAGE =
+  'An unexpected error occurred. Please try again later.';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -42,16 +27,23 @@ export class HttpExceptionFilter implements ExceptionFilter {
       ? exception.getStatus()
       : HttpStatus.INTERNAL_SERVER_ERROR;
 
-    const errorResponse = isHttp
-      ? exception.getResponse()
-      : { message: 'An unexpected error occurred' };
+    const errorResponse = isHttp ? exception.getResponse() : undefined;
 
-    const { message, error } = this.normalizeResponse(errorResponse, exception);
+    const { message, error } = this.normalizeResponse(
+      errorResponse,
+      exception,
+      isHttp,
+    );
 
     const requestId =
       (request as any).requestId || request.headers['x-request-id'] || 'req-id';
     const errorCode =
       (errorResponse as any)?.errorCode || error || `ERR_${status}`;
+
+    // `request.path` never contains the query string, so tokens passed as
+    // query parameters are not echoed back or written to the log.
+    const requestPath =
+      request.path || (request.url || '').split('?')[0] || 'unknown';
 
     const payload: Record<string, unknown> = {
       statusCode: status,
@@ -60,11 +52,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
       error,
       requestId,
       timestamp: new Date().toISOString(),
-      path: request.url,
+      path: requestPath,
     };
 
     this.logger.error(
-      `${status} ${request.method} ${request.url} -> ${message}`,
+      `${status} ${request.method} ${requestPath} -> ${message}`,
       (exception as Error)?.stack,
     );
 
@@ -78,41 +70,40 @@ export class HttpExceptionFilter implements ExceptionFilter {
   private normalizeResponse(
     response: string | object | null | undefined,
     exception: unknown,
+    isHttp: boolean,
   ) {
     let message = 'Internal server error';
     let error = HttpStatus.INTERNAL_SERVER_ERROR.toString();
 
     if (typeof response === 'string') {
-      message = this.sanitizeMessage(response);
+      message = response;
     } else if (response && typeof response === 'object') {
       const body = response as Record<string, any>;
       if (body.message) {
-        const raw = Array.isArray(body.message)
+        message = Array.isArray(body.message)
           ? body.message.join(', ')
           : body.message;
-        message = this.sanitizeMessage(raw);
       } else if (exception instanceof Error && exception.message) {
-        message = this.sanitizeMessage(exception.message);
+        message = exception.message;
       }
-
       if (body.error) {
         error = body.error;
       }
-    } else if (exception instanceof Error) {
-      message = this.sanitizeMessage(exception.message);
+    } else if (exception instanceof Error && exception.message) {
+      message = exception.message;
+    }
+
+    // Messages from thrown HttpExceptions (4xx and 5xx alike) are deliberate
+    // API responses - e.g. ValidationPipe feedback - and must be preserved.
+    // Only unknown, non-Http errors are collapsed to a generic message.
+    if (!isHttp) {
+      message = this.sanitizeMessage(message);
     }
 
     return { message, error };
   }
 
   private sanitizeMessage(raw: string): string {
-    if (!this.isProduction) return raw;
-
-    for (const pattern of SENSITIVE_ERROR_PATTERNS) {
-      if (pattern.test(raw)) {
-        return 'An unexpected error occurred. Please try again later.';
-      }
-    }
-    return raw;
+    return this.isProduction ? GENERIC_MESSAGE : raw;
   }
 }

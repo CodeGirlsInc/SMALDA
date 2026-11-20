@@ -45,8 +45,12 @@ export class DisputeService {
 
     await this.accessLogsService.logDocumentAccess(
       dto.documentId,
-      `dispute_filed:${DisputeStatus.OPEN}`,
+      'dispute_filed',
       userId,
+      undefined,
+      undefined,
+      false,
+      { status: DisputeStatus.OPEN },
     );
 
     return this.toResponseDto(saved);
@@ -85,8 +89,12 @@ export class DisputeService {
 
     await this.accessLogsService.logDocumentAccess(
       dispute.documentId,
-      `dispute_status_changed:${oldStatus}->${newStatus}`,
+      'dispute_status_changed',
       userId,
+      undefined,
+      undefined,
+      false,
+      { from: oldStatus, to: newStatus },
     );
 
     return this.toResponseDto(dispute);

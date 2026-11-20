@@ -5,7 +5,14 @@ import {
   CreateDateColumn,
   ManyToOne,
 } from 'typeorm';
+import { Exclude } from 'class-transformer';
 import { User } from './user.entity';
+
+export enum ApiKeyScope {
+  EXPORT = 'export',
+  DOCUMENTS_READ = 'documents:read',
+  DOCUMENTS_WRITE = 'documents:write',
+}
 
 @Entity('api_keys')
 export class ApiKey {
@@ -25,11 +32,12 @@ export class ApiKey {
   @Column()
   prefix: string;
 
+  @Exclude()
   @Column({ name: 'key_hash', unique: true })
   keyHash: string;
 
   @Column({ type: 'simple-array', default: '' })
-  scopes: string[];
+  scopes: ApiKeyScope[];
 
   @Column({ name: 'last_used_at', type: 'timestamptz', nullable: true })
   lastUsedAt?: Date | null;
