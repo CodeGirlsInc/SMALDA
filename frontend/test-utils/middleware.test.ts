@@ -1,5 +1,9 @@
 import { NextRequest } from "next/server";
-import middleware, { getLegacyRedirectPath, isProtectedPath } from "@/middleware";
+import middleware, {
+  getLegacyRedirectPath,
+  isProtectedPath,
+  resetAuthCache,
+} from "@/middleware";
 
 // createMiddleware(routing) returns the locale middleware itself, so the mock
 // must hand back a function rather than a response.
@@ -23,6 +27,7 @@ function response(status: number, body: unknown = {}): Response {
 }
 
 beforeEach(() => {
+  resetAuthCache();
   fetchMock = jest.fn();
   globalThis.fetch = fetchMock;
 });
@@ -127,7 +132,19 @@ describe("protected route middleware", () => {
     expect(new URL(result.headers.get("location")!).pathname).toBe("/login");
   });
 
-  it("fails closed without redirecting on verifier failure", async () => {
+  it("fails closed without redirecting on verifier failure for admin routes", async () => {
+    fetchMock.mockResolvedValue(response(503));
+    const result = await middleware(
+      new NextRequest("https://smalda.test/admin/users", {
+        headers: { cookie: "access_token=opaque-value" },
+      }),
+    );
+
+    expect(result.status).toBe(503);
+    expect(result.headers.get("location")).toBeNull();
+  });
+
+  it("does not turn a verifier failure into a 503 for non-admin pages (#1654)", async () => {
     fetchMock.mockResolvedValue(response(503));
     const result = await middleware(
       new NextRequest("https://smalda.test/settings", {
@@ -135,8 +152,20 @@ describe("protected route middleware", () => {
       }),
     );
 
-    expect(result.status).toBe(503);
-    expect(result.headers.get("location")).toBeNull();
+    expect(result.status).toBe(200);
+  });
+
+  it("calls /auth/me once for repeated navigations with the same token (#1654)", async () => {
+    fetchMock.mockResolvedValue(response(200, { role: "user" }));
+    for (const path of ["/settings", "/documents", "/profile"]) {
+      await middleware(
+        new NextRequest(`https://smalda.test${path}`, {
+          headers: { cookie: "access_token=opaque-value" },
+        }),
+      );
+    }
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("does not invoke locale middleware for infrastructure or static assets", async () => {

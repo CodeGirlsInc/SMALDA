@@ -112,7 +112,7 @@ jobs:
           path: frontend/coverage/
 
       - name: Accessibility tests (jest-axe)
-        run: npm run test:a11y -- --passWithNoTests
+        run: npm run test:a11y
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium firefox webkit

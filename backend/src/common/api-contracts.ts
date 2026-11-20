@@ -18,7 +18,7 @@ type ApiContracts = {
   };
   dispute: {
     documentId: StringContract;
-    description: { minLength: number };
+    description: { minLength: number; maxLength: number };
     statuses: string[];
   };
   documentUpload: {

@@ -14,7 +14,7 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:e2e": "playwright test",
-    "test:a11y": "jest --testPathPattern=accessibility --passWithNoTests"
+    "test:a11y": "jest --testPathPattern=\"(accessibility|a11y)\""
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
