@@ -14,7 +14,27 @@ interface ApiKey {
   prefix: string; // e.g. "sk_live_abc1..."
   createdAt: string;
   lastUsedAt: string | null;
+  scopes: string[];
+  expiresAt: string | null;
   status: "active" | "revoked";
+}
+
+/**
+ * Keep only the fields the page renders. The list endpoint must never leak
+ * `keyHash` / `userId`, and even if it does they are dropped here and never
+ * reach the DOM. `status` is derived: the backend only lists active keys.
+ */
+function toApiKey(raw: Partial<ApiKey> & { revokedAt?: string | null }): ApiKey {
+  return {
+    id: raw.id ?? "",
+    name: raw.name ?? "",
+    prefix: raw.prefix ?? "",
+    createdAt: raw.createdAt ?? new Date().toISOString(),
+    lastUsedAt: raw.lastUsedAt ?? null,
+    scopes: Array.isArray(raw.scopes) ? raw.scopes : [],
+    expiresAt: raw.expiresAt ?? null,
+    status: raw.status ?? (raw.revokedAt ? "revoked" : "active"),
+  };
 }
 
 interface CreatedApiKeyResponse extends Partial<ApiKey> {
@@ -130,10 +150,13 @@ function NewKeyReveal({ keyValue, onDismiss }: NewKeyRevealProps) {
 
   return (
     <div
-      role="alert"
-      className="rounded-lg border border-yellow-300 bg-yellow-50 p-4 space-y-3"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="new-key-title"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
     >
-      <p className="text-sm font-semibold text-yellow-800">
+    <div className="w-full max-w-lg rounded-lg border border-yellow-300 bg-yellow-50 p-4 space-y-3 shadow-xl">
+      <p id="new-key-title" className="text-sm font-semibold text-yellow-800">
         ⚠ Copy your API key now — it will not be shown again.
       </p>
       <div className="flex items-center gap-2">
@@ -159,6 +182,7 @@ function NewKeyReveal({ keyValue, onDismiss }: NewKeyRevealProps) {
       >
         I have copied my key — dismiss
       </button>
+    </div>
     </div>
   );
 }
@@ -240,7 +264,8 @@ export default function ApiKeysPage() {
         const json = await request<ApiKey[] | { data?: ApiKey[] }>(
           apiUrl("/users/me/api-keys"),
         );
-        setKeys(Array.isArray(json) ? json : json.data ?? []);
+        const rows = Array.isArray(json) ? json : json.data ?? [];
+        setKeys(rows.map(toApiKey));
       } catch {
         setLoadError("Failed to load API keys. Please try again.");
       } finally {
@@ -261,14 +286,12 @@ export default function ApiKeysPage() {
         body: { name },
       });
       const created = json?.data ?? json ?? {};
-      const record: ApiKey = created.record ?? {
-        id: created.id ?? "",
-        name: created.name ?? name,
-        prefix: created.prefix ?? "",
-        createdAt: created.createdAt ?? new Date().toISOString(),
+      const record: ApiKey = toApiKey({
+        ...(created.record ?? created),
+        name: created.record?.name ?? created.name ?? name,
         lastUsedAt: null,
         status: "active",
-      };
+      });
       // The full key is only returned on creation
       setNewKeyValue(created.key ?? "");
       // Add the redacted entry to the table
@@ -384,7 +407,9 @@ export default function ApiKeysPage() {
                 <tr>
                   <th scope="col" className="px-4 py-3 text-left font-medium text-gray-600">Name</th>
                   <th scope="col" className="px-4 py-3 text-left font-medium text-gray-600">Key</th>
+                  <th scope="col" className="px-4 py-3 text-left font-medium text-gray-600">Scopes</th>
                   <th scope="col" className="px-4 py-3 text-left font-medium text-gray-600">Created</th>
+                  <th scope="col" className="px-4 py-3 text-left font-medium text-gray-600">Expires</th>
                   <th scope="col" className="px-4 py-3 text-left font-medium text-gray-600">Last used</th>
                   <th scope="col" className="px-4 py-3 text-left font-medium text-gray-600">Status</th>
                   <th scope="col" className="px-4 py-3" />
@@ -395,8 +420,16 @@ export default function ApiKeysPage() {
                   <tr key={key.id}>
                     <td className="px-4 py-3 font-medium text-gray-900">{key.name}</td>
                     <td className="px-4 py-3 font-mono text-gray-600 text-xs">{key.prefix}</td>
+                    <td className="px-4 py-3 text-xs text-gray-600">
+                      {key.scopes.length ? key.scopes.join(", ") : "—"}
+                    </td>
                     <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
                       {new Date(key.createdAt).toLocaleDateString()}
+                    </td>
+                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
+                      {key.expiresAt
+                        ? new Date(key.expiresAt).toLocaleDateString()
+                        : "Never"}
                     </td>
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
                       {key.lastUsedAt

@@ -182,6 +182,22 @@
         "generic": "Verification failed. Please try again.",
         "signIn": "Back to sign in"
       }
+    },
+    "verifyEmail": {
+      "title": "Email Verification",
+      "verifying": "Verifying your email address...",
+      "successTitle": "Email Verified Successfully!",
+      "successBody": "Your account is ready. Redirecting to login page in 3 seconds...",
+      "goToLogin": "Go to Login Now",
+      "failureTitle": "Verification Failed",
+      "missingToken": "No verification token provided in URL.",
+      "genericError": "Failed to verify email. The token may be expired or invalid.",
+      "resendLabel": "Resend Verification Email",
+      "emailPlaceholder": "Enter your registered email",
+      "sending": "Sending...",
+      "resend": "Resend Email",
+      "resendSent": "Verification email sent! Check your inbox.",
+      "resendError": "Failed to resend. Please try again."
     }
   },
   "dashboard": {

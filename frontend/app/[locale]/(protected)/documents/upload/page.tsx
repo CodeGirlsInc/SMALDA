@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/i18n/navigation";
 import { request } from "@/lib/api-client";
 import { apiUrl } from "@/lib/api-config";
 import {

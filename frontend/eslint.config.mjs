@@ -38,4 +38,30 @@ const eslintConfig = [
   },
 ];
 
+// Locale-aware navigation (#1650): `next/link` and the router hooks from
+// `next/navigation` drop the active locale, so use `@/i18n/navigation`.
+eslintConfig.push({
+  files: ["app/**/*.{ts,tsx}", "components/**/*.{ts,tsx}"],
+  ignores: ["**/*.test.{ts,tsx}", "**/__tests__/**"],
+  rules: {
+    "no-restricted-imports": [
+      "error",
+      {
+        paths: [
+          {
+            name: "next/link",
+            message: "Import Link from @/i18n/navigation so the locale is kept.",
+          },
+          {
+            name: "next/navigation",
+            importNames: ["useRouter", "redirect", "usePathname"],
+            message:
+              "Import useRouter/redirect/usePathname from @/i18n/navigation so the locale is kept.",
+          },
+        ],
+      },
+    ],
+  },
+});
+
 export default eslintConfig;

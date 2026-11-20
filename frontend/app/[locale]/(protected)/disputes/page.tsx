@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
+import { Link } from "@/i18n/navigation";
 import { request } from "@/lib/api-client";
 import { apiUrl } from "@/lib/api-config";
 import {

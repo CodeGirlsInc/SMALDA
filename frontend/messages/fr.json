@@ -182,6 +182,22 @@
         "generic": "La vérification a échoué. Veuillez réessayer.",
         "signIn": "Retour à la connexion"
       }
+    },
+    "verifyEmail": {
+      "title": "Vérification de l'e-mail",
+      "verifying": "Vérification de votre adresse e-mail...",
+      "successTitle": "E-mail vérifié avec succès !",
+      "successBody": "Votre compte est prêt. Redirection vers la page de connexion dans 3 secondes...",
+      "goToLogin": "Se connecter maintenant",
+      "failureTitle": "Échec de la vérification",
+      "missingToken": "Aucun jeton de vérification dans l'URL.",
+      "genericError": "Impossible de vérifier l'e-mail. Le jeton est peut-être expiré ou invalide.",
+      "resendLabel": "Renvoyer l'e-mail de vérification",
+      "emailPlaceholder": "Saisissez votre adresse e-mail",
+      "sending": "Envoi...",
+      "resend": "Renvoyer l'e-mail",
+      "resendSent": "E-mail de vérification envoyé ! Consultez votre boîte de réception.",
+      "resendError": "Échec du renvoi. Veuillez réessayer."
     }
   },
   "dashboard": {
