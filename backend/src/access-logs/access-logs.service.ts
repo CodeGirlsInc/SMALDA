@@ -107,7 +107,13 @@ export class AccessLogsService {
       const startDate = filters.startDate
         ? new Date(filters.startDate)
         : new Date('1970-01-01');
-      const endDate = filters.endDate ? new Date(filters.endDate) : new Date();
+      // A date-only `endDate` (2026-11-18) means the whole of that day, not its
+      // midnight, otherwise a one-day range matches nothing (#1651).
+      const endDate = filters.endDate
+        ? /^\d{4}-\d{2}-\d{2}$/.test(filters.endDate)
+          ? new Date(`${filters.endDate}T23:59:59.999Z`)
+          : new Date(filters.endDate)
+        : new Date();
       where.createdAt = Between(startDate, endDate);
     }
 

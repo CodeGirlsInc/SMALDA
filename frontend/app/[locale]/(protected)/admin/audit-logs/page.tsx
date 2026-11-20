@@ -1,5 +1,6 @@
 "use client";
 
+import { endOfDayISO, startOfDayISO } from "@/lib/date-range";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
@@ -73,8 +74,12 @@ export default function AdminAuditLogsPage() {
       limit: String(PAGE_SIZE),
     });
     if (appliedFilters.userId) params.set("userId", appliedFilters.userId);
-    if (appliedFilters.startDate) params.set("startDate", appliedFilters.startDate);
-    if (appliedFilters.endDate) params.set("endDate", appliedFilters.endDate);
+    if (appliedFilters.startDate) {
+      params.set("startDate", startOfDayISO(appliedFilters.startDate));
+    }
+    if (appliedFilters.endDate) {
+      params.set("endDate", endOfDayISO(appliedFilters.endDate));
+    }
 
     try {
       const response = await fetch(apiUrl("/admin/access-logs", params), {

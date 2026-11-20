@@ -2,11 +2,13 @@
 
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Link, useRouter } from "@/i18n/navigation";
 import { ApiError, request } from "@/lib/api-client";
 import { apiUrl } from "@/lib/api-config";
 
 export default function VerifyEmailPage() {
+  const t = useTranslations("auth.verifyEmail");
   const searchParams = useSearchParams();
   const router = useRouter();
   const token = searchParams.get("token");
@@ -19,7 +21,7 @@ export default function VerifyEmailPage() {
   useEffect(() => {
     if (!token) {
       setStatus("failure");
-      setErrorMessage("No verification token provided in URL.");
+      setErrorMessage(t("missingToken"));
       return;
     }
 
@@ -38,13 +40,13 @@ export default function VerifyEmailPage() {
         setErrorMessage(
           error instanceof ApiError && error.backendMessage
             ? error.backendMessage
-            : "Failed to verify email. The token may be expired or invalid.",
+            : t("genericError"),
         );
       }
     }
 
     verify();
-  }, [token, router]);
+  }, [token, router, t]);
 
   async function handleResend(e: React.FormEvent) {
     e.preventDefault();
@@ -66,12 +68,12 @@ export default function VerifyEmailPage() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-gray-900 px-4 py-12 text-white">
       <div className="w-full max-w-md rounded-xl border border-gray-800 bg-gray-950 p-8 shadow-2xl">
-        <h1 className="mb-6 text-center text-2xl font-bold">Email Verification</h1>
+        <h1 className="mb-6 text-center text-2xl font-bold">{t("title")}</h1>
 
         {status === "loading" && (
           <div className="flex flex-col items-center py-6">
             <div className="h-10 w-10 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
-            <p className="mt-4 text-sm text-gray-400">Verifying your email address...</p>
+            <p className="mt-4 text-sm text-gray-400">{t("verifying")}</p>
           </div>
         )}
 
@@ -80,16 +82,16 @@ export default function VerifyEmailPage() {
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-500/10 text-green-400">
               ✓
             </div>
-            <h2 className="text-xl font-semibold text-green-400">Email Verified Successfully!</h2>
+            <h2 className="text-xl font-semibold text-green-400">{t("successTitle")}</h2>
             <p className="mt-2 text-sm text-gray-300">
-              Your account is ready. Redirecting to login page in 3 seconds...
+              {t("successBody")}
             </p>
             <div className="mt-6">
               <Link
                 href="/login"
                 className="inline-block rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-500"
               >
-                Go to Login Now
+                {t("goToLogin")}
               </Link>
             </div>
           </div>
@@ -100,17 +102,17 @@ export default function VerifyEmailPage() {
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-500/10 text-red-400">
               ✕
             </div>
-            <h2 className="text-center text-lg font-semibold text-red-400">Verification Failed</h2>
+            <h2 className="text-center text-lg font-semibold text-red-400">{t("failureTitle")}</h2>
             <p className="mt-2 text-center text-sm text-gray-300">{errorMessage}</p>
 
             <form onSubmit={handleResend} className="mt-6 rounded-lg border border-gray-800 bg-gray-900 p-4">
-              <label className="block text-xs font-medium text-gray-400">Resend Verification Email</label>
+              <label className="block text-xs font-medium text-gray-400">{t("resendLabel")}</label>
               <input
                 type="email"
                 required
                 value={resendEmail}
                 onChange={(e) => setResendEmail(e.target.value)}
-                placeholder="Enter your registered email"
+                placeholder={t("emailPlaceholder")}
                 className="mt-2 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
               />
               <button
@@ -118,13 +120,13 @@ export default function VerifyEmailPage() {
                 disabled={resendStatus === "sending"}
                 className="mt-3 w-full rounded-md bg-blue-600 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
               >
-                {resendStatus === "sending" ? "Sending..." : "Resend Email"}
+                {resendStatus === "sending" ? t("sending") : t("resend")}
               </button>
               {resendStatus === "sent" && (
-                <p className="mt-2 text-center text-xs text-green-400">Verification email sent! Check your inbox.</p>
+                <p className="mt-2 text-center text-xs text-green-400">{t("resendSent")}</p>
               )}
               {resendStatus === "error" && (
-                <p className="mt-2 text-center text-xs text-red-400">Failed to resend. Please try again.</p>
+                <p className="mt-2 text-center text-xs text-red-400">{t("resendError")}</p>
               )}
             </form>
           </div>

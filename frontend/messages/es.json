@@ -182,6 +182,22 @@
         "generic": "La verificación falló. Inténtalo de nuevo.",
         "signIn": "Volver a iniciar sesión"
       }
+    },
+    "verifyEmail": {
+      "title": "Verificación de correo electrónico",
+      "verifying": "Verificando su dirección de correo electrónico...",
+      "successTitle": "¡Correo verificado con éxito!",
+      "successBody": "Su cuenta está lista. Redirigiendo a la página de inicio de sesión en 3 segundos...",
+      "goToLogin": "Ir a iniciar sesión ahora",
+      "failureTitle": "Error de verificación",
+      "missingToken": "No se proporcionó ningún token de verificación en la URL.",
+      "genericError": "No se pudo verificar el correo. El token puede haber caducado o no ser válido.",
+      "resendLabel": "Reenviar correo de verificación",
+      "emailPlaceholder": "Introduzca su correo electrónico registrado",
+      "sending": "Enviando...",
+      "resend": "Reenviar correo",
+      "resendSent": "¡Correo de verificación enviado! Revise su bandeja de entrada.",
+      "resendError": "No se pudo reenviar. Inténtelo de nuevo."
     }
   },
   "dashboard": {
