@@ -1,8 +1,19 @@
 import { MetadataRoute } from 'next';
 import { routing } from '@/i18n/routing';
+import { getSiteUrl } from '@/lib/site-url';
 
 export default function robots(): MetadataRoute.Robots {
-  const protectedPaths = ['/dashboard', '/documents', '/admin', '/map'];
+  const protectedPaths = [
+    '/dashboard',
+    '/documents',
+    '/admin',
+    '/map',
+    '/settings',
+    '/profile',
+    '/reports',
+    '/disputes',
+    '/2fa',
+  ];
 
   // Generate disallow entries for all locales
   const disallowedPaths: string[] = ['/verify/', '/api/'];
@@ -25,6 +36,6 @@ export default function robots(): MetadataRoute.Robots {
         disallow: disallowedPaths,
       },
     ],
-    sitemap: 'https://smalda.org/sitemap.xml',
+    sitemap: `${getSiteUrl()}/sitemap.xml`,
   };
 }

@@ -1,7 +1,9 @@
 import { MetadataRoute } from 'next';
 import { routing } from '@/i18n/routing';
+import { getSiteUrl } from '@/lib/site-url';
 
-const BASE_URL = 'https://smalda.org';
+/** Public pages only: everything else is behind login or does not exist. */
+export const PUBLIC_PATHS = ['', '/login', '/register', '/forgot-password'];
 
 function getLocalizedPath(path: string, locale: string): string {
   if (locale === routing.defaultLocale) {
@@ -11,21 +13,14 @@ function getLocalizedPath(path: string, locale: string): string {
 }
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const staticPaths = [
-    '',
-    '/documents',
-    '/verify',
-    '/dashboard',
-    '/settings',
-  ];
-
+  const baseUrl = getSiteUrl();
   const entries: MetadataRoute.Sitemap = [];
 
-  for (const path of staticPaths) {
+  for (const path of PUBLIC_PATHS) {
     for (const locale of routing.locales) {
       const localizedPath = getLocalizedPath(path, locale);
       entries.push({
-        url: `${BASE_URL}${localizedPath}`,
+        url: `${baseUrl}${localizedPath}`,
         lastModified: new Date(),
         changeFrequency: 'weekly',
         priority: path === '' ? 1 : 0.8,
@@ -33,7 +28,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
           languages: Object.fromEntries(
             routing.locales.map((l) => [
               l,
-              `${BASE_URL}${getLocalizedPath(path, l)}`,
+              `${baseUrl}${getLocalizedPath(path, l)}`,
             ]),
           ),
         },

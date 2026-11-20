@@ -16,8 +16,6 @@ const eslintConfig = [
       "app/**/*.{ts,tsx}",
       "components/**/*.{ts,tsx}",
       "hooks/**/*.{ts,tsx}",
-      "src/components/**/*.{ts,tsx}",
-      "src/hooks/**/*.{ts,tsx}",
     ],
     ignores: [
       "**/*.test.{ts,tsx}",

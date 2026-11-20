@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { ACCESS_COOKIE_NAME, REFRESH_COOKIE_NAME } from "./lib/auth-cookie";
 import { apiUrl, getApiOrigin } from "./lib/api-config";
-import { buildContentSecurityPolicy } from "./src/lib/security-headers";
+import { buildContentSecurityPolicy } from "./lib/security-headers";
 import { LOCALE_COOKIE_NAME, routing, type Locale } from "./i18n/routing";
 
 const intlMiddleware = createMiddleware(routing);

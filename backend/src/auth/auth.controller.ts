@@ -321,9 +321,9 @@ export class AuthController {
     const basePath = redirectUrl.pathname.replace(/\/+$/, '');
     redirectUrl.pathname = `${basePath}/auth/oauth/callback`;
     redirectUrl.search = '';
-    redirectUrl.hash = new URLSearchParams({
-      access_token: tokens.access_token,
-    }).toString();
+    // No token in the URL (#1647): the httpOnly cookies set above carry the
+    // session, and the callback page confirms it with GET /auth/me.
+    redirectUrl.hash = '';
     return res.redirect(redirectUrl.toString());
   }
 
