@@ -88,6 +88,10 @@ pub struct ReadyResponse {
     pub version: &'static str,
     pub stellar_network: String,
     pub dependencies: ReadyDeps,
+    /// Subentry count and reserve headroom of the anchor account (#1666).
+    /// Absent when Horizon is unreachable or the signing key is not configured.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor_account: Option<crate::stellar::AccountCapacity>,
 }
 
 #[derive(Debug, Serialize)]
@@ -120,6 +124,28 @@ pub async fn health_ready(State(state): State<AppState>) -> Response {
         "mainnet".to_string()
     };
 
+    // Each anchor, transfer and revocation is a subentry of one account, capped
+    // at 1,000 by Stellar and funded by a 0.5 XLM reserve apiece; report both so
+    // operators can alert before submits start failing (see
+    // docs/anchoring-capacity.md).
+    let anchor_account = if horizon_ok {
+        match crate::stellar::derive_account_id(&state.stellar_secret_key) {
+            Ok(id) => state.stellar.account_capacity(&id).await.ok(),
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+    if let Some(cap) = &anchor_account {
+        if cap.subentry_usage_percent >= 80.0 || cap.reserve_headroom_xlm < 5.0 {
+            tracing::warn!(
+                subentries = cap.subentry_count,
+                reserve_headroom_xlm = cap.reserve_headroom_xlm,
+                "anchor account is near its subentry cap or reserve"
+            );
+        }
+    }
+
     let all_ok = redis_ok && horizon_ok;
     let http_status = if all_ok {
         StatusCode::OK
@@ -131,6 +157,7 @@ pub async fn health_ready(State(state): State<AppState>) -> Response {
         status: if all_ok { "ready" } else { "degraded" },
         version: env!("CARGO_PKG_VERSION"),
         stellar_network,
+        anchor_account,
         dependencies: ReadyDeps {
             redis: DependencyStatus {
                 ok: redis_ok,

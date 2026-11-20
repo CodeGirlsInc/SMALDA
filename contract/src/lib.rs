@@ -557,6 +557,7 @@ pub async fn record_transfer(
     if let Err(e) = state
         .stellar
         .anchor_transfer(
+            &normalized_hash,
             &transfer_hash,
             &anchor_account_id,
             &state.stellar_secret_key,
@@ -1197,12 +1198,15 @@ pub async fn revoke_document(
     let revoked_at = Utc::now().timestamp();
 
     // Build the revocation payload stored as ManageData value.
-    let revocation_value = serde_json::json!({
+    let revocation_record = serde_json::json!({
         "revokedAt": Utc::now().to_rfc3339(),
         "reason": req.reason,
         "revokedBy": req.revoked_by,
     })
     .to_string();
+    // ManageData values are capped at 64 bytes, so only a compact digest goes
+    // on-chain; the full record is kept in the audit event below (issue #1665).
+    let revocation_value = stellar::build_revocation_value(revoked_at, &revocation_record);
 
     // Use stellar.rs anchor_hash logic directly — we build a new ManageData tx
     // with the revocation key.
@@ -1249,7 +1253,10 @@ pub async fn revoke_document(
                 "revoke",
                 &normalized_hash,
                 &req.revoked_by,
-                serde_json::json!({ "transaction_id": result.tx_hash.clone() }),
+                serde_json::json!({
+                    "transaction_id": result.tx_hash.clone(),
+                    "revocation": revocation_record,
+                }),
             )
             .await;
 
