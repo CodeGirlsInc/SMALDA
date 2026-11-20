@@ -6,6 +6,7 @@ import { apiUrl } from "@/lib/api-config";
 import {
   createDisputeSchema,
   disputeResponseSchema,
+  DISPUTE_DESCRIPTION_MAX_LENGTH,
   DISPUTE_DESCRIPTION_UX_MIN_LENGTH,
   type DisputeResponse,
 } from "@/lib/schemas/dispute";
@@ -132,9 +133,17 @@ export function FileDisputeModal({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={4}
+              maxLength={DISPUTE_DESCRIPTION_MAX_LENGTH}
+              aria-describedby="description-counter"
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
               placeholder={`Please provide a detailed reason for your dispute (min. ${DISPUTE_DESCRIPTION_UX_MIN_LENGTH} characters).`}
             />
+            <p
+              id="description-counter"
+              className="mt-1 text-right text-xs text-gray-500"
+            >
+              {description.length} / {DISPUTE_DESCRIPTION_MAX_LENGTH}
+            </p>
           </div>
           {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
           <DialogFooter>

@@ -10,7 +10,9 @@ function contractUuidSchema(format: string, message?: string) {
   return message ? z.string().uuid({ message }) : z.string().uuid();
 }
 
-export const DISPUTE_DESCRIPTION_UX_MIN_LENGTH = 20;
+export const DISPUTE_DESCRIPTION_UX_MIN_LENGTH =
+  disputeContract.description.minLength;
+export const DISPUTE_DESCRIPTION_MAX_LENGTH = disputeContract.description.maxLength;
 export const disputeStatusValues = disputeContract.statuses;
 
 export type DisputeStatus =
@@ -30,9 +32,14 @@ export const createDisputeSchema = z.object({
     disputeContract.documentId.format,
     "errors.dispute.documentIdUuid",
   ),
-  description: z.string().min(disputeContract.description.minLength, {
-    message: "errors.dispute.descriptionRequired",
-  }),
+  description: z
+    .string()
+    .min(disputeContract.description.minLength, {
+      message: "errors.dispute.descriptionRequired",
+    })
+    .max(disputeContract.description.maxLength, {
+      message: "errors.dispute.descriptionTooLong",
+    }),
 });
 
 export const disputeReasonSchema = z.object({
@@ -43,7 +50,8 @@ export const disputeReasonSchema = z.object({
 export const disputeResponseSchema = z.object({
   id: z.string().uuid(),
   documentId: contractUuidSchema(disputeContract.documentId.format),
-  description: z.string().min(disputeContract.description.minLength),
+  // Responses stay lenient: disputes filed before the limits may be shorter.
+  description: z.string().min(1),
   reason: disputeReasonSchema.nullable(),
   status: disputeStatusSchema,
   filedBy: z.string().uuid(),

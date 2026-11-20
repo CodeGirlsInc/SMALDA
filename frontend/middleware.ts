@@ -189,9 +189,39 @@ interface AccessTokenVerification {
   role?: string;
 }
 
+// Short-lived, per-isolate cache of positive `/auth/me` results (#1654). Without
+// it every protected navigation (prefetches included) costs an API round-trip.
+// Only "authenticated" results are cached, so a revoked or expired token is
+// re-checked once the entry lapses.
+const AUTH_CACHE_TTL_MS = 30_000;
+const AUTH_CACHE_MAX_ENTRIES = 500;
+const authCache = new Map<string, { value: AccessTokenVerification; expires: number }>();
+
+/** Test hook: forget every cached verification. */
+export function resetAuthCache(): void {
+  authCache.clear();
+}
+
 async function verifyAccessToken(token: string): Promise<AccessTokenVerification> {
   if (hasControlCharacter(token)) return { check: "unauthenticated" };
 
+  const cached = authCache.get(token);
+  if (cached && cached.expires > Date.now()) return cached.value;
+  authCache.delete(token);
+  const result = await fetchAccessTokenVerification(token);
+  if (result.check === "authenticated") {
+    if (authCache.size >= AUTH_CACHE_MAX_ENTRIES) {
+      const oldest = authCache.keys().next().value;
+      if (oldest !== undefined) authCache.delete(oldest);
+    }
+    authCache.set(token, { value: result, expires: Date.now() + AUTH_CACHE_TTL_MS });
+  }
+  return result;
+}
+
+async function fetchAccessTokenVerification(
+  token: string,
+): Promise<AccessTokenVerification> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), AUTH_CHECK_TIMEOUT_MS);
 
@@ -269,7 +299,12 @@ async function handleRequest(request: NextRequest): Promise<NextResponse> {
       return createLoginRedirect(request, redirectPath);
     }
     if (authCheck.check === "unavailable") {
-      return createAuthenticationUnavailableResponse();
+      // Only admin routes need the role from the API. For everything else a slow
+      // or failing API must not take the whole UI down (#1654): let the request
+      // through, the page's own API calls reject an invalid token anyway.
+      if (isAdminPath(pathname)) {
+        return createAuthenticationUnavailableResponse();
+      }
     }
     if (isAdminPath(pathname) && authCheck.role !== "admin") {
       const url = request.nextUrl.clone();

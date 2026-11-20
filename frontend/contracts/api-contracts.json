@@ -26,7 +26,8 @@
       "format": "uuid"
     },
     "description": {
-      "minLength": 1
+      "minLength": 20,
+      "maxLength": 5000
     },
     "statuses": [
       "open",
