@@ -47,7 +47,6 @@ fn declared_modules(source: &str) -> Vec<&str> {
 /// Grouped the way the doc comment groups them, so the two lists cannot drift
 /// apart silently.
 const DELIBERATELY_PUBLIC: &[&str] = &[
-    "app",
     "cache",
     "config",
     "hash_validator",

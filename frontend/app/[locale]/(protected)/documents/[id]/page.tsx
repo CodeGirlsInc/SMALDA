@@ -2,10 +2,11 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { Link, useRouter } from "@/i18n/navigation";
 import { useDateFormatting } from "@/i18n/formatting";
 import { ApiError, request } from "@/lib/api-client";
+import { riskUrl } from "@/lib/risk-url";
 import { apiUrl } from "@/lib/api-config";
 import {
   Dialog,
@@ -262,6 +263,7 @@ function ShareModal({ docId }: { docId: string }) {
 
 export default function DocumentDetailPage() {
   const t = useTranslations("documentDetail");
+  const locale = useLocale();
   const { formatDateTime } = useDateFormatting();
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -315,7 +317,7 @@ export default function DocumentDetailPage() {
       const [docData, riskData] = await Promise.all([
         request<DocumentDetail>(apiUrl(path)),
         // Risk data is optional; a missing endpoint must not fail the page.
-        request<RiskData>(apiUrl(`${path}/risk`)).catch(() => null),
+        request<RiskData>(riskUrl(path, locale)).catch(() => null),
       ]);
       setDoc(docData);
       setLatitudeInput(docData.latitude == null ? "" : String(docData.latitude));
@@ -330,7 +332,7 @@ export default function DocumentDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [docId, t]);
+  }, [docId, t, locale]);
 
   useEffect(() => {
     fetchData();
