@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import Link from "next/link";
+import { Link, useRouter } from "@/i18n/navigation";
 import { useParams } from "next/navigation";
-import { request } from "@/lib/api-client";
+import { ApiError, request } from "@/lib/api-client";
 import { API_PREFIX } from "@/lib/api-contracts";
 import {
   disputeStatusValues,
@@ -17,14 +17,14 @@ import { useToast } from "@/components/ui/use-toast";
 // ---------------------------------------------------------------------------
 
 interface Dispute extends DisputeResponse {
-  timeline: { status: DisputeStatus; createdAt: string }[];
+  timeline?: { status: DisputeStatus; createdAt: string }[];
   resolution?: string | null;
   resolvedAt?: string | null;
-  document: {
-    title: string;
-    status: string;
-    riskScore: number;
-  };
+  document?: {
+    title?: string;
+    status?: string;
+    riskScore?: number;
+  } | null;
 }
 
 interface User {
@@ -43,6 +43,20 @@ const STATUS_CLASSES: Record<DisputeStatus, string> = {
   dismissed: "bg-red-100 text-red-800",
 };
 
+// Withdrawal stays hidden until the backend exposes DELETE /disputes/:id (#1524).
+const WITHDRAW_DISPUTE_ENABLED = false;
+
+function describeError(err: unknown, fallback: string): string {
+  if (err instanceof ApiError) {
+    if (err.status === 403) return "You do not have permission to perform this action.";
+    if (err.status === 404) return "Dispute not found.";
+    if (err.kind === "validation") return "Please check the submitted information.";
+    if (err.kind === "network") return "Network error. Please try again.";
+    return fallback;
+  }
+  return err instanceof Error && err.message ? err.message : fallback;
+}
+
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
@@ -50,10 +64,11 @@ const STATUS_CLASSES: Record<DisputeStatus, string> = {
 export default function DisputeDetailPage() {
   const params = useParams<{ id: string }>();
   const disputeId = params.id;
+  const router = useRouter();
   const { toast } = useToast();
 
   const [dispute, setDispute] = useState<Dispute | null>(null);
-  const [user, setUser] = useState<User | null>(null); // Assume we get user info from an auth hook
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [adminStatus, setAdminStatus] = useState<DisputeStatus>("open");
@@ -62,17 +77,21 @@ export default function DisputeDetailPage() {
   const fetchDispute = useCallback(async () => {
     if (!disputeId) return;
     setLoading(true);
+    setError(null);
     try {
       const disputeData = await request<Dispute>(
         `${API_PREFIX}/disputes/${disputeId}`,
       );
       setDispute(disputeData);
-      setAdminStatus(disputeData.status);
-      // In a real app, user data would come from a context or hook
-      const userData = await request<User>(`${API_PREFIX}/users/me`);
-      setUser(userData);
+      setAdminStatus(disputeData.status ?? "open");
+      try {
+        const userData = await request<User>(`${API_PREFIX}/auth/me`);
+        setUser(userData);
+      } catch {
+        setUser(null);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load dispute.");
+      setError(describeError(err, "Failed to load dispute."));
     } finally {
       setLoading(false);
     }
@@ -92,11 +111,11 @@ export default function DisputeDetailPage() {
         title: "Dispute Withdrawn",
         description: "The dispute has been successfully withdrawn.",
       });
-      // Redirect or update UI
+      router.push("/disputes");
     } catch (err) {
       toast({
         title: "Error",
-        description: "Failed to withdraw the dispute.",
+        description: describeError(err, "Failed to withdraw the dispute."),
         variant: "destructive",
       });
     }
@@ -107,17 +126,17 @@ export default function DisputeDetailPage() {
     try {
       await request(`${API_PREFIX}/disputes/${disputeId}/status`, {
         method: "PATCH",
-        body: { status: adminStatus },
+        body: { status: adminStatus, resolution: adminResolution },
       });
       toast({
         title: "Dispute Updated",
         description: "The dispute has been successfully updated.",
       });
-      fetchDispute(); // Refetch to show updated data
+      router.push("/disputes");
     } catch (err) {
       toast({
         title: "Error",
-        description: "Failed to update the dispute.",
+        description: describeError(err, "Failed to update the dispute."),
         variant: "destructive",
       });
     }
@@ -161,10 +180,10 @@ export default function DisputeDetailPage() {
         </h1>
         <span
           className={`inline-block rounded-full px-3 py-1 text-sm font-semibold ${
-            STATUS_CLASSES[dispute.status]
+            STATUS_CLASSES[dispute.status] ?? "bg-gray-100 text-gray-800"
           }`}
         >
-          {dispute.status.replace("_", " ")}
+          {dispute.status?.replace("_", " ")}
         </span>
       </div>
       <p className="text-sm text-gray-500">
@@ -172,23 +191,27 @@ export default function DisputeDetailPage() {
       </p>
 
       <div className="mt-6 space-y-6">
-        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-semibold text-gray-900">
-            Disputed Document
-          </h2>
-          <p className="mt-2 text-sm text-gray-700">
-            <Link
-              href={`/documents/${dispute.documentId}`}
-              className="text-blue-600 hover:underline"
-            >
-              {dispute.document.title}
-            </Link>
-          </p>
-          <div className="mt-2 flex space-x-4 text-xs">
-            <span>Status: {dispute.document.status}</span>
-            <span>Risk Score: {dispute.document.riskScore}%</span>
-          </div>
-        </section>
+        {dispute.document && (
+          <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <h2 className="text-sm font-semibold text-gray-900">
+              Disputed Document
+            </h2>
+            <p className="mt-2 text-sm text-gray-700">
+              <Link
+                href={`/documents/${dispute.documentId}`}
+                className="text-blue-600 hover:underline"
+              >
+                {dispute.document.title ?? dispute.documentId}
+              </Link>
+            </p>
+            <div className="mt-2 flex space-x-4 text-xs">
+              <span>Status: {dispute.document.status ?? "—"}</span>
+              {dispute.document.riskScore != null && (
+                <span>Risk Score: {dispute.document.riskScore}%</span>
+              )}
+            </div>
+          </section>
+        )}
 
         <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
           <h2 className="text-sm font-semibold text-gray-900">
@@ -208,28 +231,32 @@ export default function DisputeDetailPage() {
           <h2 className="text-sm font-semibold text-gray-900">
             Status Timeline
           </h2>
-          <ol className="mt-4 space-y-4">
-            {dispute.timeline.map((event, index) => (
-              <li key={index} className="flex items-start gap-3">
-                <span
-                  aria-hidden="true"
-                  className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
-                    index === dispute.timeline.length - 1
-                      ? "bg-green-500"
-                      : "bg-gray-300"
-                  }`}
-                />
-                <div>
-                  <p className="text-sm font-medium text-gray-900">
-                    {event.status.replace("_", " ")}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {new Date(event.createdAt).toLocaleString()}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ol>
+          {dispute.timeline?.length ? (
+            <ol className="mt-4 space-y-4">
+              {dispute.timeline.map((event, index) => (
+                <li key={index} className="flex items-start gap-3">
+                  <span
+                    aria-hidden="true"
+                    className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
+                      index === (dispute.timeline?.length ?? 0) - 1
+                        ? "bg-green-500"
+                        : "bg-gray-300"
+                    }`}
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      {event.status?.replace("_", " ")}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {new Date(event.createdAt).toLocaleString()}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="mt-2 text-sm text-gray-500">No timeline available.</p>
+          )}
         </section>
 
         {(dispute.status === "resolved" || dispute.status === "dismissed") &&
@@ -241,9 +268,11 @@ export default function DisputeDetailPage() {
               <p className="mt-2 whitespace-pre-line text-sm text-gray-700">
                 {dispute.resolution}
               </p>
-              <p className="mt-2 text-xs text-gray-500">
-                Resolved on {new Date(dispute.resolvedAt!).toLocaleDateString()}
-              </p>
+              {dispute.resolvedAt && (
+                <p className="mt-2 text-xs text-gray-500">
+                  Resolved on {new Date(dispute.resolvedAt).toLocaleDateString()}
+                </p>
+              )}
             </section>
           )}
 
@@ -300,7 +329,7 @@ export default function DisputeDetailPage() {
           </section>
         )}
 
-        {dispute.status === "open" && user?.id === dispute.filedBy && (
+        {WITHDRAW_DISPUTE_ENABLED && dispute.status === "open" && user?.id === dispute.filedBy && (
           <div className="mt-6">
             <button
               onClick={handleWithdrawDispute}
