@@ -48,6 +48,12 @@ describe('ConfigValidationSchema', () => {
       const { error } = validate(validEnv());
       expect(error).toBeUndefined();
     });
+
+    it('should default DATE_ORDER to DMY', () => {
+      const { value, error } = validate(validEnv());
+      expect(error).toBeUndefined();
+      expect(value.DATE_ORDER).toBe('DMY');
+    });
   });
 
   describe('missing required keys', () => {
@@ -299,6 +305,14 @@ describe('ConfigValidationSchema', () => {
       const { error } = validate(env);
       expect(error).toBeDefined();
       expect(error!.message).toContain('NODE_ENV');
+    });
+
+    it('should reject an invalid DATE_ORDER value', () => {
+      const env = validEnv();
+      env.DATE_ORDER = 'YMD';
+      const { error } = validate(env);
+      expect(error).toBeDefined();
+      expect(error!.message).toContain('DATE_ORDER');
     });
 
     it('should reject placeholder values in production', () => {

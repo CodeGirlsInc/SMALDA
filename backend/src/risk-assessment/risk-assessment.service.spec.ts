@@ -67,6 +67,13 @@ const mockConfigService = {
   get: jest.fn((key: string, fallback?: string) => fallback ?? ''),
 };
 
+function setDateOrder(order: 'DMY' | 'MDY') {
+  mockConfigService.get.mockImplementation(
+    (key: string, fallback?: string) =>
+      key === 'DATE_ORDER' ? order : fallback ?? '',
+  );
+}
+
 // We stub extractTextFromPdf by mocking fs.readFile so we control text content
 jest.mock('fs', () => ({
   promises: {
@@ -90,6 +97,9 @@ describe('RiskAssessmentService', () => {
 
     service = module.get<RiskAssessmentService>(RiskAssessmentService);
     jest.clearAllMocks();
+    mockConfigService.get.mockImplementation(
+      (key: string, fallback?: string) => fallback ?? '',
+    );
 
     // Default: no other docs for owner, no coords on any doc
     mockDocumentsService.findByOwner.mockResolvedValue([]);
@@ -522,6 +532,65 @@ describe('RiskAssessmentService', () => {
       const result = await service.assessDocument('doc-1');
       expect(result.flags.length).toBeGreaterThanOrEqual(4);
       expect(result.score).toBeGreaterThan(0);
+    });
+  });
+
+  describe('expiry date parsing', () => {
+    const parse = (value: string): Date | null =>
+      (service as any).parseDate(value);
+    const utc = (year: number, month: number, day: number) =>
+      new Date(Date.UTC(year, month - 1, day));
+
+    it('parses day-first numeric dates by default', () => {
+      setDateOrder('DMY');
+
+      expect(parse('25/12/2026')).toEqual(utc(2026, 12, 25));
+      expect(parse('05/06/2027')).toEqual(utc(2027, 6, 5));
+      expect(parse('25-12-2026')).toEqual(utc(2026, 12, 25));
+    });
+
+    it('uses the configured order for ambiguous numeric dates', () => {
+      setDateOrder('MDY');
+      expect(parse('05/06/2027')).toEqual(utc(2027, 5, 6));
+      expect(parse('12/25/2026')).toEqual(utc(2026, 12, 25));
+
+      setDateOrder('DMY');
+      expect(parse('05/06/2027')).toEqual(utc(2027, 6, 5));
+    });
+
+    it('parses ISO dates independently of the configured order', () => {
+      setDateOrder('MDY');
+
+      expect(parse('2027-06-05')).toEqual(utc(2027, 6, 5));
+      expect(parse('2027/12/25')).toEqual(utc(2027, 12, 25));
+    });
+
+    it('parses month-name dates', () => {
+      setDateOrder('DMY');
+
+      expect(parse('June 5, 2027')).toEqual(utc(2027, 6, 5));
+      expect(parse('Dec. 25, 2020')).toEqual(utc(2020, 12, 25));
+      expect(parse('september 3 2026')).toEqual(utc(2026, 9, 3));
+    });
+
+    it('rejects two-digit years, impossible dates and unknown months', () => {
+      setDateOrder('DMY');
+
+      expect(parse('01/02/25')).toBeNull();
+      expect(parse('25/12/26')).toBeNull();
+      expect(parse('31/02/2027')).toBeNull();
+      expect(parse('Foobar 5, 2027')).toBeNull();
+    });
+
+    it('detects expired day-first dates in document text', () => {
+      setDateOrder('DMY');
+
+      expect(
+        (service as any).checkExpiryFromText('valid until 25/12/2020'),
+      ).toBe(true);
+      expect(
+        (service as any).checkExpiryFromText('valid until 25/12/2099'),
+      ).toBe(false);
     });
   });
 });

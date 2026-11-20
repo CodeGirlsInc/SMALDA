@@ -174,6 +174,8 @@ npm run dev
 
 The frontend will be available at `http://localhost:3000`.
 
+The notification bell is disabled by default. Set `NEXT_PUBLIC_NOTIFICATIONS_ENABLED=true` once the backend notifications API is available.
+
 ---
 
 ## Usage

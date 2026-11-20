@@ -1,11 +1,12 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import {
   Dispute,
   DisputeResolution,
@@ -31,6 +32,11 @@ export class DisputeService {
     dto: CreateDisputeDto,
     userId: string,
   ): Promise<DisputeResponseDto> {
+    const existing = await this.findActiveDispute(dto.documentId, userId);
+    if (existing) {
+      throw this.activeDisputeConflict(existing);
+    }
+
     const reason = await this.classifier.classifyDispute(dto.description);
 
     const dispute = this.disputeRepo.create({
@@ -41,7 +47,21 @@ export class DisputeService {
       status: DisputeStatus.OPEN,
     });
 
-    const saved = await this.disputeRepo.save(dispute);
+    let saved: Dispute;
+    try {
+      saved = await this.disputeRepo.save(dispute);
+    } catch (error) {
+      if (this.isUniqueViolation(error)) {
+        const concurrentDispute = await this.findActiveDispute(
+          dto.documentId,
+          userId,
+        );
+        if (concurrentDispute) {
+          throw this.activeDisputeConflict(concurrentDispute);
+        }
+      }
+      throw error;
+    }
 
     await this.accessLogsService.logDocumentAccess(
       dto.documentId,
@@ -54,6 +74,40 @@ export class DisputeService {
     );
 
     return this.toResponseDto(saved);
+  }
+
+  private findActiveDispute(
+    documentId: string,
+    filedBy: string,
+  ): Promise<Dispute | null> {
+    return this.disputeRepo.findOne({
+      where: {
+        documentId,
+        filedBy,
+        status: In([DisputeStatus.OPEN, DisputeStatus.IN_REVIEW]),
+      },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  private activeDisputeConflict(dispute: Dispute): ConflictException {
+    return new ConflictException({
+      message: 'An open dispute already exists for this document',
+      disputeId: dispute.id,
+      existingDisputeId: dispute.id,
+    });
+  }
+
+  private isUniqueViolation(error: unknown): boolean {
+    if (typeof error !== 'object' || error === null) return false;
+
+    const candidate = error as {
+      code?: unknown;
+      driverError?: { code?: unknown };
+    };
+    return (
+      candidate.code === '23505' || candidate.driverError?.code === '23505'
+    );
   }
 
   async updateStatus(
