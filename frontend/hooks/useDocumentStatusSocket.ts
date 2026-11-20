@@ -1,40 +1,56 @@
 /**
- * Document status socket hook (#1502, #1503).
+ * Live document updates over the backend's Socket.IO `/documents` namespace
+ * (#1642, #1643).
  *
- * The document page opened a raw WebSocket to `/documents/:id/status`, but the
- * backend serves a Socket.IO namespace, and its manual reconnect loop kept
- * running after the page was closed. This hook connects through Socket.IO and
- * tears the connection down on unmount.
+ * Auth is the httpOnly cookie (`withCredentials`). After connecting the hook
+ * emits `subscribe:document` for the document, then forwards the server's
+ * `document:status-changed` and `verification:status-changed` events. The
+ * connection is closed on unmount or when the document id changes.
  */
 import { useEffect, useRef } from "react";
 import { io, type Socket } from "socket.io-client";
+import { getApiOrigin } from "@/lib/api-config";
 
 export interface DocumentStatusEvent {
   documentId: string;
   status: string;
+  previousStatus?: string | null;
+  timestamp?: string;
+}
+
+export interface DocumentStatusHandlers {
+  onStatus?: (event: DocumentStatusEvent) => void;
+  onVerification?: (event: DocumentStatusEvent) => void;
 }
 
 export function useDocumentStatusSocket(
-  documentId: string,
-  onStatus: (event: DocumentStatusEvent) => void,
-  baseUrl: string = process.env.NEXT_PUBLIC_API_URL ?? "",
+  documentId: string | null | undefined,
+  handlers: DocumentStatusHandlers,
+  baseUrl: string | null = getApiOrigin(),
 ): void {
-  const handlerRef = useRef(onStatus);
-  handlerRef.current = onStatus;
+  const handlersRef = useRef(handlers);
+  handlersRef.current = handlers;
 
   useEffect(() => {
-    if (!documentId) {
-      return;
-    }
+    if (!documentId || !baseUrl) return;
+
     const socket: Socket = io(`${baseUrl}/documents`, {
       transports: ["websocket"],
       withCredentials: true,
     });
-    socket.on("status", (event: DocumentStatusEvent) =>
-      handlerRef.current(event),
+    socket.on("connect", () => {
+      socket.emit("subscribe:document", { documentId });
+    });
+    socket.on("document:status-changed", (event: DocumentStatusEvent) =>
+      handlersRef.current.onStatus?.(event),
     );
+    socket.on("verification:status-changed", (event: DocumentStatusEvent) =>
+      handlersRef.current.onVerification?.(event),
+    );
+
     return () => {
-      socket.off("status");
+      socket.emit("unsubscribe:document", { documentId });
+      socket.off();
       socket.disconnect();
     };
   }, [documentId, baseUrl]);

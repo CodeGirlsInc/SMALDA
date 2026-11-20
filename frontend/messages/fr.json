@@ -433,7 +433,8 @@
       "qrPending": "Code QR disponible après génération côté serveur (BE-85)",
       "downloadCertificate": "Télécharger le certificat de vérification",
       "backToDocument": "Retour au document"
-    }
+    },
+    "stillProcessing": "Traitement en cours. Cela peut prendre quelques minutes ; la page se mettra à jour à la fin de l'ancrage."
   },
   "map": {
     "title": "Carte des documents",
