@@ -47,6 +47,14 @@ export class User {
   @Column({ name: 'two_factor_backup_codes', type: 'text', nullable: true })
   twoFactorBackupCodes?: string;
 
+  /** Per notification type: `{ email, inApp }`. Unset keys default to enabled. */
+  @Column({
+    name: 'notification_preferences',
+    type: 'jsonb',
+    default: () => "'{}'",
+  })
+  notificationPreferences: Record<string, { email?: boolean; inApp?: boolean }>;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

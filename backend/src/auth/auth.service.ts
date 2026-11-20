@@ -21,6 +21,7 @@ import { User, UserRole } from '../users/entities/user.entity';
 import { RefreshSession } from './entities/refresh-session.entity';
 import { TwoFactorService } from './two-factor.service';
 import { TokenRevocationService } from './token-revocation.service';
+import { ActivityTrackerService } from '../activity-tracker/activity-tracker.service';
 
 const RECENT_LOGIN_WINDOW_SECONDS = 15 * 60;
 
@@ -44,6 +45,7 @@ export class AuthService {
     private readonly sessionsRepository: Repository<RefreshSession>,
     private readonly twoFactorService: TwoFactorService,
     private readonly tokenRevocationService: TokenRevocationService,
+    private readonly activityTracker: ActivityTrackerService,
   ) {}
 
   async register(dto: RegisterAuthDto, context?: SessionContext) {
@@ -306,6 +308,11 @@ export class AuthService {
   }
 
   private async issueTokens(user: User, context?: SessionContext) {
+    // Record the login (covers password, 2FA and OAuth sign-ins).
+    await this.activityTracker.record(user.id, 'LOGIN', {
+      ip: context?.ipAddress,
+    });
+
     const session = await this.sessionsRepository.save(
       this.sessionsRepository.create({
         userId: user.id,

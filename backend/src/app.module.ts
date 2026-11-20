@@ -9,6 +9,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AccessLogsModule } from './access-logs/access-logs.module';
+import { ActivityTrackerModule } from './activity-tracker/activity-tracker.module';
 import { AuthModule } from './auth/auth.module';
 import { buildWinstonOptions } from './common/logger.config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
@@ -67,6 +68,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     ExternalValidationModule,
     HealthModule,
     AccessLogsModule,
+    ActivityTrackerModule,
     MetricsModule,
     QueueObservabilityModule,
     NetworkModule,

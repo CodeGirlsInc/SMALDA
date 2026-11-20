@@ -18,6 +18,7 @@ import { QueueService } from '../queue/queue.service';
 import { VerificationService } from '../verification/verification.service';
 import { VerificationCacheService } from '../verification/verification-cache.service';
 import { MetricsService } from '../metrics/metrics.service';
+import { DocumentExportService } from './document-export.service';
 import { AccessLogsService } from '../access-logs/access-logs.service';
 
 jest.mock('crypto', () => ({
@@ -75,6 +76,7 @@ describe('DocumentsController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [DocumentsController],
       providers: [
+        DocumentExportService,
         DocumentsService,
         { provide: getRepositoryToken(Document), useValue: mockRepository },
         {

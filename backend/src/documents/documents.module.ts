@@ -3,6 +3,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DocumentsController } from './documents.controller';
+import { AdminDocumentsController } from './admin-documents.controller';
+import { DocumentExportService } from './document-export.service';
 import { DocumentsGateway } from './documents.gateway';
 import { DocumentsService } from './documents.service';
 import { Document } from './entities/document.entity';
@@ -33,8 +35,8 @@ import { UsersModule } from '../users/users.module';
     AccessLogsModule,
     forwardRef(() => MetricsModule),
   ],
-  controllers: [DocumentsController],
-  providers: [DocumentsService, DocumentsGateway],
+  controllers: [DocumentsController, AdminDocumentsController],
+  providers: [DocumentsService, DocumentsGateway, DocumentExportService],
   exports: [DocumentsService, DocumentsGateway],
 })
 export class DocumentsModule {}

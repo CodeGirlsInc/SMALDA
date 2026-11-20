@@ -11,6 +11,7 @@ import { ApiKeyAuthGuard } from './guards/api-key-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { DocumentsModule } from '../documents/documents.module';
 import { AccessLogsModule } from '../access-logs/access-logs.module';
+import { ActivityTrackerModule } from '../activity-tracker/activity-tracker.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { AccessLogsModule } from '../access-logs/access-logs.module';
     }),
     forwardRef(() => DocumentsModule),
     AccessLogsModule,
+    ActivityTrackerModule,
   ],
   controllers: [UsersController],
   providers: [UsersService, ApiKeysService, ApiKeyAuthGuard, RolesGuard],

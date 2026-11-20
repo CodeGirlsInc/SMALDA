@@ -85,11 +85,24 @@ describe('UsersService', () => {
   });
 
   describe('softDelete', () => {
-    it('should soft delete a user', async () => {
-      jest.spyOn(userRepository, 'softDelete').mockResolvedValue(undefined);
+    it('revokes credentials, anonymises the email and soft deletes in one transaction', async () => {
+      const update = jest.fn().mockResolvedValue({});
+      const softDelete = jest.fn().mockResolvedValue({});
+      const manager: any = {
+        getRepository: jest.fn().mockImplementation((entity: unknown) =>
+          entity === User ? { update, softDelete } : { update: jest.fn() },
+        ),
+      };
+      (userRepository as any).manager = {
+        transaction: jest.fn().mockImplementation((fn: any) => fn(manager)),
+      };
 
       await service.softDelete('1');
-      expect(userRepository.softDelete).toHaveBeenCalledWith('1');
+
+      expect(update).toHaveBeenCalledWith('1', { email: 'deleted+1@invalid' });
+      expect(softDelete).toHaveBeenCalledWith('1');
+      // Sessions and API keys are revoked through their own repositories.
+      expect(manager.getRepository).toHaveBeenCalledTimes(4);
     });
   });
 

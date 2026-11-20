@@ -312,3 +312,21 @@ describe('ActivityTrackerService', () => {
     });
   });
 });
+
+import { truncateIp } from './activity-tracker.service';
+
+describe('truncateIp', () => {
+  it('zeroes the last IPv4 octet', () => {
+    expect(truncateIp('203.0.113.77')).toBe('203.0.113.0');
+    expect(truncateIp('::ffff:203.0.113.77')).toBe('203.0.113.0');
+  });
+
+  it('keeps only the first three IPv6 groups', () => {
+    expect(truncateIp('2001:db8:85a3:8d3:1319:8a2e:370:7348')).toBe('2001:db8:85a3::');
+  });
+
+  it('returns null for empty or unparseable input', () => {
+    expect(truncateIp(undefined)).toBeNull();
+    expect(truncateIp('garbage')).toBeNull();
+  });
+});
