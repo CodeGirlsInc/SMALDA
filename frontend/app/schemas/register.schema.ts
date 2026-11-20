@@ -1,5 +1,13 @@
 import { z } from "zod";
 
+export const passwordSchema = z
+  .string()
+  .min(8, "auth.register.errors.passwordMin")
+  .regex(/[A-Z]/, "auth.register.errors.passwordUppercase")
+  .regex(/[a-z]/, "auth.register.errors.passwordLowercase")
+  .regex(/[0-9]/, "auth.register.errors.passwordNumber")
+  .regex(/[^A-Za-z0-9]/, "auth.register.errors.passwordSpecial");
+
 export const registerSchema = z
   .object({
     fullName: z
@@ -10,13 +18,7 @@ export const registerSchema = z
       .string()
       .email("auth.register.errors.emailInvalid"),
 
-    password: z
-      .string()
-      .min(8, "auth.register.errors.passwordMin")
-      .regex(/[A-Z]/, "auth.register.errors.passwordUppercase")
-      .regex(/[a-z]/, "auth.register.errors.passwordLowercase")
-      .regex(/[0-9]/, "auth.register.errors.passwordNumber")
-      .regex(/[^A-Za-z0-9]/, "auth.register.errors.passwordSpecial"),
+    password: passwordSchema,
 
     confirmPassword: z
       .string()

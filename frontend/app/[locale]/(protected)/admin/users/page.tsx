@@ -1,14 +1,24 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/i18n/navigation";
+import { ApiError, request } from "@/lib/api-client";
+import { apiUrl } from "@/lib/api-config";
+import { useToast } from "@/components/ui/use-toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 type UserRole = "user" | "admin";
-type UserStatus = "active" | "suspended";
 
 interface AdminUser {
   id: string;
@@ -17,41 +27,21 @@ interface AdminUser {
   role: UserRole;
   createdAt: string;
   lastLoginAt: string | null;
-  status: UserStatus;
 }
 
 interface PaginatedUsers {
   data: AdminUser[];
   total: number;
   page: number;
-  pageSize: number;
+  limit: number;
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
-
-function getAuthHeaders(): HeadersInit {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
-  return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
-
-function getCurrentUserId(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const token = localStorage.getItem("auth-token");
-    if (!token) return null;
-    const payload = JSON.parse(atob(token.split(".")[1]));
-    return payload?.sub ?? null;
-  } catch {
-    return null;
-  }
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof ApiError ? err.backendMessage ?? fallback : fallback;
 }
 
 // ---------------------------------------------------------------------------
@@ -122,6 +112,7 @@ const PAGE_SIZE = 20;
 
 export default function AdminUsersPage() {
   const router = useRouter();
+  const { toast } = useToast();
 
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [total, setTotal] = useState(0);
@@ -131,35 +122,44 @@ export default function AdminUsersPage() {
 
   // Filters
   const [roleFilter, setRoleFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
 
   // Bulk select
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
 
   // Delete modal
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  // Role-change confirmation
+  const [roleConfirmation, setRoleConfirmation] = useState<{
+    user: AdminUser;
+    newRole: UserRole;
+  } | null>(null);
+
   // Inline action loading
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
 
-  const currentUserId = getCurrentUserId();
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   // ── Check admin access ──────────────────────────────────────────────────
 
   useEffect(() => {
-    const token = localStorage.getItem("auth-token");
-    if (!token) { router.replace("/login"); return; }
-    try {
-      const payload = JSON.parse(atob(token.split(".")[1]));
-      if (payload?.role !== "admin") { router.replace("/"); }
-    } catch {
-      router.replace("/login");
-    }
+    let cancelled = false;
+    request<{ id: string; role: string }>(apiUrl("/auth/me"))
+      .then((me) => {
+        if (cancelled) return;
+        setCurrentUserId(me.id);
+        if (me.role !== "admin") router.replace("/");
+      })
+      .catch(() => {
+        if (!cancelled) router.replace("/login");
+      });
+    return () => { cancelled = true; };
   }, [router]);
 
   // ── Fetch users ─────────────────────────────────────────────────────────
@@ -169,71 +169,55 @@ export default function AdminUsersPage() {
     setError(null);
     const params = new URLSearchParams({
       page: String(page),
-      pageSize: String(PAGE_SIZE),
+      limit: String(PAGE_SIZE),
     });
     if (roleFilter) params.set("role", roleFilter);
-    if (statusFilter) params.set("status", statusFilter);
     if (appliedSearch) params.set("search", appliedSearch);
 
     try {
-      const res = await fetch(`${API_BASE}/api/users?${params}`, {
-        headers: getAuthHeaders(),
-      });
-      if (res.status === 403) { router.replace("/"); return; }
-      if (!res.ok) throw new Error(`Failed to load users: ${res.status}`);
-      const json: PaginatedUsers = await res.json();
+      const json = await request<PaginatedUsers>(apiUrl("/users", params));
       setUsers(json.data);
       setTotal(json.total);
       setSelected(new Set());
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to load users");
+      setError(errorMessage(err, "Failed to load users"));
     } finally {
       setLoading(false);
     }
-  }, [page, roleFilter, statusFilter, appliedSearch, router]);
+  }, [page, roleFilter, appliedSearch]);
 
-  useEffect(() => { fetchUsers(); }, [fetchUsers]);
+  useEffect(() => { void fetchUsers(); }, [fetchUsers]);
 
   // ── Role change ─────────────────────────────────────────────────────────
 
-  async function handleRoleChange(user: AdminUser, newRole: UserRole) {
-    if (user.id === currentUserId && newRole !== "admin") {
-      if (!confirm("Changing your own role to non-admin will remove your admin access. Continue?")) return;
-    }
+  async function applyRoleChange(user: AdminUser, newRole: UserRole) {
     setActionLoading((prev) => ({ ...prev, [`role_${user.id}`]: true }));
     try {
-      const res = await fetch(`${API_BASE}/api/users/${user.id}`, {
-        method: "PATCH",
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ role: newRole }),
+      const updated = await request<AdminUser | null>(
+        apiUrl(`/users/${user.id}`),
+        { method: "PATCH", body: { role: newRole } },
+      );
+      setUsers((prev) => prev.map((u) =>
+        u.id === user.id ? { ...u, role: updated?.role ?? newRole } : u
+      ));
+      toast({ title: "Role updated", variant: "success" });
+    } catch (err: unknown) {
+      toast({
+        title: "Role update failed",
+        description: errorMessage(err, "Role update failed"),
+        variant: "destructive",
       });
-      if (!res.ok) throw new Error("Role update failed");
-      setUsers((prev) => prev.map((u) => u.id === user.id ? { ...u, role: newRole } : u));
-    } catch {
-      // show inline error or toast — kept simple here
     } finally {
       setActionLoading((prev) => ({ ...prev, [`role_${user.id}`]: false }));
     }
   }
 
-  // ── Suspend / Unsuspend ─────────────────────────────────────────────────
-
-  async function handleSuspendToggle(user: AdminUser) {
-    const newStatus: UserStatus = user.status === "active" ? "suspended" : "active";
-    setActionLoading((prev) => ({ ...prev, [`status_${user.id}`]: true }));
-    try {
-      const res = await fetch(`${API_BASE}/api/users/${user.id}`, {
-        method: "PATCH",
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ status: newStatus }),
-      });
-      if (!res.ok) throw new Error("Status update failed");
-      setUsers((prev) => prev.map((u) => u.id === user.id ? { ...u, status: newStatus } : u));
-    } catch {
-      // silent — real app would toast
-    } finally {
-      setActionLoading((prev) => ({ ...prev, [`status_${user.id}`]: false }));
+  function handleRoleChange(user: AdminUser, newRole: UserRole) {
+    if (user.id === currentUserId && newRole !== user.role) {
+      setRoleConfirmation({ user, newRole });
+      return;
     }
+    void applyRoleChange(user, newRole);
   }
 
   // ── Delete single ───────────────────────────────────────────────────────
@@ -243,15 +227,13 @@ export default function AdminUsersPage() {
     setDeleteLoading(true);
     setDeleteError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/users/${deleteTarget.id}`, {
-        method: "DELETE",
-        headers: getAuthHeaders(),
-      });
-      if (!res.ok) throw new Error("Delete failed");
+      await request(apiUrl(`/users/${deleteTarget.id}`), { method: "DELETE" });
       setUsers((prev) => prev.filter((u) => u.id !== deleteTarget.id));
       setDeleteTarget(null);
     } catch (err: unknown) {
-      setDeleteError(err instanceof Error ? err.message : "Delete failed");
+      const message = errorMessage(err, "Delete failed");
+      setDeleteError(message);
+      toast({ title: "Delete failed", description: message, variant: "destructive" });
     } finally {
       setDeleteLoading(false);
     }
@@ -260,19 +242,23 @@ export default function AdminUsersPage() {
   // ── Bulk delete ─────────────────────────────────────────────────────────
 
   async function handleBulkDelete() {
-    if (!confirm(`Delete ${selected.size} selected user(s)? This cannot be undone.`)) return;
     setBulkDeleting(true);
     try {
       await Promise.all(
         Array.from(selected).map((id) =>
-          fetch(`${API_BASE}/api/users/${id}`, {
-            method: "DELETE",
-            headers: getAuthHeaders(),
-          })
+          request(apiUrl(`/users/${id}`), { method: "DELETE" })
         )
       );
       setUsers((prev) => prev.filter((u) => !selected.has(u.id)));
       setSelected(new Set());
+      setConfirmBulkDelete(false);
+      toast({ title: "Users deleted", variant: "success" });
+    } catch (err: unknown) {
+      toast({
+        title: "Delete failed",
+        description: errorMessage(err, "Delete failed"),
+        variant: "destructive",
+      });
     } finally {
       setBulkDeleting(false);
     }
@@ -292,6 +278,68 @@ export default function AdminUsersPage() {
         />
       )}
 
+      <Dialog
+        open={roleConfirmation !== null}
+        onOpenChange={(open) => { if (!open) setRoleConfirmation(null); }}
+      >
+        <DialogContent size="sm">
+          <DialogHeader>
+            <DialogTitle>Change your own role?</DialogTitle>
+            <DialogDescription>
+              Changing your own role will remove your admin access. Continue?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={() => setRoleConfirmation(null)}
+              className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const target = roleConfirmation;
+                setRoleConfirmation(null);
+                if (target) void applyRoleChange(target.user, target.newRole);
+              }}
+              className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Continue
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmBulkDelete} onOpenChange={setConfirmBulkDelete}>
+        <DialogContent size="sm">
+          <DialogHeader>
+            <DialogTitle>Delete selected users?</DialogTitle>
+            <DialogDescription>
+              Delete {selected.size} selected user(s)? This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={() => setConfirmBulkDelete(false)}
+              className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleBulkDelete()}
+              disabled={bulkDeleting}
+              className="px-4 py-2 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+            >
+              {bulkDeleting ? "Deleting…" : "Delete"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <main className="p-6 space-y-6">
         <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
 
@@ -305,16 +353,6 @@ export default function AdminUsersPage() {
               <option value="">All roles</option>
               <option value="user">User</option>
               <option value="admin">Admin</option>
-            </select>
-          </div>
-          <div>
-            <label htmlFor="status-filter" className="block text-xs font-medium text-gray-600 mb-1">Status</label>
-            <select id="status-filter" value={statusFilter}
-              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-              className="border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="">All statuses</option>
-              <option value="active">Active</option>
-              <option value="suspended">Suspended</option>
             </select>
           </div>
           <div>
@@ -332,7 +370,7 @@ export default function AdminUsersPage() {
             </div>
           </div>
           {selected.size > 0 && (
-            <button onClick={handleBulkDelete} disabled={bulkDeleting}
+            <button onClick={() => setConfirmBulkDelete(true)} disabled={bulkDeleting}
               className="ml-auto px-4 py-2 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-red-500">
               {bulkDeleting ? "Deleting…" : `Delete ${selected.size} selected`}
             </button>
@@ -365,7 +403,6 @@ export default function AdminUsersPage() {
                   <th scope="col" className="px-4 py-3 text-left font-medium text-gray-600">Name</th>
                   <th scope="col" className="px-4 py-3 text-left font-medium text-gray-600">Email</th>
                   <th scope="col" className="px-4 py-3 text-left font-medium text-gray-600">Role</th>
-                  <th scope="col" className="px-4 py-3 text-left font-medium text-gray-600">Status</th>
                   <th scope="col" className="px-4 py-3 text-left font-medium text-gray-600">Created</th>
                   <th scope="col" className="px-4 py-3 text-left font-medium text-gray-600">Last login</th>
                   <th scope="col" className="px-4 py-3" />
@@ -373,7 +410,7 @@ export default function AdminUsersPage() {
               </thead>
               <tbody className="divide-y divide-gray-100 bg-white">
                 {users.map((user) => (
-                  <tr key={user.id} className={user.status === "suspended" ? "bg-red-50" : ""}>
+                  <tr key={user.id}>
                     <td className="px-4 py-3">
                       <input type="checkbox"
                         checked={selected.has(user.id)}
@@ -400,13 +437,6 @@ export default function AdminUsersPage() {
                         </select>
                       )}
                     </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                        user.status === "active" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-700"
-                      }`}>
-                        {user.status === "active" ? "Active" : "Suspended"}
-                      </span>
-                    </td>
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
                       {new Date(user.createdAt).toLocaleDateString()}
                     </td>
@@ -415,18 +445,6 @@ export default function AdminUsersPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-3 items-center justify-end">
-                        {actionLoading[`status_${user.id}`] ? (
-                          <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" aria-label="Updating…" />
-                        ) : (
-                          <button
-                            onClick={() => handleSuspendToggle(user)}
-                            className={`text-xs underline focus:outline-none focus:ring-1 rounded ${
-                              user.status === "active" ? "text-yellow-600 hover:text-yellow-800 focus:ring-yellow-500" : "text-green-600 hover:text-green-800 focus:ring-green-500"
-                            }`}
-                            aria-label={user.status === "active" ? `Suspend ${user.fullName}` : `Unsuspend ${user.fullName}`}>
-                            {user.status === "active" ? "Suspend" : "Unsuspend"}
-                          </button>
-                        )}
                         <button
                           onClick={() => { setDeleteTarget(user); setDeleteError(null); }}
                           className="text-xs text-red-600 hover:text-red-800 underline focus:outline-none focus:ring-1 focus:ring-red-500 rounded"
