@@ -138,6 +138,50 @@
       "errorGeneric": "Algo salió mal. Inténtalo de nuevo.",
       "requestNewLink": "Solicitar un nuevo enlace",
       "backToLogin": "Volver a iniciar sesión"
+    },
+    "twoFactor": {
+      "setup": {
+        "title": "Configurar la autenticación en dos pasos",
+        "loading": "Preparando las credenciales de 2FA…",
+        "retry": "Reintentar",
+        "missingSecret": "No pudimos obtener la clave de configuración del servidor. Inténtalo de nuevo.",
+        "initError": "No se pudo iniciar la configuración de 2FA. Inténtalo de nuevo.",
+        "scanInstructions": "Escanea este código QR con tu aplicación de autenticación y escribe el código de 6 dígitos que muestra.",
+        "qrAlt": "Código QR para configurar la autenticación en dos pasos",
+        "qrUnavailable": "El código QR es demasiado grande para mostrarse. Introduce la clave manualmente.",
+        "manualSecret": "Clave para introducción manual",
+        "codeLabel": "Código de 6 dígitos de tu aplicación",
+        "codePlaceholder": "123456",
+        "invalidCode": "Introduce un código válido de 6 dígitos.",
+        "confirm": "Confirmar y activar 2FA",
+        "confirming": "Confirmando…",
+        "verifyError": "No se aceptó ese código. Comprueba tu aplicación de autenticación e inténtalo de nuevo.",
+        "successTitle": "Autenticación en dos pasos activada",
+        "saveCodes": "Guarda estos códigos de respaldo en un lugar seguro. Solo se muestran una vez.",
+        "noBackupCodes": "No se devolvieron códigos de respaldo.",
+        "copy": "Copiar códigos",
+        "copied": "Códigos copiados",
+        "copyError": "No se pudieron copiar los códigos. Selecciónalos manualmente.",
+        "download": "Descargar (.txt)",
+        "done": "Listo — volver a seguridad"
+      },
+      "verify": {
+        "title": "Verificación en dos pasos",
+        "description": "Introduce el código de tu aplicación de autenticación o usa un código de respaldo para iniciar sesión.",
+        "codeLabel": "Código de autenticación de 6 dígitos",
+        "backupCodeLabel": "Código de respaldo",
+        "codePlaceholder": "123456",
+        "backupPlaceholder": "CODE-1234-5678",
+        "codeRequired": "Introduce tu código de verificación.",
+        "submit": "Verificar y continuar",
+        "submitting": "Verificando…",
+        "useBackup": "Usar un código de respaldo",
+        "useAuthenticator": "Usar el código de la aplicación",
+        "expired": "Tu solicitud de verificación ha caducado. Inicia sesión de nuevo.",
+        "rateLimited": "Demasiados intentos. Espera antes de volver a intentarlo.",
+        "generic": "La verificación falló. Inténtalo de nuevo.",
+        "signIn": "Volver a iniciar sesión"
+      }
     }
   },
   "dashboard": {

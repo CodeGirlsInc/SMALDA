@@ -16,6 +16,7 @@ import {
   ALLOWED_DISPUTE_TRANSITIONS,
 } from './entities/dispute.entity';
 import { DisputeReasonClassifierService } from './dispute-reason-classifier.service';
+import { canTransition } from './dispute-status.state-machine';
 import { CreateDisputeDto } from './dto/create-dispute.dto';
 import { DisputeResponseDto } from './dto/dispute-response.dto';
 import { ReassignDisputeDto } from './dto/reassign-dispute.dto';
@@ -137,7 +138,7 @@ export class DisputeService {
     }
 
     const allowed = ALLOWED_DISPUTE_TRANSITIONS[dispute.status];
-    if (!allowed.includes(newStatus)) {
+    if (!canTransition(dispute.status, newStatus)) {
       throw new BadRequestException(
         `Invalid status transition from '${dispute.status}' to '${newStatus}'. Allowed: [${allowed.join(', ')}]`,
       );

@@ -138,6 +138,50 @@
       "errorGeneric": "Une erreur est survenue. Veuillez réessayer.",
       "requestNewLink": "Demander un nouveau lien",
       "backToLogin": "Retour à la connexion"
+    },
+    "twoFactor": {
+      "setup": {
+        "title": "Configurer l'authentification à deux facteurs",
+        "loading": "Préparation des identifiants 2FA…",
+        "retry": "Réessayer",
+        "missingSecret": "Impossible d'obtenir la clé de configuration du serveur. Veuillez réessayer.",
+        "initError": "Impossible de démarrer la configuration 2FA. Veuillez réessayer.",
+        "scanInstructions": "Scannez ce code QR avec votre application d'authentification, puis saisissez le code à 6 chiffres affiché.",
+        "qrAlt": "Code QR de configuration de l'authentification à deux facteurs",
+        "qrUnavailable": "Le code QR est trop grand pour être affiché. Saisissez la clé manuellement.",
+        "manualSecret": "Clé de saisie manuelle",
+        "codeLabel": "Code à 6 chiffres de votre application",
+        "codePlaceholder": "123456",
+        "invalidCode": "Saisissez un code valide à 6 chiffres.",
+        "confirm": "Confirmer et activer la 2FA",
+        "confirming": "Confirmation…",
+        "verifyError": "Ce code n'a pas été accepté. Vérifiez votre application d'authentification et réessayez.",
+        "successTitle": "Authentification à deux facteurs activée",
+        "saveCodes": "Conservez ces codes de secours en lieu sûr. Ils ne sont affichés qu'une seule fois.",
+        "noBackupCodes": "Aucun code de secours n'a été renvoyé.",
+        "copy": "Copier les codes",
+        "copied": "Codes copiés",
+        "copyError": "Impossible de copier les codes. Sélectionnez-les manuellement.",
+        "download": "Télécharger (.txt)",
+        "done": "Terminé — retour aux paramètres de sécurité"
+      },
+      "verify": {
+        "title": "Vérification en deux étapes",
+        "description": "Saisissez le code de votre application d'authentification ou utilisez un code de secours pour vous connecter.",
+        "codeLabel": "Code d'authentification à 6 chiffres",
+        "backupCodeLabel": "Code de secours",
+        "codePlaceholder": "123456",
+        "backupPlaceholder": "CODE-1234-5678",
+        "codeRequired": "Saisissez votre code de vérification.",
+        "submit": "Vérifier et continuer",
+        "submitting": "Vérification…",
+        "useBackup": "Utiliser un code de secours",
+        "useAuthenticator": "Utiliser le code de l'application",
+        "expired": "Votre demande de vérification a expiré. Veuillez vous reconnecter.",
+        "rateLimited": "Trop de tentatives. Veuillez patienter avant de réessayer.",
+        "generic": "La vérification a échoué. Veuillez réessayer.",
+        "signIn": "Retour à la connexion"
+      }
     }
   },
   "dashboard": {

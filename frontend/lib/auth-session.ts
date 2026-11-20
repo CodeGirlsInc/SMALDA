@@ -22,11 +22,20 @@ import { routing, type Locale } from "@/i18n/routing";
 
 export { clearSession, hasStoredSession } from "@/lib/session";
 
+const TWO_FACTOR_TOKEN_KEY = "pending-two-factor-token";
+
 /** Shape of `POST /api/v1/auth/login` — mirrors backend/src/auth/auth.service.ts. */
 export interface LoginResponse {
   access_token: string;
   refresh_token?: string;
 }
+
+export interface TwoFactorRequiredResponse {
+  requiresTwoFactor: true;
+  twoFactorToken: string;
+}
+
+export type LoginResult = LoginResponse | TwoFactorRequiredResponse;
 
 function unavailable<T>(): SessionStateResult<T> {
   return { ok: false, error: { code: "unavailable" } };
@@ -41,7 +50,37 @@ function readLocalStorageItem(key: string): SessionStateResult<string | null> {
   try {
     return { ok: true, value: window.localStorage.getItem(key) };
   } catch {
-    return { ok: false, error: { code: "storage", key } };
+    return { ok: false, error: { code: "storage" } };
+  }
+}
+
+export function saveTwoFactorToken(token: string): SessionStateResult<void> {
+  if (typeof window === "undefined") return unavailable<void>();
+  if (!token) return invalidSession();
+  try {
+    window.sessionStorage.setItem(TWO_FACTOR_TOKEN_KEY, token);
+    return { ok: true, value: undefined };
+  } catch {
+    return { ok: false, error: { code: "storage" } };
+  }
+}
+
+export function readTwoFactorToken(): SessionStateResult<string | null> {
+  if (typeof window === "undefined") return unavailable<string | null>();
+  try {
+    return { ok: true, value: window.sessionStorage.getItem(TWO_FACTOR_TOKEN_KEY) };
+  } catch {
+    return { ok: false, error: { code: "storage" } };
+  }
+}
+
+export function clearTwoFactorToken(): SessionStateResult<void> {
+  if (typeof window === "undefined") return unavailable<void>();
+  try {
+    window.sessionStorage.removeItem(TWO_FACTOR_TOKEN_KEY);
+    return { ok: true, value: undefined };
+  } catch {
+    return { ok: false, error: { code: "storage" } };
   }
 }
 

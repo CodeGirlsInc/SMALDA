@@ -1,4 +1,5 @@
 import { Injectable, CanActivate, ExecutionContext, HttpException, HttpStatus } from '@nestjs/common';
+import { getClientIp } from '../common/client-ip';
 
 /**
  * Simple in-memory rate limiter for the login endpoint to make
@@ -12,7 +13,10 @@ export class LoginRateLimitGuard implements CanActivate {
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest();
-    const key = request.ip ?? 'unknown';
+    const key =
+      getClientIp(request.headers, request.ip, {
+        trustProxy: process.env.TRUST_PROXY === 'true',
+      }) ?? 'unknown';
     const now = Date.now();
     const recent = (this.attempts.get(key) ?? []).filter((t) => now - t < this.windowMs);
 

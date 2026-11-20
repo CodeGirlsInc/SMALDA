@@ -12,6 +12,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { QueueService } from './queue.service';
+import { redactJobPayload } from './queue-payload-redactor.util';
 
 @ApiTags('queue')
 @Controller('queue')
@@ -31,7 +32,9 @@ export class QueueObservabilityController {
       jobs: failedJobs.map((job) => ({
         id: job.id,
         name: job.name,
-        data: job.data,
+        data: job.data
+          ? redactJobPayload(job.data as Record<string, unknown>)
+          : job.data,
         attemptsMade: job.attemptsMade,
         failedReason: job.failedReason,
         failedAt: job.finishedOn,

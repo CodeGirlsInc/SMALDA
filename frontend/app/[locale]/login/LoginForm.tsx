@@ -10,8 +10,9 @@ import { loginSchema, type LoginInput } from "@/lib/schemas/auth";
 import { API_V1_BASE, ApiError, apiRequest } from "@/lib/api-client";
 import {
   resolvePostLoginPath,
+  saveTwoFactorToken,
   storeSession,
-  type LoginResponse,
+  type LoginResult,
 } from "@/lib/auth-session";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { persistOAuthRedirect } from "@/lib/oauth-redirect";
@@ -97,7 +98,7 @@ export function LoginForm() {
   async function onSubmit(values: LoginInput) {
     setSubmitError(null);
     try {
-      const data = await apiRequest<LoginResponse>(
+      const data = await apiRequest<LoginResult>(
         `${API_V1_BASE}/auth/login`,
         {
           method: "POST",
@@ -106,6 +107,17 @@ export function LoginForm() {
           anonymous: true,
         },
       );
+      if ("requiresTwoFactor" in data) {
+        const saved = saveTwoFactorToken(data.twoFactorToken);
+        if (!saved.ok) {
+          setSubmitError({ kind: "api", messageKey: "errors.status.unknown" });
+          return;
+        }
+        const params = new URLSearchParams({ redirect: target });
+        if (resumeId) params.set("resume", resumeId);
+        router.replace(`/2fa/verify?${params.toString()}`);
+        return;
+      }
       const stored = storeSession(data, resumeId ?? undefined);
       if (!stored.ok) {
         setSubmitError({ kind: "api", messageKey: "errors.status.unknown" });

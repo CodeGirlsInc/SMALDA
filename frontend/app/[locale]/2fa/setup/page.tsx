@@ -1,40 +1,61 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
-import { request } from "@/lib/api-client";
+import { API_V1_BASE, ApiError, request } from "@/lib/api-client";
+import { qrCodeDataUri } from "@/lib/qr-code";
+
+type Step = "loading" | "scan" | "confirmed" | "error";
 
 export default function TwoFactorSetupPage() {
+  const t = useTranslations("auth.twoFactor.setup");
   const router = useRouter();
-  const [step, setStep] = useState<"loading" | "scan" | "confirmed">("loading");
+  const [step, setStep] = useState<Step>("loading");
   const [otpUri, setOtpUri] = useState<string>("");
   const [secret, setSecret] = useState<string>("");
   const [totpCode, setTotpCode] = useState<string>("");
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [error, setError] = useState<string>("");
   const [verifying, setVerifying] = useState<boolean>(false);
+  const [copied, setCopied] = useState<boolean>(false);
+
+  const init2FA = useCallback(async () => {
+    setStep("loading");
+    setError("");
+    try {
+      const data = await request<{ otpauthUrl?: string; secret?: string }>(
+        `${API_V1_BASE}/auth/2fa/setup`,
+        { method: "POST" },
+      );
+      if (!data.secret || !data.otpauthUrl) {
+        setError(t("missingSecret"));
+        setStep("error");
+        return;
+      }
+      setSecret(data.secret);
+      setOtpUri(data.otpauthUrl);
+      setStep("scan");
+    } catch (err) {
+      setError(
+        err instanceof ApiError && err.backendMessage
+          ? err.backendMessage
+          : t("initError"),
+      );
+      setStep("error");
+    }
+  }, [t]);
 
   useEffect(() => {
-    async function init2FA() {
-      try {
-        const data = await request<{
-          otpauthUrl?: string;
-          secret?: string;
-        }>("/api/v1/auth/2fa/setup", { method: "POST" });
-        setOtpUri(data.otpauthUrl || `otpauth://totp/SMALDA?secret=${data.secret}`);
-        setSecret(data.secret || "JBSWY3DPEHPK3PXP");
-        setStep("scan");
-      } catch {
-        setError("Network error initializing 2FA.");
-      }
-    }
-    init2FA();
-  }, []);
+    void init2FA();
+  }, [init2FA]);
+
+  const qrSrc = useMemo(() => qrCodeDataUri(otpUri), [otpUri]);
 
   async function handleVerify(e: React.FormEvent) {
     e.preventDefault();
     if (totpCode.length !== 6) {
-      setError("Please enter a valid 6-digit code.");
+      setError(t("invalidCode"));
       return;
     }
 
@@ -43,95 +64,112 @@ export default function TwoFactorSetupPage() {
 
     try {
       const data = await request<{ backupCodes?: string[] }>(
-        "/api/v1/auth/2fa/verify",
+        `${API_V1_BASE}/auth/2fa/verify`,
         {
           method: "POST",
-          anonymous: true,
-          body: { code: totpCode, secret },
+          body: { code: totpCode },
         },
       );
-      setBackupCodes(
-        data.backupCodes || [
-          "CODE-1234-5678",
-          "CODE-8765-4321",
-          "CODE-9988-7766",
-        ],
-      );
+      setBackupCodes(data.backupCodes ?? []);
       setStep("confirmed");
-    } catch {
-      setError("Invalid verification code. Please check your authenticator app.");
+    } catch (err) {
+      setError(
+        err instanceof ApiError && err.backendMessage
+          ? err.backendMessage
+          : t("verifyError"),
+      );
     } finally {
       setVerifying(false);
     }
   }
 
-  function copyBackupCodes() {
-    navigator.clipboard.writeText(backupCodes.join("\n"));
-    alert("Backup codes copied to clipboard!");
+  async function copyBackupCodes() {
+    try {
+      await navigator.clipboard.writeText(backupCodes.join("\n"));
+      setCopied(true);
+    } catch {
+      setError(t("copyError"));
+    }
   }
 
   function downloadBackupCodes() {
     const blob = new Blob([backupCodes.join("\n")], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "smalda-2fa-backup-codes.txt";
-    a.click();
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "smalda-2fa-backup-codes.txt";
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-gray-900 px-4 py-12 text-white">
       <div className="w-full max-w-lg rounded-xl border border-gray-800 bg-gray-950 p-8 shadow-2xl">
-        <h1 className="mb-6 text-center text-2xl font-bold">Two-Factor Authentication Setup</h1>
+        <h1 className="mb-6 text-center text-2xl font-bold">{t("title")}</h1>
 
         {step === "loading" && (
           <div className="flex flex-col items-center py-8">
             <div className="h-10 w-10 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
-            <p className="mt-4 text-sm text-gray-400">Preparing 2FA credentials...</p>
+            <p className="mt-4 text-sm text-gray-400">{t("loading")}</p>
+          </div>
+        )}
+
+        {step === "error" && (
+          <div className="py-4 text-center">
+            <p role="alert" className="text-sm text-red-400">{error}</p>
+            <button
+              type="button"
+              onClick={() => void init2FA()}
+              className="mt-6 w-full rounded-md bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-500"
+            >
+              {t("retry")}
+            </button>
           </div>
         )}
 
         {step === "scan" && (
           <div>
-            <p className="text-sm text-gray-300">
-              Scan the QR code below using your authenticator app (Google Authenticator, Authy, etc.):
-            </p>
+            <p className="text-sm text-gray-300">{t("scanInstructions")}</p>
 
             <div className="my-6 flex justify-center rounded-lg bg-white p-4">
-              <svg className="h-48 w-48" viewBox="0 0 100 100" fill="black">
-                <rect width="100" height="100" fill="white" />
-                <rect x="10" y="10" width="30" height="30" fill="black" />
-                <rect x="60" y="10" width="30" height="30" fill="black" />
-                <rect x="10" y="60" width="30" height="30" fill="black" />
-                <rect x="45" y="45" width="10" height="10" fill="black" />
-                <rect x="70" y="70" width="20" height="20" fill="black" />
-              </svg>
+              {qrSrc ? (
+                <img src={qrSrc} alt={t("qrAlt")} className="h-48 w-48" />
+              ) : (
+                <p className="text-sm text-gray-900">{t("qrUnavailable")}</p>
+              )}
             </div>
 
             <p className="text-center text-xs text-gray-400">
-              Manual entry secret: <code className="rounded bg-gray-900 px-2 py-1 text-yellow-400">{secret}</code>
+              {t("manualSecret")}:{" "}
+              <code className="rounded bg-gray-900 px-2 py-1 text-yellow-400">{secret}</code>
             </p>
 
             <form onSubmit={handleVerify} className="mt-6">
-              <label className="block text-xs font-medium text-gray-300">
-                Enter 6-digit code from your app:
+              <label htmlFor="setup-code" className="block text-xs font-medium text-gray-300">
+                {t("codeLabel")}
               </label>
               <input
+                id="setup-code"
                 type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
                 maxLength={6}
                 value={totpCode}
-                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
-                placeholder="123456"
+                onChange={(e) => {
+                  setTotpCode(e.target.value.replace(/\D/g, ""));
+                  setError("");
+                }}
+                placeholder={t("codePlaceholder")}
                 className="mt-2 w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-center text-xl font-mono tracking-widest text-white focus:border-blue-500 focus:outline-none"
               />
-              {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+              {error && <p role="alert" className="mt-2 text-xs text-red-400">{error}</p>}
 
               <button
                 type="submit"
                 disabled={verifying}
                 className="mt-4 w-full rounded-md bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
               >
-                {verifying ? "Confirming..." : "Confirm & Enable 2FA"}
+                {verifying ? t("confirming") : t("confirm")}
               </button>
             </form>
           </div>
@@ -142,37 +180,44 @@ export default function TwoFactorSetupPage() {
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-500/10 text-green-400">
               ✓
             </div>
-            <h2 className="text-center text-xl font-semibold text-green-400">2FA Successfully Enabled!</h2>
-            <p className="mt-2 text-center text-xs text-gray-300">
-              Save your backup codes below in a safe place. You will need them if you lose access to your authenticator.
-            </p>
+            <h2 className="text-center text-xl font-semibold text-green-400">
+              {t("successTitle")}
+            </h2>
+            <p className="mt-2 text-center text-xs text-gray-300">{t("saveCodes")}</p>
 
             <div className="my-4 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-4 font-mono text-sm text-yellow-300">
-              {backupCodes.map((code, idx) => (
-                <div key={idx} className="py-1">{code}</div>
-              ))}
+              {backupCodes.length > 0 ? (
+                backupCodes.map((code) => <div key={code} className="py-1">{code}</div>)
+              ) : (
+                <p className="text-center">{t("noBackupCodes")}</p>
+              )}
             </div>
+
+            {error && <p role="alert" className="mb-4 text-center text-xs text-red-400">{error}</p>}
 
             <div className="flex space-x-3">
               <button
-                onClick={copyBackupCodes}
+                type="button"
+                onClick={() => void copyBackupCodes()}
                 className="w-1/2 rounded-md border border-gray-700 bg-gray-900 py-2 text-xs font-medium text-gray-200 hover:bg-gray-800"
               >
-                Copy Codes
+                {copied ? t("copied") : t("copy")}
               </button>
               <button
+                type="button"
                 onClick={downloadBackupCodes}
                 className="w-1/2 rounded-md border border-gray-700 bg-gray-900 py-2 text-xs font-medium text-gray-200 hover:bg-gray-800"
               >
-                Download (.txt)
+                {t("download")}
               </button>
             </div>
 
             <button
-              onClick={() => router.push("/settings")}
+              type="button"
+              onClick={() => router.push("/settings/security")}
               className="mt-6 w-full rounded-md bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-500"
             >
-              Done & Return to Settings
+              {t("done")}
             </button>
           </div>
         )}

@@ -9,6 +9,7 @@ const mockReplace = jest.fn();
 const mockSearchParams = new URLSearchParams();
 const mockApiRequest = jest.fn();
 const mockStoreSession = jest.fn();
+const mockSaveTwoFactorToken = jest.fn();
 
 jest.mock("@/i18n/navigation", () => ({
   Link: ({ children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
@@ -39,6 +40,7 @@ jest.mock("@/lib/api-client", () => ({
 jest.mock("@/lib/auth-session", () => ({
   resolvePostLoginPath: () => "/",
   storeSession: (...args: unknown[]) => mockStoreSession(...args),
+  saveTwoFactorToken: (...args: unknown[]) => mockSaveTwoFactorToken(...args),
 }));
 
 function renderForm() {
@@ -55,6 +57,8 @@ describe("LoginForm", () => {
     mockApiRequest.mockReset();
     mockStoreSession.mockReset();
     mockStoreSession.mockReturnValue({ ok: true, value: undefined });
+    mockSaveTwoFactorToken.mockReset();
+    mockSaveTwoFactorToken.mockReturnValue({ ok: true, value: undefined });
     mockSearchParams.delete("redirect");
     mockSearchParams.delete("resume");
     mockSearchParams.delete("reset");
@@ -108,6 +112,54 @@ describe("LoginForm", () => {
       undefined,
     );
     expect(mockReplace).toHaveBeenCalledWith("/");
+  });
+
+  it("routes two-factor users to the challenge page without storing a session", async () => {
+    mockApiRequest.mockResolvedValue({
+      requiresTwoFactor: true,
+      twoFactorToken: "two-factor-token",
+    });
+    mockSearchParams.set("resume", "resume-1");
+    renderForm();
+
+    fireEvent.change(screen.getByLabelText("Email address"), {
+      target: { value: "person@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith(
+        "/2fa/verify?redirect=%2F&resume=resume-1",
+      ),
+    );
+    expect(mockSaveTwoFactorToken).toHaveBeenCalledWith("two-factor-token");
+    expect(mockStoreSession).not.toHaveBeenCalled();
+  });
+
+  it("does not navigate when the two-factor token cannot be saved", async () => {
+    mockApiRequest.mockResolvedValue({
+      requiresTwoFactor: true,
+      twoFactorToken: "two-factor-token",
+    });
+    mockSaveTwoFactorToken.mockReturnValue({
+      ok: false,
+      error: { code: "storage" },
+    });
+    renderForm();
+
+    fireEvent.change(screen.getByLabelText("Email address"), {
+      target: { value: "person@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(await screen.findByText("An unexpected error occurred.")).toBeInTheDocument();
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 
   it("disables submission and shows the loading label while the request is pending", async () => {
